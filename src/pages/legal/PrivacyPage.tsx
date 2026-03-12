@@ -133,7 +133,7 @@ export const PrivacyPage: FC<PrivacyPageProps> = ({ appName }) => {
               Questions or requests related to this Privacy Policy may be sent to:
             </p>
             <p style="margin:10px 0 0;">
-              support@hudson-business-solutions.com
+              christopher.hudson.work@gmail.com
             </p>
           </section>
         </div>

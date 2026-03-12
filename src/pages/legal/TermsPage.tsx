@@ -189,7 +189,7 @@ export const TermsPage: FC<TermsPageProps> = ({ appName }) => {
               Questions about these Terms may be sent to:
             </p>
             <p style="margin:10px 0 0;">
-              support@hudson-business-solutions.com
+              christopher.hudson.work@gmail.com
             </p>
           </section>
         </div>
