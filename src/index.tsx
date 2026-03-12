@@ -11,6 +11,7 @@ import { csrfMiddleware } from './middleware/csrf.js';
 import { noCacheMiddleware } from './middleware/no-cache.js';
 
 import { authRoutes } from './routes/auth.js';
+import { legalRoutes } from './routes/legal.js';
 import { userRoutes } from './routes/users.js';
 import { dashboardRoutes } from './routes/dashboards.js';
 import { jobRoutes } from './routes/jobs.js';
@@ -90,6 +91,7 @@ app.get('/healthz', (c) =>
   shows the public landing page on the base domain.
 */
 app.route('/', authRoutes);
+app.route('/', legalRoutes);
 app.route('/', dashboardRoutes);
 app.route('/', userRoutes);
 app.route('/', jobRoutes);

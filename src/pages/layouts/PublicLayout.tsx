@@ -28,6 +28,14 @@ const publicCss = `
       color:var(--text);
     }
 
+    a{
+      color:var(--navy);
+    }
+
+    a:hover{
+      text-decoration:none;
+    }
+
     .wrapper{
       width:100%;
       max-width:820px;
@@ -174,6 +182,21 @@ const publicCss = `
       border:1px solid #FEE2E2;
       color:#991B1B;
     }
+
+    .public-footer{
+      padding:24px 0 8px;
+      text-align:center;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .public-footer-links{
+      display:flex;
+      justify-content:center;
+      gap:14px;
+      flex-wrap:wrap;
+      margin-top:8px;
+    }
 `;
 
 export const PublicLayout: FC<PublicLayoutProps> = ({
@@ -182,6 +205,7 @@ export const PublicLayout: FC<PublicLayoutProps> = ({
   children,
 }) => {
   const displayAppName = appName || 'Hudson Business Solutions';
+  const year = new Date().getFullYear();
 
   return (
     <html lang="en">
@@ -200,6 +224,14 @@ export const PublicLayout: FC<PublicLayoutProps> = ({
           </div>
 
           {children}
+
+          <div class="public-footer">
+            <div>© {year} {displayAppName}</div>
+            <div class="public-footer-links">
+              <a href="/terms">Terms of Service</a>
+              <a href="/privacy">Privacy Policy</a>
+            </div>
+          </div>
         </div>
       </body>
     </html>

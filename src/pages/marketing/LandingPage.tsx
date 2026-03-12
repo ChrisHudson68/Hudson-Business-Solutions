@@ -5,7 +5,10 @@ interface LandingPageProps {
   appLogo: string;
 }
 
-export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
+export const LandingPage: FC<LandingPageProps> = ({
+  appName,
+  appLogo,
+}) => {
   const year = new Date().getFullYear();
 
   return (
@@ -80,8 +83,9 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
               max-width:700px;
             "
           >
-            Hudson Business Solutions helps construction teams track jobs, labor, expenses, invoices, payments,
-            and profitability with a clean tenant-based workspace built for real operations.
+            {appName} helps construction teams track jobs, labor, expenses, invoices,
+            payments, and profitability with a clean tenant-based workspace built for
+            real operations.
           </p>
 
           <div
@@ -92,18 +96,10 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
               margin-bottom:18px;
             "
           >
-            <a
-              href="/signup"
-              class="btn btn-primary"
-              style="padding:12px 18px; font-size:15px;"
-            >
+            <a href="/signup" class="btn btn-primary" style="padding:12px 18px; font-size:15px;">
               Get Started
             </a>
-            <a
-              href="/pick-tenant"
-              class="btn"
-              style="padding:12px 18px; font-size:15px;"
-            >
+            <a href="/pick-tenant" class="btn" style="padding:12px 18px; font-size:15px;">
               Sign In
             </a>
           </div>
@@ -175,10 +171,12 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
                 background:#F8FAFC;
               "
             >
-              <div style="font-weight:800; color:#0F172A; margin-bottom:6px;">Built for the way contractors work</div>
+              <div style="font-weight:800; color:#0F172A; margin-bottom:6px;">
+                Built for the way contractors work
+              </div>
               <div class="muted" style="line-height:1.6;">
-                Track job budgets, incoming cash, outgoing costs, employee labor, and invoice
-                balances without bouncing between spreadsheets and disconnected tools.
+                Track job budgets, incoming cash, outgoing costs, employee labor, and
+                invoice balances without bouncing between spreadsheets and disconnected tools.
               </div>
             </div>
           </div>
@@ -202,7 +200,7 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           </div>
 
           <div class="card">
-            <div style="font-weight:900; font-size:18px; margin-bottom:8px;">Invoices & Payments</div>
+            <div style="font-weight:900; font-size:18px; margin-bottom:8px;">Invoices &amp; Payments</div>
             <div class="muted" style="line-height:1.7;">
               Create invoices, track collections, monitor overdue balances, and stay on top of receivables.
             </div>
@@ -212,7 +210,9 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
 
       <section style="padding: 10px 0 6px;">
         <div class="card">
-          <div style="font-weight:900; font-size:24px; margin-bottom:16px;">How Hudson Business Solutions works</div>
+          <div style="font-weight:900; font-size:24px; margin-bottom:16px;">
+            How {appName} works
+          </div>
 
           <div class="grid grid-3">
             <div>
@@ -298,6 +298,7 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           <div style="font-size:28px; font-weight:900; margin-bottom:10px;">
             Ready to run your company with better visibility?
           </div>
+
           <div
             class="muted"
             style="
@@ -335,7 +336,11 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           text-align:center;
         "
       >
-        © {year} {appName}. Built for construction operations.
+        <div>© {year} {appName}. Built for construction operations.</div>
+        <div style="margin-top:8px; display:flex; justify-content:center; gap:14px; flex-wrap:wrap;">
+          <a href="/terms">Terms of Service</a>
+          <a href="/privacy">Privacy Policy</a>
+        </div>
       </footer>
     </div>
   );
