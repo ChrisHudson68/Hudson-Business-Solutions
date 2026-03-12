@@ -1,0 +1,125 @@
+import type { FC } from 'hono/jsx';
+
+interface AddJobPageProps {
+  formData?: {
+    job_name?: string;
+    job_code?: string;
+    client_name?: string;
+    contract_amount?: string;
+    retainage_percent?: string;
+    start_date?: string;
+    status?: string;
+  };
+  error?: string;
+  csrfToken: string;
+}
+
+export const AddJobPage: FC<AddJobPageProps> = ({
+  formData,
+  error,
+  csrfToken,
+}) => {
+  const values = {
+    job_name: formData?.job_name ?? '',
+    job_code: formData?.job_code ?? '',
+    client_name: formData?.client_name ?? '',
+    contract_amount: formData?.contract_amount ?? '',
+    retainage_percent: formData?.retainage_percent ?? '0',
+    start_date: formData?.start_date ?? '',
+    status: formData?.status ?? 'Active',
+  };
+
+  return (
+    <div>
+      <div class="page-head">
+        <div>
+          <h1>Add Job</h1>
+          <p>Create a new job and set the starting details.</p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="/jobs">Back</a>
+        </div>
+      </div>
+
+      <div class="card" style="max-width:760px;">
+        {error ? (
+          <div
+            class="badge badge-bad"
+            style="height:auto; padding:10px 12px; margin-bottom:14px; border-radius:12px;"
+          >
+            {error}
+          </div>
+        ) : null}
+
+        <form method="post">
+          <input type="hidden" name="csrf_token" value={csrfToken} />
+
+          <label>Job Name</label>
+          <input name="job_name" value={values.job_name} required />
+
+          <label>Job Code</label>
+          <input
+            name="job_code"
+            value={values.job_code}
+            placeholder="Optional (example: HVAC-102)"
+          />
+
+          <label>Client Name</label>
+          <input name="client_name" value={values.client_name} required />
+
+          <div class="row">
+            <div>
+              <label>Contract Amount</label>
+              <input
+                name="contract_amount"
+                type="number"
+                step="0.01"
+                min="0"
+                value={values.contract_amount}
+              />
+            </div>
+
+            <div>
+              <label>Retainage Percent</label>
+              <input
+                name="retainage_percent"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                value={values.retainage_percent}
+              />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>Start Date</label>
+              <input
+                name="start_date"
+                type="date"
+                value={values.start_date}
+              />
+            </div>
+
+            <div>
+              <label>Status</label>
+              <select name="status">
+                <option value="Active" selected={values.status === 'Active'}>Active</option>
+                <option value="Completed" selected={values.status === 'Completed'}>Completed</option>
+                <option value="On Hold" selected={values.status === 'On Hold'}>On Hold</option>
+                <option value="Cancelled" selected={values.status === 'Cancelled'}>Cancelled</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;" class="actions">
+            <button class="btn btn-primary" type="submit">Create Job</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default AddJobPage;
