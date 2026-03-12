@@ -1,0 +1,70 @@
+import type { FC } from 'hono/jsx';
+
+interface UsersPageProps {
+  users: Array<{
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    active: number;
+  }>;
+}
+
+export const UsersPage: FC<UsersPageProps> = ({ users }) => {
+  return (
+    <div>
+      <div class="page-head">
+        <div>
+          <h1>Users</h1>
+          <p class="muted">Manage tenant users and access roles.</p>
+        </div>
+        <div class="actions">
+          <a class="btn btn-primary" href="/add_user">Add User</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.length > 0 ? (
+                users.map((user) => (
+                  <tr>
+                    <td>{user.name}</td>
+                    <td>{user.email}</td>
+                    <td>{user.role}</td>
+                    <td>
+                      {user.active ? (
+                        <span class="badge badge-good">Active</span>
+                      ) : (
+                        <span class="badge badge-bad">Inactive</span>
+                      )}
+                    </td>
+                    <td>
+                      <a class="btn" href={`/edit_user/${user.id}`}>Edit</a>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colspan={5} class="muted">No users found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default UsersPage;

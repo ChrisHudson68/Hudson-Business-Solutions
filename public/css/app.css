@@ -1,0 +1,163 @@
+/* ---------- Design tokens ---------- */
+:root{
+  --navy:#1E3A5F;
+  --yellow:#F59E0B;
+  --bg:#F5F7FB;
+  --card:#FFFFFF;
+  --border:#E5EAF2;
+  --text:#0F172A;
+  --muted:#64748B;
+
+  --shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  --radius: 14px;
+}
+
+/* ---------- Typography ---------- */
+.page-title{ margin:0; font-size:26px; letter-spacing:-0.3px; }
+.page-subtitle{ margin:6px 0 0; color:var(--muted); }
+.strong{ font-weight:700; }
+.small{ font-size:12px; }
+.muted{ color:var(--muted); }
+
+/* ---------- Layout helpers ---------- */
+.page-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  margin-bottom:18px;
+}
+
+.grid{ display:grid; gap:16px; }
+.grid-4{ grid-template-columns: repeat(4, minmax(0,1fr)); }
+.grid-2{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+
+@media (max-width: 1100px){
+  .grid-4{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 760px){
+  .page-header{ flex-direction:column; }
+  .grid-2{ grid-template-columns: 1fr; }
+  .grid-4{ grid-template-columns: 1fr; }
+}
+
+/* ---------- Cards ---------- */
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:16px;
+}
+
+.card-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:10px;
+}
+.card-title{ margin:0; font-size:16px; }
+
+/* ---------- Buttons ---------- */
+.page-actions{ display:flex; gap:10px; }
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:38px;
+  padding:0 14px;
+  border-radius:10px;
+  border:1px solid transparent;
+  font-weight:600;
+  text-decoration:none;
+}
+.btn-primary{ background:var(--navy); color:white; }
+.btn-primary:hover{ filter:brightness(1.06); }
+.btn-secondary{
+  background:white;
+  border-color:var(--border);
+  color:var(--text);
+}
+.btn-secondary:hover{ background:#F8FAFC; }
+
+/* ---------- Pills (status badges) ---------- */
+.pill{
+  display:inline-flex;
+  align-items:center;
+  height:22px;
+  padding:0 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:700;
+  border:1px solid var(--border);
+}
+.pill-blue{ background:#EEF5FF; color:#1D4ED8; border-color:#DBEAFE; }
+.pill-green{ background:#ECFDF5; color:#047857; border-color:#D1FAE5; }
+.pill-yellow{ background:#FFFBEB; color:#B45309; border-color:#FEF3C7; }
+.pill-red{ background:#FEF2F2; color:#B91C1C; border-color:#FEE2E2; }
+
+/* ---------- KPI ---------- */
+.kpi{ padding:18px; }
+.kpi-top{ display:flex; align-items:center; justify-content:space-between; }
+.kpi-label{ color:var(--muted); font-weight:700; font-size:12px; letter-spacing:0.2px; }
+.kpi-value{ font-size:28px; font-weight:800; margin-top:10px; letter-spacing:-0.4px; }
+.kpi-foot{ margin-top:8px; font-size:12px; }
+
+/* ---------- Tables ---------- */
+.table-wrap{ overflow:auto; }
+.table{ width:100%; border-collapse:separate; border-spacing:0; }
+.table th{
+  text-align:left;
+  font-size:12px;
+  color:var(--muted);
+  padding:10px 12px;
+  border-bottom:1px solid var(--border);
+}
+.table td{
+  padding:12px;
+  border-bottom:1px solid var(--border);
+  vertical-align:top;
+}
+.table tr:last-child td{ border-bottom:none; }
+.right{ text-align:right; }
+
+/* ---------- Lists ---------- */
+.list{ display:flex; flex-direction:column; gap:10px; }
+.list-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:#FBFDFF;
+}
+
+/* ---------- Empty state ---------- */
+.empty{
+  padding:18px;
+  border:1px dashed var(--border);
+  border-radius:12px;
+  background:#FBFDFF;
+}
+.empty-title{ font-weight:800; }
+.empty-subtitle{ margin-top:6px; color:var(--muted); }
+
+/* ---------- Quick actions ---------- */
+.quick-actions{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:12px; }
+.qa{
+  display:block;
+  padding:14px;
+  border-radius:12px;
+  border:1px solid var(--border);
+  background:#FBFDFF;
+  text-decoration:none;
+  color:var(--text);
+}
+.qa:hover{ background:white; }
+.qa-title{ font-weight:800; }
+.qa-sub{ margin-top:4px; font-size:12px; }
+.link{ text-decoration:none; font-weight:700; color:var(--navy); }
+.link:hover{ text-decoration:underline; }
