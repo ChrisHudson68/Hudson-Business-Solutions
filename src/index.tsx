@@ -13,6 +13,7 @@ import { billingRequired } from './middleware/billing.js';
 
 import { authRoutes } from './routes/auth.js';
 import { legalRoutes } from './routes/legal.js';
+import { platformAdminRoutes } from './routes/platform-admin.js';
 import { userRoutes } from './routes/users.js';
 import { dashboardRoutes } from './routes/dashboards.js';
 import { jobRoutes } from './routes/jobs.js';
@@ -33,8 +34,9 @@ import { getEnv } from './config/env.js';
 import type { TenantVariables } from './middleware/tenant.js';
 import type { AuthVariables } from './middleware/auth.js';
 import type { CsrfVariables } from './middleware/csrf.js';
+import type { PlatformAdminVariables } from './middleware/platform-admin.js';
 
-export type AppVariables = TenantVariables & AuthVariables & CsrfVariables;
+export type AppVariables = TenantVariables & AuthVariables & CsrfVariables & PlatformAdminVariables;
 export type AppType = Hono<{ Variables: AppVariables }>;
 
 const env = getEnv();
@@ -88,13 +90,9 @@ app.get('/healthz', (c) =>
   }),
 );
 
-/*
-  Important:
-  authRoutes must be mounted before dashboardRoutes so GET /
-  shows the public landing page on the base domain.
-*/
 app.route('/', authRoutes);
 app.route('/', legalRoutes);
+app.route('/', platformAdminRoutes);
 app.route('/', billingRoutes);
 app.route('/', dashboardRoutes);
 app.route('/', userRoutes);
