@@ -523,6 +523,7 @@ export const AppLayout: FC<AppLayoutProps> = ({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{titlePrefix}{displayAppName}</title>
         <link rel="stylesheet" href="/static/css/app.css" />
+        <link rel="icon" type="image/png" href="/static/favicon.png" />
         <style dangerouslySetInnerHTML={{ __html: appCss }} />
       </head>
       <body>
