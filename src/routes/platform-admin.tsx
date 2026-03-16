@@ -4,6 +4,8 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { getDb } from '../db/connection.js';
 import { getEnv } from '../config/env.js';
 import { platformAdminRequired } from '../middleware/platform-admin.js';
+import * as tenantQueries from '../db/queries/tenants.js';
+import type { BillingStatus } from '../db/types.js';
 import {
   PLATFORM_ADMIN_COOKIE_NAME,
   createPlatformAdminCookie,
@@ -92,6 +94,56 @@ function requireBaseDomain(c: any) {
     return c.text('Not found', 404);
   }
   return null;
+}
+
+function parseTenantId(c: any): number | null {
+  const tenantId = Number.parseInt(c.req.param('id'), 10);
+  if (!Number.isInteger(tenantId) || tenantId <= 0) return null;
+  return tenantId;
+}
+
+function toSqlDate(value: Date): string {
+  return value.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function addDays(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  return toSqlDate(d);
+}
+
+function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string } | undefined {
+  const updated = String(c.req.query('updated') || '').trim().toLowerCase();
+  const error = String(c.req.query('error') || '').trim().toLowerCase();
+
+  if (updated === 'status') {
+    return { tone: 'good', message: 'Tenant billing status was updated.' };
+  }
+  if (updated === 'exempt-on') {
+    return { tone: 'good', message: 'Tenant is now marked internal / exempt.' };
+  }
+  if (updated === 'exempt-off') {
+    return { tone: 'good', message: 'Tenant internal / exempt status was removed.' };
+  }
+  if (updated === 'trial') {
+    return { tone: 'good', message: 'Tenant trial was extended by 14 days.' };
+  }
+  if (updated === 'grace') {
+    return { tone: 'good', message: 'Tenant grace period was extended by 7 days.' };
+  }
+
+  if (error === 'tenant-not-found') {
+    return { tone: 'bad', message: 'Tenant was not found.' };
+  }
+  if (error === 'invalid-status') {
+    return { tone: 'bad', message: 'That billing status is not allowed from the admin portal.' };
+  }
+
+  return undefined;
+}
+
+function redirectTenantDetail(tenantId: number, query: string) {
+  return `/admin/tenants/${tenantId}${query ? `?${query}` : ''}`;
 }
 
 export const platformAdminRoutes = new Hono<AppEnv>();
@@ -249,9 +301,9 @@ platformAdminRoutes.get('/admin/tenants', platformAdminRequired, (c) => {
 
 platformAdminRoutes.get('/admin/tenants/:id', platformAdminRequired, (c) => {
   const db = getDb();
-  const tenantId = Number.parseInt(c.req.param('id'), 10);
+  const tenantId = parseTenantId(c);
 
-  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+  if (!tenantId) {
     return c.text('Tenant not found', 404);
   }
 
@@ -304,6 +356,137 @@ platformAdminRoutes.get('/admin/tenants/:id', platformAdminRequired, (c) => {
     <AdminTenantDetailPage
       tenant={tenant}
       workspaceLoginUrl={buildTenantLoginUrl(tenant.subdomain)}
+      csrfToken={c.get('csrfToken')}
+      notice={resolveNotice(c)}
     />,
   );
+});
+
+platformAdminRoutes.post('/admin/tenants/:id/billing/toggle-exempt', platformAdminRequired, (c) => {
+  const db = getDb();
+  const tenantId = parseTenantId(c);
+
+  if (!tenantId) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const tenant = tenantQueries.findById(db, tenantId);
+  if (!tenant) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const currentlyExempt = Number(tenant.billing_exempt || 0) === 1;
+
+  if (currentlyExempt) {
+    tenantQueries.updateBillingState(db, tenantId, {
+      billing_exempt: 0,
+      billing_status: 'trialing',
+      billing_trial_ends_at: addDays(14),
+      billing_grace_ends_at: null,
+    });
+
+    return c.redirect(redirectTenantDetail(tenantId, 'updated=exempt-off'));
+  }
+
+  tenantQueries.updateBillingState(db, tenantId, {
+    billing_exempt: 1,
+    billing_status: 'internal',
+    billing_grace_ends_at: null,
+  });
+
+  return c.redirect(redirectTenantDetail(tenantId, 'updated=exempt-on'));
+});
+
+platformAdminRoutes.post('/admin/tenants/:id/billing/set-status', platformAdminRequired, async (c) => {
+  const db = getDb();
+  const tenantId = parseTenantId(c);
+
+  if (!tenantId) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const tenant = tenantQueries.findById(db, tenantId);
+  if (!tenant) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const body = await c.req.parseBody();
+  const status = String(body['status'] ?? '').trim().toLowerCase() as BillingStatus;
+
+  if (!['trialing', 'active', 'past_due', 'canceled'].includes(status)) {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=invalid-status'));
+  }
+
+  if (status === 'trialing') {
+    tenantQueries.updateBillingState(db, tenantId, {
+      billing_exempt: 0,
+      billing_status: 'trialing',
+      billing_trial_ends_at: addDays(14),
+      billing_grace_ends_at: null,
+    });
+  } else if (status === 'active') {
+    tenantQueries.updateBillingState(db, tenantId, {
+      billing_exempt: 0,
+      billing_status: 'active',
+      billing_grace_ends_at: null,
+    });
+  } else if (status === 'past_due') {
+    tenantQueries.updateBillingState(db, tenantId, {
+      billing_exempt: 0,
+      billing_status: 'past_due',
+      billing_grace_ends_at: addDays(7),
+    });
+  } else if (status === 'canceled') {
+    tenantQueries.updateBillingState(db, tenantId, {
+      billing_exempt: 0,
+      billing_status: 'canceled',
+      billing_grace_ends_at: null,
+    });
+  }
+
+  return c.redirect(redirectTenantDetail(tenantId, 'updated=status'));
+});
+
+platformAdminRoutes.post('/admin/tenants/:id/billing/extend-trial', platformAdminRequired, (c) => {
+  const db = getDb();
+  const tenantId = parseTenantId(c);
+
+  if (!tenantId) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const tenant = tenantQueries.findById(db, tenantId);
+  if (!tenant) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  tenantQueries.updateBillingState(db, tenantId, {
+    billing_exempt: 0,
+    billing_status: 'trialing',
+    billing_trial_ends_at: addDays(14),
+  });
+
+  return c.redirect(redirectTenantDetail(tenantId, 'updated=trial'));
+});
+
+platformAdminRoutes.post('/admin/tenants/:id/billing/extend-grace', platformAdminRequired, (c) => {
+  const db = getDb();
+  const tenantId = parseTenantId(c);
+
+  if (!tenantId) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const tenant = tenantQueries.findById(db, tenantId);
+  if (!tenant) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  tenantQueries.updateBillingState(db, tenantId, {
+    billing_exempt: 0,
+    billing_status: 'past_due',
+    billing_grace_ends_at: addDays(7),
+  });
+
+  return c.redirect(redirectTenantDetail(tenantId, 'updated=grace'));
 });

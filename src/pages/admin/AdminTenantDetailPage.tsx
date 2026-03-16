@@ -28,6 +28,11 @@ interface AdminTenantDetailPageProps {
     payment_count: number;
   };
   workspaceLoginUrl: string;
+  csrfToken: string;
+  notice?: {
+    tone: 'good' | 'warn' | 'bad';
+    message: string;
+  };
 }
 
 function badgeClass(status: string, exempt: number): string {
@@ -39,16 +44,30 @@ function badgeClass(status: string, exempt: number): string {
   return 'badge';
 }
 
+function noticeStyle(tone: 'good' | 'warn' | 'bad'): string {
+  if (tone === 'good') {
+    return 'margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;';
+  }
+  if (tone === 'warn') {
+    return 'margin-bottom:14px; border-color:#FDE68A; background:#FFFBEB; color:#92400E;';
+  }
+  return 'margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;';
+}
+
 export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
   tenant,
   workspaceLoginUrl,
+  csrfToken,
+  notice,
 }) => {
+  const isExempt = Number(tenant.billing_exempt) === 1;
+
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>{tenant.name}</h1>
-          <p>Cross-tenant detail view for support and billing operations.</p>
+          <p>Cross-tenant detail view for support, billing, and operational controls.</p>
         </div>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -56,6 +75,12 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
           <a class="btn btn-primary" href={workspaceLoginUrl}>Open Workspace</a>
         </div>
       </div>
+
+      {notice ? (
+        <div class="card" style={noticeStyle(notice.tone)}>
+          {notice.message}
+        </div>
+      ) : null}
 
       <div class="grid grid-4">
         <div class="card">
@@ -112,18 +137,72 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
 
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card">
+          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Billing Controls</div>
+
+          <div style="display:grid; gap:12px;">
+            <div class="muted" style="line-height:1.6;">
+              These are platform-owner controls for operational support. They write directly to the tenant billing record in your app database.
+            </div>
+
+            <div style="display:grid; gap:10px;">
+              <form method="post" action={`/admin/tenants/${tenant.id}/billing/toggle-exempt`} style="margin:0;">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit">
+                  {isExempt ? 'Remove Internal / Exempt' : 'Mark Internal / Exempt'}
+                </button>
+              </form>
+
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <form method="post" action={`/admin/tenants/${tenant.id}/billing/set-status`} style="margin:0;">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <input type="hidden" name="status" value="trialing" />
+                  <button class="btn" type="submit">Set Trialing</button>
+                </form>
+
+                <form method="post" action={`/admin/tenants/${tenant.id}/billing/set-status`} style="margin:0;">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <input type="hidden" name="status" value="active" />
+                  <button class="btn" type="submit">Set Active</button>
+                </form>
+
+                <form method="post" action={`/admin/tenants/${tenant.id}/billing/set-status`} style="margin:0;">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <input type="hidden" name="status" value="past_due" />
+                  <button class="btn" type="submit">Set Past Due</button>
+                </form>
+
+                <form method="post" action={`/admin/tenants/${tenant.id}/billing/set-status`} style="margin:0;">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <input type="hidden" name="status" value="canceled" />
+                  <button class="btn" type="submit">Set Canceled</button>
+                </form>
+              </div>
+
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <form method="post" action={`/admin/tenants/${tenant.id}/billing/extend-trial`} style="margin:0;">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <button class="btn" type="submit">Extend Trial +14 Days</button>
+                </form>
+
+                <form method="post" action={`/admin/tenants/${tenant.id}/billing/extend-grace`} style="margin:0;">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <button class="btn" type="submit">Extend Grace +7 Days</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
           <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Default Rates</div>
           <div class="list">
             <div class="list-item"><strong>Default Tax Rate:</strong> {tenant.default_tax_rate ?? '—'}</div>
             <div class="list-item"><strong>Default Labor Rate:</strong> {tenant.default_labor_rate ?? '—'}</div>
           </div>
-        </div>
 
-        <div class="card">
-          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Support Note</div>
+          <div style="font-weight:900; font-size:18px; margin:20px 0 12px;">Support Guidance</div>
           <div class="muted" style="line-height:1.7;">
-            This first version is intentionally read-only. Once this is working cleanly, the next safe additions are:
-            billing-exempt toggles, trial extensions, tenant suspension, and audited impersonation.
+            Use internal / exempt for your own workspaces and non-billed support tenants. Use trial and grace extensions sparingly and only when you are intentionally overriding normal Stripe-driven behavior.
           </div>
         </div>
       </div>
