@@ -322,21 +322,44 @@ authRoutes.post('/signup', async (c) => {
     return renderError('That subdomain is already taken.');
   }
 
-  const tenantId = tenantQueries.create(db, {
-    name: company_name,
-    subdomain,
-    billing_plan: 'standard',
-    billing_status: 'trialing',
-    billing_trial_ends_at: buildTenantTrialEndDate(),
-  });
+  try {
+    const createTenantAndAdmin = db.transaction(() => {
+      const tenantId = tenantQueries.create(db, {
+        name: company_name,
+        subdomain,
+        billing_plan: 'standard',
+        billing_status: 'trialing',
+        billing_trial_ends_at: buildTenantTrialEndDate(),
+      });
 
-  userQueries.create(db, {
-    name: admin_name,
-    email: admin_email,
-    password_hash: hashPassword(password),
-    role: 'Admin',
-    tenant_id: tenantId,
-  });
+      userQueries.create(db, {
+        name: admin_name,
+        email: admin_email,
+        password_hash: hashPassword(password),
+        role: 'Admin',
+        tenant_id: tenantId,
+      });
+
+      return tenantId;
+    });
+
+    createTenantAndAdmin();
+  } catch (error: any) {
+    const message = String(error?.message || '');
+
+    if (message.includes('users.tenant_id, users.email') || message.includes('idx_users_tenant_email_unique')) {
+      return renderError('That admin email is already in use for this company.');
+    }
+
+    if (message.includes('users.email')) {
+      return renderError(
+        'That admin email is already being used elsewhere in the platform. Apply the tenant-scoped email migration before creating more tenants.',
+      );
+    }
+
+    console.error('Signup failed:', error);
+    return renderError('Signup could not be completed right now. Please try again.');
+  }
 
   return c.redirect(buildTenantLoginUrl(subdomain, admin_email));
 });

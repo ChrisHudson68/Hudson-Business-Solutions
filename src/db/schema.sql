@@ -18,19 +18,22 @@ CREATE TABLE IF NOT EXISTS tenants (
     billing_subscription_id TEXT,
     billing_subscription_status TEXT,
     billing_updated_at TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    email TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'Employee',
     active INTEGER NOT NULL DEFAULT 1,
-    tenant_id INTEGER,
-    FOREIGN KEY(tenant_id) REFERENCES tenants(id)
+    tenant_id INTEGER NOT NULL,
+    FOREIGN KEY(tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tenant_email_unique
+ON users (tenant_id, email);
 
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,6 +43,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     retainage_percent REAL,
     start_date TEXT,
     status TEXT,
+    job_code TEXT,
     tenant_id INTEGER,
     FOREIGN KEY(tenant_id) REFERENCES tenants(id)
 );
@@ -58,11 +62,11 @@ CREATE TABLE IF NOT EXISTS income (
 CREATE TABLE IF NOT EXISTS expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER,
-    category TEXT,
-    vendor TEXT,
     amount REAL,
     date TEXT,
-    receipt_filename TEXT,
+    category TEXT,
+    description TEXT,
+    receipt_path TEXT,
     tenant_id INTEGER,
     FOREIGN KEY(job_id) REFERENCES jobs(id),
     FOREIGN KEY(tenant_id) REFERENCES tenants(id)
@@ -70,37 +74,33 @@ CREATE TABLE IF NOT EXISTS expenses (
 
 CREATE TABLE IF NOT EXISTS employees (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    pay_type TEXT NOT NULL,
+    name TEXT,
+    role TEXT,
     hourly_rate REAL,
-    annual_salary REAL,
-    active INTEGER NOT NULL DEFAULT 1,
     tenant_id INTEGER,
     FOREIGN KEY(tenant_id) REFERENCES tenants(id)
 );
 
 CREATE TABLE IF NOT EXISTS time_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id INTEGER NOT NULL,
-    employee_id INTEGER NOT NULL,
-    date TEXT NOT NULL,
-    hours REAL NOT NULL,
-    note TEXT,
-    labor_cost REAL NOT NULL DEFAULT 0,
+    employee_id INTEGER,
+    job_id INTEGER,
+    date TEXT,
+    hours REAL,
     tenant_id INTEGER,
-    FOREIGN KEY(job_id) REFERENCES jobs(id),
     FOREIGN KEY(employee_id) REFERENCES employees(id),
+    FOREIGN KEY(job_id) REFERENCES jobs(id),
     FOREIGN KEY(tenant_id) REFERENCES tenants(id)
 );
 
 CREATE TABLE IF NOT EXISTS invoices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_id INTEGER NOT NULL,
+    job_id INTEGER,
     invoice_number TEXT,
-    date_issued TEXT NOT NULL,
-    due_date TEXT NOT NULL,
-    amount REAL NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Unpaid',
+    invoice_date TEXT,
+    due_date TEXT,
+    amount REAL,
+    status TEXT,
     notes TEXT,
     tenant_id INTEGER,
     FOREIGN KEY(job_id) REFERENCES jobs(id),
@@ -109,45 +109,13 @@ CREATE TABLE IF NOT EXISTS invoices (
 
 CREATE TABLE IF NOT EXISTS payments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    invoice_id INTEGER NOT NULL,
-    date TEXT NOT NULL,
-    amount REAL NOT NULL,
+    invoice_id INTEGER,
+    amount REAL,
+    payment_date TEXT,
     method TEXT,
     reference TEXT,
+    notes TEXT,
     tenant_id INTEGER,
     FOREIGN KEY(invoice_id) REFERENCES invoices(id),
     FOREIGN KEY(tenant_id) REFERENCES tenants(id)
 );
-
-CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_users_tenant_email ON users(tenant_id, email);
-
-CREATE INDEX IF NOT EXISTS idx_jobs_tenant_id ON jobs(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_tenant_status ON jobs(tenant_id, status);
-
-CREATE INDEX IF NOT EXISTS idx_income_tenant_id ON income(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_income_tenant_job_id ON income(tenant_id, job_id);
-CREATE INDEX IF NOT EXISTS idx_income_job_id ON income(job_id);
-
-CREATE INDEX IF NOT EXISTS idx_expenses_tenant_id ON expenses(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_expenses_tenant_job_id ON expenses(tenant_id, job_id);
-CREATE INDEX IF NOT EXISTS idx_expenses_job_id ON expenses(job_id);
-
-CREATE INDEX IF NOT EXISTS idx_employees_tenant_id ON employees(tenant_id);
-
-CREATE INDEX IF NOT EXISTS idx_time_entries_tenant_id ON time_entries(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_time_entries_tenant_job_id ON time_entries(tenant_id, job_id);
-CREATE INDEX IF NOT EXISTS idx_time_entries_tenant_employee_id ON time_entries(tenant_id, employee_id);
-CREATE INDEX IF NOT EXISTS idx_time_entries_job_id ON time_entries(job_id);
-
-CREATE INDEX IF NOT EXISTS idx_invoices_tenant_id ON invoices(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_invoices_tenant_job_id ON invoices(tenant_id, job_id);
-CREATE INDEX IF NOT EXISTS idx_invoices_job_id ON invoices(job_id);
-CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
-
-CREATE INDEX IF NOT EXISTS idx_payments_tenant_id ON payments(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_payments_tenant_invoice_id ON payments(tenant_id, invoice_id);
-CREATE INDEX IF NOT EXISTS idx_payments_invoice_id ON payments(invoice_id);
-
-CREATE INDEX IF NOT EXISTS idx_tenants_billing_status ON tenants(billing_status);
-CREATE INDEX IF NOT EXISTS idx_tenants_billing_exempt ON tenants(billing_exempt);
