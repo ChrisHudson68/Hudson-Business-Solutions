@@ -28,6 +28,18 @@ export function findById(db: DB, tenantId: number) {
   return db.prepare('SELECT * FROM tenants WHERE id = ?').get(tenantId) as Tenant | undefined;
 }
 
+export function findByBillingCustomerId(db: DB, customerId: string) {
+  return db.prepare('SELECT * FROM tenants WHERE billing_customer_id = ?').get(customerId) as
+    | Tenant
+    | undefined;
+}
+
+export function findByBillingSubscriptionId(db: DB, subscriptionId: string) {
+  return db.prepare('SELECT * FROM tenants WHERE billing_subscription_id = ?').get(subscriptionId) as
+    | Tenant
+    | undefined;
+}
+
 export function create(
   db: DB,
   data: {
@@ -116,4 +128,42 @@ export function getBillingSummary(db: DB, tenantId: number) {
         | 'created_at'
       >
     | undefined;
+}
+
+export function updateBillingState(
+  db: DB,
+  tenantId: number,
+  data: {
+    billing_exempt?: number;
+    billing_status?: BillingStatus;
+    billing_plan?: string | null;
+    billing_trial_ends_at?: string | null;
+    billing_grace_ends_at?: string | null;
+    billing_customer_id?: string | null;
+    billing_subscription_id?: string | null;
+    billing_subscription_status?: string | null;
+    billing_updated_at?: string | null;
+  },
+) {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(value);
+    }
+  }
+
+  if (data.billing_updated_at === undefined) {
+    fields.push('billing_updated_at = CURRENT_TIMESTAMP');
+  }
+
+  if (fields.length === 0) {
+    return;
+  }
+
+  values.push(tenantId);
+
+  db.prepare(`UPDATE tenants SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 }

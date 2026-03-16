@@ -24,6 +24,7 @@ import { invoiceRoutes } from './routes/invoices.js';
 import { paymentRoutes } from './routes/payments.js';
 import { settingsRoutes } from './routes/settings.js';
 import { billingRoutes } from './routes/billing.js';
+import { stripeRoutes } from './routes/stripe.js';
 
 import { NotFoundPage } from './pages/errors/NotFoundPage.js';
 import { ServerErrorPage } from './pages/errors/ServerErrorPage.js';
@@ -90,6 +91,7 @@ app.get('/healthz', (c) =>
   }),
 );
 
+app.route('/', stripeRoutes);
 app.route('/', authRoutes);
 app.route('/', legalRoutes);
 app.route('/', platformAdminRoutes);

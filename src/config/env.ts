@@ -7,6 +7,7 @@ export interface AppConfig {
   baseDomain: string;
   appName: string;
   appLogo: string;
+  appUrl: string;
   dbPath: string;
   uploadDir: string;
   secretKey: string;
@@ -17,6 +18,15 @@ export interface AppConfig {
   launchCode: string;
   platformAdminEmail: string;
   platformAdminPassword: string;
+
+  stripeEnabled: boolean;
+  stripeSecretKey: string;
+  stripePublishableKey: string;
+  stripeWebhookSecret: string;
+  stripePriceProMonthly: string;
+  stripeBillingPortalEnabled: boolean;
+  stripeProPlanLabel: string;
+  stripeGracePeriodDays: number;
 }
 
 let cachedConfig: AppConfig | null = null;
@@ -87,11 +97,52 @@ function parseSecretKey(value: string | undefined, isProduction: boolean): strin
   return parsed;
 }
 
+function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+
+  throw new Error('Boolean environment values must be true/false, 1/0, yes/no, or on/off.');
+}
+
+function parseUrlEnv(value: string | undefined, fallback: string): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('APP_URL must start with http:// or https://');
+    }
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    throw new Error('APP_URL must be a valid absolute URL.');
+  }
+}
+
+function requireStringWhenEnabled(
+  value: string | undefined,
+  fieldName: string,
+  enabled: boolean,
+  fallback = '',
+): string {
+  const parsed = String(value ?? '').trim();
+
+  if (!parsed && enabled) {
+    throw new Error(`${fieldName} is required when STRIPE_ENABLED=true.`);
+  }
+
+  return parsed || fallback;
+}
+
 export function getEnv(): AppConfig {
   if (cachedConfig) return cachedConfig;
 
   const nodeEnv = normalizeNodeEnv(process.env.NODE_ENV);
   const isProduction = nodeEnv === 'production';
+  const stripeEnabled = parseBooleanEnv(process.env.STRIPE_ENABLED, false);
 
   cachedConfig = {
     nodeEnv,
@@ -102,6 +153,7 @@ export function getEnv(): AppConfig {
     appLogo:
       String(process.env.APP_LOGO ?? '/static/brand/hudson-business-solutions-logo.png').trim() ||
       '/static/brand/hudson-business-solutions-logo.png',
+    appUrl: parseUrlEnv(process.env.APP_URL, ''),
     dbPath: parsePathLikeEnv(process.env.DB_PATH, './data/database.db'),
     uploadDir: parsePathLikeEnv(process.env.UPLOAD_DIR, './data'),
     secretKey: parseSecretKey(process.env.SECRET_KEY, isProduction),
@@ -136,6 +188,34 @@ export function getEnv(): AppConfig {
     launchCode: String(process.env.LAUNCH_CODE ?? '').trim(),
     platformAdminEmail: String(process.env.PLATFORM_ADMIN_EMAIL ?? '').trim().toLowerCase(),
     platformAdminPassword: String(process.env.PLATFORM_ADMIN_PASSWORD ?? '').trim(),
+
+    stripeEnabled,
+    stripeSecretKey: requireStringWhenEnabled(
+      process.env.STRIPE_SECRET_KEY,
+      'STRIPE_SECRET_KEY',
+      stripeEnabled,
+    ),
+    stripePublishableKey: requireStringWhenEnabled(
+      process.env.STRIPE_PUBLISHABLE_KEY,
+      'STRIPE_PUBLISHABLE_KEY',
+      stripeEnabled,
+    ),
+    stripeWebhookSecret: String(process.env.STRIPE_WEBHOOK_SECRET ?? '').trim(),
+    stripePriceProMonthly: requireStringWhenEnabled(
+      process.env.STRIPE_PRICE_PRO_MONTHLY,
+      'STRIPE_PRICE_PRO_MONTHLY',
+      stripeEnabled,
+    ),
+    stripeBillingPortalEnabled: parseBooleanEnv(process.env.STRIPE_BILLING_PORTAL_ENABLED, true),
+    stripeProPlanLabel:
+      String(process.env.STRIPE_PRO_PLAN_LABEL ?? '$79.00/month').trim() || '$79.00/month',
+    stripeGracePeriodDays: parseIntegerEnv(
+      process.env.STRIPE_GRACE_PERIOD_DAYS,
+      7,
+      'STRIPE_GRACE_PERIOD_DAYS',
+      1,
+      60,
+    ),
   };
 
   return cachedConfig;

@@ -11,6 +11,11 @@ const CSRF_ERROR_MESSAGE =
   'Please refresh the page and try again.';
 
 const CSRF_TTL_SECONDS = 60 * 60 * 2;
+const CSRF_EXEMPT_PATHS = ['/stripe/webhook'];
+
+function isCsrfExemptPath(path: string): boolean {
+  return CSRF_EXEMPT_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
 
 function signCsrfPayload(payload: string, secretKey: string): string {
   return crypto.createHmac('sha256', secretKey).update(payload).digest('base64url');
@@ -92,6 +97,12 @@ export const csrfMiddleware = createMiddleware<{ Variables: CsrfVariables }>(
     const env = getEnv();
     const method = c.req.method.toUpperCase();
     const host = getRequestHost(c.req.header('Host'));
+
+    if (isCsrfExemptPath(c.req.path)) {
+      c.set('csrfToken', createCsrfToken(host, env.secretKey));
+      await next();
+      return;
+    }
 
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
       c.set('csrfToken', createCsrfToken(host, env.secretKey));
