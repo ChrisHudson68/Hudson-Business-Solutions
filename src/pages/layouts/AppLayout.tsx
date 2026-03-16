@@ -1,4 +1,5 @@
 import type { FC } from 'hono/jsx';
+import { getBillingBanner } from '../../services/billing-banner.js';
 
 interface AppLayoutProps {
   currentTenant:
@@ -393,6 +394,61 @@ const appCss = `
       gap:10px;
       align-items:center;
     }
+
+    .billing-banner{
+      margin-bottom:14px;
+      border-radius:16px;
+      border:1px solid var(--border);
+      box-shadow:var(--shadow);
+      padding:14px 16px;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+    }
+
+    .billing-banner strong{
+      display:block;
+      font-size:14px;
+      margin-bottom:4px;
+    }
+
+    .billing-banner p{
+      margin:0;
+      color:inherit;
+      line-height:1.45;
+      font-size:13px;
+    }
+
+    .billing-banner-info{
+      background:#EFF6FF;
+      border-color:#BFDBFE;
+      color:#1D4ED8;
+    }
+
+    .billing-banner-warn{
+      background:#FFFBEB;
+      border-color:#FDE68A;
+      color:#92400E;
+    }
+
+    .billing-banner-bad{
+      background:#FEF2F2;
+      border-color:#FECACA;
+      color:#991B1B;
+    }
+
+    .billing-banner .btn{
+      white-space:nowrap;
+      flex:0 0 auto;
+    }
+
+    @media (max-width:760px){
+      .billing-banner{
+        flex-direction:column;
+        align-items:flex-start;
+      }
+    }
   `;
 
 const pageshowScript = `
@@ -440,6 +496,12 @@ function billingBadgeLabel(tenant: AppLayoutProps['currentTenant']): string {
     .join(' ');
 }
 
+function billingBannerClass(tone: 'info' | 'warn' | 'bad'): string {
+  if (tone === 'bad') return 'billing-banner billing-banner-bad';
+  if (tone === 'warn') return 'billing-banner billing-banner-warn';
+  return 'billing-banner billing-banner-info';
+}
+
 export const AppLayout: FC<AppLayoutProps> = ({
   currentTenant,
   currentSubdomain,
@@ -452,6 +514,7 @@ export const AppLayout: FC<AppLayoutProps> = ({
 }) => {
   const titlePrefix = currentTenant ? `${currentTenant.name} | ` : '';
   const displayAppName = appName || 'Hudson Business Solutions';
+  const billingBanner = getBillingBanner(currentTenant);
 
   return (
     <html lang="en">
@@ -509,7 +572,19 @@ export const AppLayout: FC<AppLayoutProps> = ({
             </header>
 
             <div class="content">
-              <div class="container">{children}</div>
+              <div class="container">
+                {billingBanner && path !== '/billing' ? (
+                  <div class={billingBannerClass(billingBanner.tone)}>
+                    <div>
+                      <strong>{billingBanner.title}</strong>
+                      <p>{billingBanner.message}</p>
+                    </div>
+                    <a class="btn" href="/billing">Manage Billing</a>
+                  </div>
+                ) : null}
+
+                {children}
+              </div>
             </div>
           </main>
         </div>
