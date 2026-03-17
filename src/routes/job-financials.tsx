@@ -1,23 +1,30 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
+import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../db/connection.js';
 import * as jobs from '../db/queries/jobs.js';
 import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
-import { roleRequired } from '../middleware/auth.js';
+import { loginRequired, roleRequired } from '../middleware/auth.js';
 import {
   saveUploadedFile,
   deleteUploadedFile,
   RECEIPT_EXTENSIONS,
   RECEIPT_MIME_TYPES,
+  buildTenantReceiptUploadDir,
+  buildTenantReceiptStoredPath,
+  resolveUploadedFilePath,
+  inferMimeTypeFromStoredFilename,
+  buildSafeDownloadFilename,
 } from '../services/file-upload.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { AddIncomePage } from '../pages/jobs/AddIncomePage.js';
 import { AddExpensePage } from '../pages/jobs/AddExpensePage.js';
 import { getEnv } from '../config/env.js';
 
-const uploadDir = path.join(process.env.UPLOAD_DIR || './data', 'receipts');
+const receiptRootDir = path.join(getEnv().uploadDir, 'receipts');
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
   return c.html(
@@ -276,6 +283,7 @@ jobFinancialRoutes.get('/add_expense/:id', roleRequired('Admin', 'Manager'), (c)
 
 jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
+  const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
@@ -303,14 +311,17 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
 
     const file = body.receipt;
     if (file && file instanceof File && file.size > 0) {
-      receiptFilename = await saveUploadedFile(file, uploadDir, {
+      const tenantReceiptDir = buildTenantReceiptUploadDir(receiptRootDir, tenantId);
+      const savedFilename = await saveUploadedFile(file, tenantReceiptDir, {
         allowedExtensions: RECEIPT_EXTENSIONS,
         allowedMimeTypes: RECEIPT_MIME_TYPES,
         maxBytes: env.maxReceiptUploadBytes,
       });
+
+      receiptFilename = buildTenantReceiptStoredPath(tenantId, savedFilename);
     }
 
-    expenses.create(db, tenantId, {
+    const expenseId = expenses.create(db, tenantId, {
       job_id: jobId,
       category,
       vendor,
@@ -318,6 +329,27 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
       date,
       receipt_filename: receiptFilename,
     });
+
+    if (currentUser && receiptFilename) {
+      logActivity(db, {
+        tenantId,
+        actorUserId: currentUser.id,
+        eventType: 'expense.receipt_uploaded',
+        entityType: 'expense',
+        entityId: expenseId,
+        description: `${currentUser.name} uploaded a receipt for expense ${category} on job ${job.job_name}.`,
+        metadata: {
+          job_id: job.id,
+          job_name: job.job_name,
+          category,
+          vendor: vendor ?? null,
+          amount,
+          date,
+          receipt_filename: receiptFilename,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
 
     return c.redirect(`/job/${jobId}`);
   } catch (error) {
@@ -338,8 +370,102 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
   }
 });
 
+jobFinancialRoutes.get('/expense-receipts/:id', loginRequired, (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) {
+    return c.redirect('/login');
+  }
+
+  const tenantId = tenant.id;
+  const expenseId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!expenseId) {
+    return c.text('Receipt not found', 404);
+  }
+
+  const expense = db.prepare(
+    `
+      SELECT
+        e.id,
+        e.job_id,
+        e.category,
+        e.vendor,
+        e.amount,
+        e.date,
+        e.receipt_filename,
+        j.job_name
+      FROM expenses e
+      JOIN jobs j
+        ON j.id = e.job_id
+       AND j.tenant_id = e.tenant_id
+      WHERE e.id = ? AND e.tenant_id = ?
+      LIMIT 1
+    `,
+  ).get(expenseId, tenantId) as
+    | {
+        id: number;
+        job_id: number;
+        category: string | null;
+        vendor: string | null;
+        amount: number | null;
+        date: string | null;
+        receipt_filename: string | null;
+        job_name: string | null;
+      }
+    | undefined;
+
+  if (!expense || !expense.receipt_filename) {
+    return c.text('Receipt not found', 404);
+  }
+
+  try {
+    const filePath = resolveUploadedFilePath(expense.receipt_filename, receiptRootDir);
+
+    if (!fs.existsSync(filePath)) {
+      return c.text('Receipt file not found', 404);
+    }
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'expense.receipt_viewed',
+      entityType: 'expense',
+      entityId: expense.id,
+      description: `${currentUser.name} viewed a receipt for expense ${expense.category || `#${expense.id}`}.`,
+      metadata: {
+        job_id: expense.job_id,
+        job_name: expense.job_name,
+        category: expense.category,
+        vendor: expense.vendor,
+        amount: Number(expense.amount || 0),
+        date: expense.date,
+        receipt_filename: expense.receipt_filename,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    const fileBuffer = fs.readFileSync(filePath);
+    const mimeType = inferMimeTypeFromStoredFilename(expense.receipt_filename);
+    const downloadName = buildSafeDownloadFilename(`expense-${expense.id}-receipt`, expense.receipt_filename);
+
+    return new Response(fileBuffer, {
+      headers: {
+        'Content-Type': mimeType,
+        'Content-Disposition': `inline; filename="${downloadName}"`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  } catch {
+    return c.text('Receipt not found', 404);
+  }
+});
+
 jobFinancialRoutes.post('/delete_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
+  const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const expenseId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
@@ -359,7 +485,28 @@ jobFinancialRoutes.post('/delete_expense/:id', roleRequired('Admin', 'Manager'),
   }
 
   if (expense.receipt_filename) {
-    deleteUploadedFile(expense.receipt_filename, uploadDir);
+    deleteUploadedFile(expense.receipt_filename, receiptRootDir);
+
+    if (currentUser) {
+      logActivity(db, {
+        tenantId,
+        actorUserId: currentUser.id,
+        eventType: 'expense.receipt_deleted',
+        entityType: 'expense',
+        entityId: expense.id,
+        description: `${currentUser.name} deleted a receipt attached to expense ${expense.category || `#${expense.id}`}.`,
+        metadata: {
+          job_id: job.id,
+          job_name: job.job_name,
+          category: expense.category,
+          vendor: expense.vendor,
+          amount: Number(expense.amount || 0),
+          date: expense.date,
+          receipt_filename: expense.receipt_filename,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
   }
 
   expenses.deleteById(db, expenseId, tenantId);

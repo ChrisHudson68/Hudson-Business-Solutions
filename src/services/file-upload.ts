@@ -3,9 +3,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { getEnv } from '../config/env.js';
 
-function safeResolvedPath(baseDir: string, filename: string): string {
+function safeResolvedPath(baseDir: string, relativePath: string): string {
   const resolvedBase = path.resolve(baseDir);
-  const resolvedFile = path.resolve(resolvedBase, filename);
+  const resolvedFile = path.resolve(resolvedBase, relativePath);
 
   if (!resolvedFile.startsWith(resolvedBase + path.sep) && resolvedFile !== resolvedBase) {
     throw new Error('Invalid upload path.');
@@ -67,6 +67,20 @@ function validateMimeType(mimeType: string, allowedMimeTypes: string[]): void {
   }
 }
 
+function normalizeStoredRelativePath(value: string): string {
+  const raw = String(value ?? '').trim().replace(/\\/g, '/');
+  const parts = raw
+    .split('/')
+    .map((part) => path.basename(part.trim()))
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    throw new Error('Invalid upload path.');
+  }
+
+  return parts.join('/');
+}
+
 type SaveUploadOptions = {
   allowedExtensions: string[];
   allowedMimeTypes: string[];
@@ -99,12 +113,15 @@ export async function saveUploadedFile(
   return filename;
 }
 
-export function deleteUploadedFile(filename: string, uploadDir: string): void {
-  try {
-    const cleaned = path.basename(filename);
-    if (!cleaned) return;
+export function resolveUploadedFilePath(storedRelativePath: string, uploadBaseDir: string): string {
+  const normalized = normalizeStoredRelativePath(storedRelativePath);
+  const relativePath = normalized.split('/').join(path.sep);
+  return safeResolvedPath(uploadBaseDir, relativePath);
+}
 
-    const filePath = safeResolvedPath(uploadDir, cleaned);
+export function deleteUploadedFile(storedRelativePath: string, uploadBaseDir: string): void {
+  try {
+    const filePath = resolveUploadedFilePath(storedRelativePath, uploadBaseDir);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
@@ -113,12 +130,49 @@ export function deleteUploadedFile(filename: string, uploadDir: string): void {
   }
 }
 
-export const RECEIPT_EXTENSIONS = ['png', 'jpg', 'jpeg', 'pdf'];
+export function buildTenantReceiptUploadDir(uploadBaseDir: string, tenantId: number): string {
+  return path.join(uploadBaseDir, String(tenantId));
+}
+
+export function buildTenantReceiptStoredPath(tenantId: number, filename: string): string {
+  const cleanTenantId = String(tenantId).trim();
+  const cleanFilename = path.basename(String(filename || '').trim());
+
+  if (!cleanTenantId || !/^\d+$/.test(cleanTenantId)) {
+    throw new Error('Invalid tenant receipt path.');
+  }
+
+  if (!cleanFilename) {
+    throw new Error('Invalid tenant receipt filename.');
+  }
+
+  return `${cleanTenantId}/${cleanFilename}`;
+}
+
+export function inferMimeTypeFromStoredFilename(storedRelativePath: string): string {
+  const ext = normalizedExtension(storedRelativePath);
+
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'pdf') return 'application/pdf';
+
+  return 'application/octet-stream';
+}
+
+export function buildSafeDownloadFilename(prefix: string, storedRelativePath: string): string {
+  const ext = path.extname(String(storedRelativePath || '').trim()).toLowerCase();
+  const safeExt = ['.png', '.jpg', '.jpeg', '.webp', '.pdf'].includes(ext) ? ext : '';
+  return `${prefix}${safeExt}`;
+}
+
+export const RECEIPT_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'pdf'];
 export const LOGO_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
 export const RECEIPT_MIME_TYPES = [
   'image/png',
   'image/jpeg',
+  'image/webp',
   'application/pdf',
 ];
 

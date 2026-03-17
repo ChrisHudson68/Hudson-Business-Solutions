@@ -246,6 +246,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                   <th>Date</th>
                   <th>Category</th>
                   <th>Vendor</th>
+                  <th>Receipt</th>
                   <th class="right">Amount</th>
                   <th class="right">Action</th>
                 </tr>
@@ -257,6 +258,20 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                       <td>{row.date || '—'}</td>
                       <td>{row.category || '—'}</td>
                       <td>{row.vendor || '—'}</td>
+                      <td>
+                        {row.receipt_filename ? (
+                          <a
+                            class="btn"
+                            href={`/expense-receipts/${row.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View Receipt
+                          </a>
+                        ) : (
+                          <span class="muted">No receipt</span>
+                        )}
+                      </td>
                       <td class="right">${formatMoney(Number(row.amount || 0))}</td>
                       <td class="right">
                         {job.archived_at ? (
@@ -277,7 +292,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                   ))
                 ) : (
                   <tr>
-                    <td colspan={5} class="muted">No expense records yet.</td>
+                    <td colspan={6} class="muted">No expense records yet.</td>
                   </tr>
                 )}
               </tbody>

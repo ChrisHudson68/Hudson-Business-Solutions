@@ -64,14 +64,6 @@ app.use(
 );
 
 app.use(
-  '/uploads/receipts/*',
-  serveStatic({
-    root: path.join(env.uploadDir, 'receipts'),
-    rewriteRequestPath: (p) => p.replace('/uploads/receipts', ''),
-  }),
-);
-
-app.use(
   '/uploads/logos/*',
   serveStatic({
     root: path.join(env.uploadDir, 'tenant_logos'),
