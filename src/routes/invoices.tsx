@@ -18,7 +18,7 @@ import {
   parsePositiveInt,
 } from '../lib/validation.js';
 
-function renderApp(c: any, subtitle: string, content: any) {
+function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 | 404 = 200) {
   return c.html(
     <AppLayout
       currentTenant={c.get('tenant')}
@@ -32,6 +32,7 @@ function renderApp(c: any, subtitle: string, content: any) {
     >
       {content}
     </AppLayout>,
+    status as any,
   );
 }
 
@@ -108,6 +109,115 @@ function buildInvoiceFormValues(
   };
 }
 
+function loadInvoiceDetailData(db: any, tenantId: number, invoiceId: number) {
+  const tenantSettings = getTenantSettings(db, tenantId);
+
+  const inv = db
+    .prepare(
+      `
+        SELECT i.id, i.job_id, j.job_name, j.client_name,
+               i.invoice_number, i.date_issued, i.due_date, i.amount, i.notes
+        FROM invoices i
+        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        WHERE i.id = ? AND i.tenant_id = ?
+      `,
+    )
+    .get(invoiceId, tenantId) as any;
+
+  if (!tenantSettings || !inv) {
+    return null;
+  }
+
+  const payments = db
+    .prepare(
+      `
+        SELECT id, date, amount, method, reference
+        FROM payments
+        WHERE invoice_id = ? AND tenant_id = ?
+        ORDER BY date DESC, id DESC
+      `,
+    )
+    .all(invoiceId, tenantId) as any[];
+
+  const paidRow = db
+    .prepare(
+      `
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM payments
+        WHERE invoice_id = ? AND tenant_id = ?
+      `,
+    )
+    .get(invoiceId, tenantId) as { total: number };
+
+  const amount = Number.parseFloat(String(inv.amount || 0));
+  const paid = Number.parseFloat(String(paidRow?.total || 0));
+  const status = invoiceStatus(amount, paid, inv.due_date);
+  const outstanding = Math.max(amount - paid, 0);
+  const paymentCount = payments.length;
+
+  const newStatus = status === 'Paid' ? 'Paid' : 'Unpaid';
+  db.prepare(
+    `
+      UPDATE invoices
+      SET status = ?
+      WHERE id = ? AND tenant_id = ?
+    `,
+  ).run(newStatus, invoiceId, tenantId);
+
+  return {
+    inv,
+    tenant: tenantSettings,
+    payments,
+    paid,
+    outstanding,
+    status,
+    paymentCount,
+  };
+}
+
+function renderInvoiceDetail(
+  c: any,
+  tenantId: number,
+  invoiceId: number,
+  options?: {
+    error?: string;
+    success?: string;
+    paymentForm?: {
+      date?: string;
+      amount?: string;
+      method?: string;
+      reference?: string;
+    };
+  },
+  statusCode: 200 | 400 | 404 = 200,
+) {
+  const db = getDb();
+  const data = loadInvoiceDetailData(db, tenantId, invoiceId);
+
+  if (!data) {
+    return c.text('Invoice not found', 404);
+  }
+
+  return renderApp(
+    c,
+    'Invoice Detail',
+    <InvoiceDetailPage
+      inv={data.inv}
+      payments={data.payments}
+      paid={data.paid}
+      outstanding={data.outstanding}
+      status={data.status}
+      tenant={data.tenant}
+      paymentCount={data.paymentCount}
+      csrfToken={c.get('csrfToken')}
+      error={options?.error}
+      success={options?.success}
+      paymentForm={options?.paymentForm}
+    />,
+    statusCode,
+  );
+}
+
 export const invoiceRoutes = new Hono<AppEnv>();
 
 invoiceRoutes.get('/invoices', loginRequired, (c) => {
@@ -133,17 +243,20 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
   const paymentTotals = db
     .prepare(
       `
-        SELECT invoice_id, COALESCE(SUM(amount), 0) as total_paid
+        SELECT invoice_id, COALESCE(SUM(amount), 0) as total_paid, COUNT(*) as payment_count
         FROM payments
         WHERE tenant_id = ?
         GROUP BY invoice_id
       `,
     )
-    .all(tenantId) as Array<{ invoice_id: number; total_paid: number }>;
+    .all(tenantId) as Array<{ invoice_id: number; total_paid: number; payment_count: number }>;
 
-  const paymentMap = new Map<number, number>();
+  const paymentMap = new Map<number, { totalPaid: number; paymentCount: number }>();
   for (const row of paymentTotals) {
-    paymentMap.set(row.invoice_id, Number(row.total_paid || 0));
+    paymentMap.set(row.invoice_id, {
+      totalPaid: Number(row.total_paid || 0),
+      paymentCount: Number(row.payment_count || 0),
+    });
   }
 
   const invoices: any[] = [];
@@ -153,7 +266,8 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
   for (const row of invRows) {
     const invoiceId = Number(row.id);
     const amount = Number.parseFloat(String(row.amount || 0));
-    const paid = Number(paymentMap.get(invoiceId) || 0);
+    const paymentInfo = paymentMap.get(invoiceId) || { totalPaid: 0, paymentCount: 0 };
+    const paid = Number(paymentInfo.totalPaid || 0);
 
     const status = invoiceStatus(amount, paid, row.due_date);
     const outstanding = Math.max(amount - paid, 0);
@@ -175,6 +289,7 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
       paid,
       outstanding,
       status,
+      payment_count: paymentInfo.paymentCount,
     });
   }
 
@@ -327,6 +442,7 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
         error={message}
         formValues={formValues}
       />,
+      400,
     );
   }
 });
@@ -342,67 +458,7 @@ invoiceRoutes.get('/invoice/:id', loginRequired, (c) => {
     return c.text('Invoice not found', 404);
   }
 
-  const tenantId = tenant.id;
-  const db = getDb();
-
-  const tenantSettings = getTenantSettings(db, tenantId);
-  if (!tenantSettings) return c.text('Tenant not found', 404);
-
-  const inv = db
-    .prepare(
-      `
-        SELECT i.id, i.job_id, j.job_name, j.client_name,
-               i.invoice_number, i.date_issued, i.due_date, i.amount, i.notes
-        FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
-        WHERE i.id = ? AND i.tenant_id = ?
-      `,
-    )
-    .get(invoiceId, tenantId) as any;
-
-  if (!inv) return c.text('Invoice not found', 404);
-
-  const amount = Number.parseFloat(String(inv.amount || 0));
-
-  const payments = db
-    .prepare(
-      `
-        SELECT id, date, amount, method, reference
-        FROM payments
-        WHERE invoice_id = ? AND tenant_id = ?
-        ORDER BY date DESC, id DESC
-      `,
-    )
-    .all(invoiceId, tenantId) as any[];
-
-  const paidRow = db
-    .prepare('SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE invoice_id = ? AND tenant_id = ?')
-    .get(invoiceId, tenantId) as any;
-
-  const paid = Number.parseFloat(String(paidRow?.total || 0));
-  const status = invoiceStatus(amount, paid, inv.due_date);
-  const outstanding = Math.max(amount - paid, 0);
-
-  const newStatus = status === 'Paid' ? 'Paid' : 'Unpaid';
-  db.prepare('UPDATE invoices SET status = ? WHERE id = ? AND tenant_id = ?').run(
-    newStatus,
-    invoiceId,
-    tenantId,
-  );
-
-  return renderApp(
-    c,
-    'Invoice Detail',
-    <InvoiceDetailPage
-      inv={inv}
-      payments={payments}
-      paid={paid}
-      outstanding={outstanding}
-      status={status}
-      tenant={tenantSettings}
-      csrfToken={c.get('csrfToken')}
-    />,
-  );
+  return renderInvoiceDetail(c, tenant.id, invoiceId);
 });
 
 invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
@@ -439,7 +495,13 @@ invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
   const amount = Number.parseFloat(String(inv.amount || 0));
 
   const paidRow = db
-    .prepare('SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE invoice_id = ? AND tenant_id = ?')
+    .prepare(
+      `
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM payments
+        WHERE invoice_id = ? AND tenant_id = ?
+      `,
+    )
     .get(invoiceId, tenantId) as any;
 
   const paid = Number.parseFloat(String(paidRow?.total || 0));
@@ -482,7 +544,7 @@ invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
   });
 });
 
-invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin'), async (c) => {
+invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -497,15 +559,51 @@ invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin'), async (c) => {
   const db = getDb();
 
   const invoice = db
-    .prepare('SELECT id FROM invoices WHERE id = ? AND tenant_id = ?')
+    .prepare(
+      `
+        SELECT id
+        FROM invoices
+        WHERE id = ? AND tenant_id = ?
+      `,
+    )
     .get(invoiceId, tenantId) as { id: number } | undefined;
 
   if (!invoice) {
     return c.text('Invoice not found', 404);
   }
 
-  db.prepare('DELETE FROM payments WHERE invoice_id = ? AND tenant_id = ?').run(invoiceId, tenantId);
-  db.prepare('DELETE FROM invoices WHERE id = ? AND tenant_id = ?').run(invoiceId, tenantId);
+  const paymentRow = db
+    .prepare(
+      `
+        SELECT COUNT(*) as total
+        FROM payments
+        WHERE invoice_id = ? AND tenant_id = ?
+      `,
+    )
+    .get(invoiceId, tenantId) as { total: number };
+
+  const paymentCount = Number(paymentRow?.total || 0);
+
+  if (paymentCount > 0) {
+    return renderInvoiceDetail(
+      c,
+      tenantId,
+      invoiceId,
+      {
+        error: 'Cannot delete this invoice while payments are attached. Delete the payments first, then delete the invoice.',
+      },
+      400,
+    );
+  }
+
+  db.prepare(
+    `
+      DELETE FROM invoices
+      WHERE id = ? AND tenant_id = ?
+    `,
+  ).run(invoiceId, tenantId);
 
   return c.redirect('/invoices');
 });
+
+export default invoiceRoutes;

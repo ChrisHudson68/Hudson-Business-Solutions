@@ -38,6 +38,7 @@ interface InvoiceDetailPageProps {
   outstanding: number;
   status: string;
   tenant: TenantInfo;
+  paymentCount: number;
   csrfToken: string;
   error?: string;
   success?: string;
@@ -60,6 +61,7 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
   outstanding,
   status,
   tenant,
+  paymentCount,
   csrfToken,
   error,
   success,
@@ -81,6 +83,12 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
         </div>
         <div class="actions">
           <a class="btn" href={`/invoice/${inv.id}/pdf`}>Download PDF</a>
+          <form method="post" action={`/delete_invoice/${inv.id}`} style="display:inline;">
+            <input type="hidden" name="csrf_token" value={csrfToken} />
+            <button class="btn" type="submit" disabled={paymentCount > 0}>
+              {paymentCount > 0 ? 'Has Payments' : 'Delete Invoice'}
+            </button>
+          </form>
           <a class="btn" href="/invoices">Back</a>
         </div>
       </div>
@@ -109,15 +117,9 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
             <div>
               <div style="font-size:20px; font-weight:900;">{tenant.name || 'Company'}</div>
               <div class="muted" style="margin-top:8px; line-height:1.6;">
-                {tenant.company_address ? (
-                  <div>{tenant.company_address}</div>
-                ) : null}
-                {tenant.company_email ? (
-                  <div>{tenant.company_email}</div>
-                ) : null}
-                {tenant.company_phone ? (
-                  <div>{tenant.company_phone}</div>
-                ) : null}
+                {tenant.company_address ? <div>{tenant.company_address}</div> : null}
+                {tenant.company_email ? <div>{tenant.company_email}</div> : null}
+                {tenant.company_phone ? <div>{tenant.company_phone}</div> : null}
               </div>
             </div>
 
@@ -247,6 +249,10 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+
+        <div class="muted" style="margin-top:12px;">
+          Invoices can only be deleted when no payments are attached.
         </div>
       </div>
     </div>
