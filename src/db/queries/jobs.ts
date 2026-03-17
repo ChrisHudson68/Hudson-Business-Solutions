@@ -1,20 +1,39 @@
 import type { DB } from '../connection.js';
 import type { Job, JobWithFinancials } from '../types.js';
 
-export function listWithFinancials(db: DB, tenantId: number) {
+function archivedFilter(includeArchived = false): string {
+  return includeArchived ? '' : 'AND j.archived_at IS NULL';
+}
+
+export function listWithFinancials(db: DB, tenantId: number, includeArchived = false) {
   return db.prepare(`
-    SELECT j.id, j.job_name, j.job_code, j.client_name, j.contract_amount, j.retainage_percent,
-           j.start_date, j.status, j.tenant_id,
+    SELECT
+      j.id,
+      j.job_name,
+      j.job_code,
+      j.client_name,
+      j.contract_amount,
+      j.retainage_percent,
+      j.start_date,
+      j.status,
+      j.tenant_id,
+      j.archived_at,
+      j.archived_by_user_id,
       (SELECT COALESCE(SUM(i.amount), 0) FROM income i WHERE i.job_id = j.id AND i.tenant_id = j.tenant_id) AS total_income,
       (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.job_id = j.id AND e.tenant_id = j.tenant_id) AS total_expenses,
       (SELECT COALESCE(SUM(t.labor_cost), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_labor,
       (SELECT COALESCE(SUM(t.hours), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_hours,
       (SELECT COALESCE(SUM(inv.amount), 0) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_invoiced,
-      (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN invoices inv ON inv.id = p.invoice_id WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
+      (SELECT COALESCE(SUM(p.amount), 0)
+         FROM payments p
+         JOIN invoices inv ON inv.id = p.invoice_id
+        WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
       (SELECT COUNT(*) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id AND inv.status = 'Unpaid') AS unpaid_invoices
     FROM jobs j
     WHERE j.tenant_id = ?
+      ${archivedFilter(includeArchived)}
     ORDER BY
+      CASE WHEN j.archived_at IS NULL THEN 0 ELSE 1 END,
       CASE
         WHEN j.status = 'Active' THEN 0
         WHEN j.status = 'On Hold' THEN 1
@@ -28,14 +47,27 @@ export function listWithFinancials(db: DB, tenantId: number) {
 
 export function findWithFinancialsById(db: DB, jobId: number, tenantId: number) {
   return db.prepare(`
-    SELECT j.id, j.job_name, j.job_code, j.client_name, j.contract_amount, j.retainage_percent,
-           j.start_date, j.status, j.tenant_id,
+    SELECT
+      j.id,
+      j.job_name,
+      j.job_code,
+      j.client_name,
+      j.contract_amount,
+      j.retainage_percent,
+      j.start_date,
+      j.status,
+      j.tenant_id,
+      j.archived_at,
+      j.archived_by_user_id,
       (SELECT COALESCE(SUM(i.amount), 0) FROM income i WHERE i.job_id = j.id AND i.tenant_id = j.tenant_id) AS total_income,
       (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.job_id = j.id AND e.tenant_id = j.tenant_id) AS total_expenses,
       (SELECT COALESCE(SUM(t.labor_cost), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_labor,
       (SELECT COALESCE(SUM(t.hours), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_hours,
       (SELECT COALESCE(SUM(inv.amount), 0) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_invoiced,
-      (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN invoices inv ON inv.id = p.invoice_id WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
+      (SELECT COALESCE(SUM(p.amount), 0)
+         FROM payments p
+         JOIN invoices inv ON inv.id = p.invoice_id
+        WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
       (SELECT COUNT(*) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id AND inv.status = 'Unpaid') AS unpaid_invoices
     FROM jobs j
     WHERE j.id = ? AND j.tenant_id = ?
@@ -43,17 +75,24 @@ export function findWithFinancialsById(db: DB, jobId: number, tenantId: number) 
   `).get(jobId, tenantId) as JobWithFinancials | undefined;
 }
 
-export function listByTenant(db: DB, tenantId: number) {
-  return db.prepare(
-    'SELECT id, job_name, job_code, client_name, contract_amount, retainage_percent, start_date, status, tenant_id FROM jobs WHERE tenant_id = ? ORDER BY job_name ASC'
-  ).all(tenantId) as Job[];
+export function listByTenant(db: DB, tenantId: number, includeArchived = false) {
+  return db.prepare(`
+    SELECT *
+    FROM jobs
+    WHERE tenant_id = ?
+      ${includeArchived ? '' : 'AND archived_at IS NULL'}
+    ORDER BY job_name ASC
+  `).all(tenantId) as Job[];
 }
 
-export function listByTenantSorted(db: DB, tenantId: number) {
+export function listByTenantSorted(db: DB, tenantId: number, includeArchived = false) {
   return db.prepare(`
-    SELECT id, job_name, job_code, client_name, contract_amount, retainage_percent, start_date, status, tenant_id
-    FROM jobs WHERE tenant_id = ?
+    SELECT *
+    FROM jobs
+    WHERE tenant_id = ?
+      ${includeArchived ? '' : 'AND archived_at IS NULL'}
     ORDER BY
+      CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END,
       CASE
         WHEN status = 'Active' THEN 0
         WHEN status = 'On Hold' THEN 1
@@ -87,7 +126,18 @@ export function create(db: DB, tenantId: number, data: {
   status?: string;
 }) {
   const result = db.prepare(
-    'INSERT INTO jobs (job_name, job_code, client_name, contract_amount, retainage_percent, start_date, status, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    `INSERT INTO jobs (
+      job_name,
+      job_code,
+      client_name,
+      contract_amount,
+      retainage_percent,
+      start_date,
+      status,
+      tenant_id,
+      archived_at,
+      archived_by_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`
   ).run(
     data.job_name,
     data.job_code || null,
@@ -127,6 +177,24 @@ export function update(db: DB, jobId: number, tenantId: number, data: {
   );
 }
 
+export function archive(db: DB, jobId: number, tenantId: number, archivedByUserId: number) {
+  db.prepare(`
+    UPDATE jobs
+    SET archived_at = CURRENT_TIMESTAMP,
+        archived_by_user_id = ?
+    WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+  `).run(archivedByUserId, jobId, tenantId);
+}
+
+export function restore(db: DB, jobId: number, tenantId: number) {
+  db.prepare(`
+    UPDATE jobs
+    SET archived_at = NULL,
+        archived_by_user_id = NULL
+    WHERE id = ? AND tenant_id = ?
+  `).run(jobId, tenantId);
+}
+
 export function remove(db: DB, jobId: number, tenantId: number) {
   db.prepare('DELETE FROM jobs WHERE id = ? AND tenant_id = ?').run(jobId, tenantId);
 }
@@ -154,6 +222,8 @@ export default {
   findByCode,
   create,
   update,
+  archive,
+  restore,
   remove,
   deleteWithCascade,
 };

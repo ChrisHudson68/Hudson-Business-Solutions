@@ -207,6 +207,7 @@ function buildJobListData(rows: any[]) {
       remaining_contract: remainingContract,
       retainage_held: retainageHeld,
       unpaid_invoice_balance: unpaidInvoiceBalance,
+      archived_at: row.archived_at || null,
     });
   }
 
@@ -220,42 +221,6 @@ function buildJobListData(rows: any[]) {
     totalPayments,
     totalUnpaidInvoiceBalance,
   };
-}
-
-function getDeleteBlockReason(db: any, jobId: number, tenantId: number): string | null {
-  const incomeCount = db
-    .prepare('SELECT COUNT(*) as total FROM income WHERE job_id = ? AND tenant_id = ?')
-    .get(jobId, tenantId) as { total: number };
-
-  if ((incomeCount?.total || 0) > 0) {
-    return 'This job cannot be deleted because it already has income records.';
-  }
-
-  const expenseCount = db
-    .prepare('SELECT COUNT(*) as total FROM expenses WHERE job_id = ? AND tenant_id = ?')
-    .get(jobId, tenantId) as { total: number };
-
-  if ((expenseCount?.total || 0) > 0) {
-    return 'This job cannot be deleted because it already has expense records.';
-  }
-
-  const timeCount = db
-    .prepare('SELECT COUNT(*) as total FROM time_entries WHERE job_id = ? AND tenant_id = ?')
-    .get(jobId, tenantId) as { total: number };
-
-  if ((timeCount?.total || 0) > 0) {
-    return 'This job cannot be deleted because it already has time entries.';
-  }
-
-  const invoiceCount = db
-    .prepare('SELECT COUNT(*) as total FROM invoices WHERE job_id = ? AND tenant_id = ?')
-    .get(jobId, tenantId) as { total: number };
-
-  if ((invoiceCount?.total || 0) > 0) {
-    return 'This job cannot be deleted because it already has invoices.';
-  }
-
-  return null;
 }
 
 function ensureUniqueJobCode(db: any, tenantId: number, jobCode?: string, ignoreJobId?: number) {
@@ -288,8 +253,9 @@ jobRoutes.get('/jobs', loginRequired, (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();
+  const showArchived = c.req.query('show_archived') === '1';
 
-  const rows = jobs.listWithFinancials(db, tenantId);
+  const rows = jobs.listWithFinancials(db, tenantId, showArchived);
   const summary = buildJobListData(rows);
 
   return renderApp(
@@ -306,6 +272,7 @@ jobRoutes.get('/jobs', loginRequired, (c) => {
       totalPayments={summary.totalPayments}
       totalUnpaidInvoiceBalance={summary.totalUnpaidInvoiceBalance}
       csrfToken={c.get('csrfToken')}
+      showArchived={showArchived}
     />,
   );
 });
@@ -342,7 +309,7 @@ jobRoutes.get('/job/:id', loginRequired, (c) => {
     c,
     'Job Detail',
     <JobDetailPage
-      job={job}
+      job={job as any}
       incomes={incomes}
       expenses={jobExpenses}
       timeEntries={jobTime}
@@ -562,14 +529,14 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
   }
 });
 
-jobRoutes.post('/delete_job/:id', roleRequired('Admin'), (c) => {
+jobRoutes.post('/archive_job/:id', roleRequired('Admin'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
 
-  if (!jobId) {
+  if (!jobId || !currentUser) {
     return c.text('Job not found', 404);
   }
 
@@ -578,53 +545,68 @@ jobRoutes.post('/delete_job/:id', roleRequired('Admin'), (c) => {
     return c.text('Job not found', 404);
   }
 
-  const deleteBlockReason = getDeleteBlockReason(db, jobId, tenantId);
-  if (deleteBlockReason) {
-    const rows = jobs.listWithFinancials(db, tenantId);
-    const summary = buildJobListData(rows);
-
-    return renderApp(
-      c,
-      'Jobs',
-      <JobsListPage
-        jobs={summary.jobList}
-        totalJobs={summary.jobList.length}
-        totalContract={summary.totalContract}
-        totalIncome={summary.totalIncome}
-        totalCost={summary.totalCost}
-        totalProfit={summary.totalProfit}
-        totalInvoiced={summary.totalInvoiced}
-        totalPayments={summary.totalPayments}
-        totalUnpaidInvoiceBalance={summary.totalUnpaidInvoiceBalance}
-        deleteError={deleteBlockReason}
-        csrfToken={c.get('csrfToken')}
-      />,
-      400,
-    );
+  if (job.archived_at) {
+    return c.redirect('/jobs?show_archived=1');
   }
 
-  jobs.remove(db, jobId, tenantId);
+  jobs.archive(db, jobId, tenantId, currentUser.id);
 
-  if (currentUser) {
-    logActivity(db, {
-      tenantId,
-      actorUserId: currentUser.id,
-      eventType: 'job.deleted',
-      entityType: 'job',
-      entityId: jobId,
-      description: `${currentUser.name} deleted job ${job.job_name}.`,
-      metadata: {
-        job_name: job.job_name,
-        job_code: job.job_code ?? null,
-        client_name: job.client_name ?? null,
-        contract_amount: Number(job.contract_amount || 0),
-        status: job.status ?? null,
-      },
-      ipAddress: resolveRequestIp(c),
-    });
-  }
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser.id,
+    eventType: 'job.archived',
+    entityType: 'job',
+    entityId: jobId,
+    description: `${currentUser.name} archived job ${job.job_name}.`,
+    metadata: {
+      job_name: job.job_name,
+      job_code: job.job_code ?? null,
+      client_name: job.client_name ?? null,
+      contract_amount: Number(job.contract_amount || 0),
+      status: job.status ?? null,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
 
   return c.redirect('/jobs');
+});
+
+jobRoutes.post('/restore_job/:id', roleRequired('Admin'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const jobId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!jobId || !currentUser) {
+    return c.text('Job not found', 404);
+  }
+
+  const job = jobs.findById(db, jobId, tenantId);
+  if (!job) {
+    return c.text('Job not found', 404);
+  }
+
+  jobs.restore(db, jobId, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser.id,
+    eventType: 'job.restored',
+    entityType: 'job',
+    entityId: jobId,
+    description: `${currentUser.name} restored job ${job.job_name}.`,
+    metadata: {
+      job_name: job.job_name,
+      job_code: job.job_code ?? null,
+      client_name: job.client_name ?? null,
+      contract_amount: Number(job.contract_amount || 0),
+      status: job.status ?? null,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect('/jobs?show_archived=1');
 });
 
 export default jobRoutes;
