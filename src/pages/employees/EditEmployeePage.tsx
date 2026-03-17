@@ -1,69 +1,81 @@
 import type { FC } from 'hono/jsx';
 
-interface Employee {
+interface EmployeeRecord {
   id: number;
   name: string;
   pay_type: string;
-  hourly_rate: number | string | null;
-  annual_salary: number | string | null;
+  hourly_rate: number | null;
+  annual_salary: number | null;
   active: number;
+  archived_at?: string | null;
 }
 
 interface EditEmployeePageProps {
-  employee: Employee;
-  csrfToken: string;
+  employee: EmployeeRecord;
   error?: string;
   success?: string;
+  csrfToken: string;
 }
 
 export const EditEmployeePage: FC<EditEmployeePageProps> = ({
   employee,
-  csrfToken,
   error,
   success,
+  csrfToken,
 }) => {
-  const hourlyRate =
-    employee.hourly_rate === null || employee.hourly_rate === undefined
-      ? '0'
-      : String(employee.hourly_rate);
-
-  const annualSalary =
-    employee.annual_salary === null || employee.annual_salary === undefined
-      ? '0'
-      : String(employee.annual_salary);
-
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>Edit Employee</h1>
-          <p>Update employee details and pay.</p>
+          <p class="muted">Update employee pay setup and status.</p>
         </div>
         <div class="actions">
           <a class="btn" href="/employees">Back</a>
+
+          {employee.archived_at ? (
+            <form method="post" action={`/restore_employee/${employee.id}`} style="display:inline;">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+              <button class="btn" type="submit">Restore</button>
+            </form>
+          ) : (
+            <form method="post" action={`/archive_employee/${employee.id}`} style="display:inline;">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+              <button class="btn" type="submit">Archive</button>
+            </form>
+          )}
         </div>
       </div>
 
-      <div class="card">
-        {error ? (
-          <div
-            class="badge badge-bad"
-            style="height:auto; padding:10px 12px; margin-bottom:14px; border-radius:12px;"
-          >
-            {error}
-          </div>
-        ) : null}
+      {employee.archived_at ? (
+        <div
+          class="card"
+          style="margin-bottom:14px; border-color:#FDE68A; background:#FFFBEB; color:#92400E;"
+        >
+          This employee is archived. Historical records remain intact, and you can restore this employee at any time.
+        </div>
+      ) : null}
 
-        {success ? (
-          <div
-            class="badge badge-good"
-            style="height:auto; padding:10px 12px; margin-bottom:14px; border-radius:12px;"
-          >
-            {success}
-          </div>
-        ) : null}
+      {error ? (
+        <div
+          class="card"
+          style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;"
+        >
+          {error}
+        </div>
+      ) : null}
 
-        <form method="post">
+      {success ? (
+        <div
+          class="card"
+          style="margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;"
+        >
+          {success}
+        </div>
+      ) : null}
+
+      <div class="card" style="max-width:760px;">
+        <form method="post" action={`/edit_employee/${employee.id}`}>
           <input type="hidden" name="csrf_token" value={csrfToken} />
 
           <label>Name</label>
@@ -75,25 +87,32 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
             <option value="Salary" selected={employee.pay_type === 'Salary'}>Salary</option>
           </select>
 
-          <div class="row">
-            <div>
-              <label>Hourly Rate</label>
-              <input name="hourly_rate" type="number" step="0.01" min="0" value={hourlyRate} />
-            </div>
-            <div>
-              <label>Annual Salary</label>
-              <input name="annual_salary" type="number" step="0.01" min="0" value={annualSalary} />
-            </div>
-          </div>
+          <label>Hourly Rate</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            name="hourly_rate"
+            value={String(employee.hourly_rate ?? 0)}
+          />
 
-          <label style="margin-top:14px;">Active</label>
+          <label>Annual Salary</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            name="annual_salary"
+            value={String(employee.annual_salary ?? 0)}
+          />
+
+          <label>Status</label>
           <select name="active">
-            <option value="1" selected={!!employee.active}>Active</option>
-            <option value="0" selected={!employee.active}>Inactive</option>
+            <option value="1" selected={employee.active === 1}>Active</option>
+            <option value="0" selected={employee.active === 0}>Inactive</option>
           </select>
 
-          <div style="margin-top:16px;" class="actions">
-            <button class="btn btn-primary" type="submit">Save</button>
+          <div class="actions" style="margin-top:16px;">
+            <button class="btn btn-primary" type="submit">Save Changes</button>
           </div>
         </form>
       </div>

@@ -112,7 +112,7 @@ function buildEmployeeFormData(source: Record<string, unknown>) {
 
 function getEmployeeById(db: any, employeeId: number, tenantId: number) {
   return db.prepare(`
-    SELECT id, name, pay_type, hourly_rate, annual_salary, active
+    SELECT id, name, pay_type, hourly_rate, annual_salary, active, archived_at, archived_by_user_id
     FROM employees
     WHERE id = ? AND tenant_id = ?
   `).get(employeeId, tenantId) as
@@ -123,6 +123,8 @@ function getEmployeeById(db: any, employeeId: number, tenantId: number) {
         hourly_rate: number | null;
         annual_salary: number | null;
         active: number;
+        archived_at: string | null;
+        archived_by_user_id: number | null;
       }
     | undefined;
 }
@@ -133,13 +135,18 @@ employeeRoutes.get('/employees', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
   const tenantId = tenant.id;
+  const showArchived = c.req.query('show_archived') === '1';
 
   const db = getDb();
   const employees = db.prepare(`
-    SELECT id, name, pay_type, hourly_rate, annual_salary, active
+    SELECT id, name, pay_type, hourly_rate, annual_salary, active, archived_at
     FROM employees
     WHERE tenant_id = ?
-    ORDER BY active DESC, name ASC
+      ${showArchived ? 'AND archived_at IS NOT NULL' : 'AND archived_at IS NULL'}
+    ORDER BY
+      CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END,
+      active DESC,
+      name ASC
   `).all(tenantId) as Array<{
     id: number;
     name: string;
@@ -147,12 +154,17 @@ employeeRoutes.get('/employees', roleRequired('Admin', 'Manager'), (c) => {
     hourly_rate: number | null;
     annual_salary: number | null;
     active: number;
+    archived_at: string | null;
   }>;
 
   return renderApp(
     c,
     'Employees',
-    <EmployeesPage employees={employees} csrfToken={c.get('csrfToken')} />
+    <EmployeesPage
+      employees={employees}
+      csrfToken={c.get('csrfToken')}
+      showArchived={showArchived}
+    />
   );
 });
 
@@ -186,8 +198,10 @@ employeeRoutes.post('/add_employee', roleRequired('Admin', 'Manager'), async (c)
 
     const db = getDb();
     const result = db.prepare(`
-      INSERT INTO employees (name, pay_type, hourly_rate, annual_salary, active, tenant_id)
-      VALUES (?, ?, ?, ?, 1, ?)
+      INSERT INTO employees (
+        name, pay_type, hourly_rate, annual_salary, active, tenant_id, archived_at, archived_by_user_id
+      )
+      VALUES (?, ?, ?, ?, 1, ?, NULL, NULL)
     `).run(
       normalized.name,
       normalized.pay_type,
@@ -366,6 +380,99 @@ employeeRoutes.post('/edit_employee/:id', roleRequired('Admin', 'Manager'), asyn
       400,
     );
   }
+});
+
+employeeRoutes.post('/archive_employee/:id', roleRequired('Admin'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+  const tenantId = tenant.id;
+  const employeeId = parsePositiveInt(c.req.param('id'));
+
+  if (!employeeId) {
+    return c.text('Employee not found', 404);
+  }
+
+  const db = getDb();
+  const employee = getEmployeeById(db, employeeId, tenantId);
+
+  if (!employee) {
+    return c.text('Employee not found', 404);
+  }
+
+  if (employee.archived_at) {
+    return c.redirect('/employees?show_archived=1');
+  }
+
+  db.prepare(`
+    UPDATE employees
+    SET archived_at = CURRENT_TIMESTAMP,
+        archived_by_user_id = ?,
+        active = 0
+    WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+  `).run(currentUser.id, employeeId, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser.id,
+    eventType: 'employee.archived',
+    entityType: 'employee',
+    entityId: employeeId,
+    description: `${currentUser.name} archived employee ${employee.name}.`,
+    metadata: {
+      name: employee.name,
+      pay_type: employee.pay_type,
+      hourly_rate: Number(employee.hourly_rate || 0),
+      annual_salary: Number(employee.annual_salary || 0),
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect('/employees');
+});
+
+employeeRoutes.post('/restore_employee/:id', roleRequired('Admin'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+  const tenantId = tenant.id;
+  const employeeId = parsePositiveInt(c.req.param('id'));
+
+  if (!employeeId) {
+    return c.text('Employee not found', 404);
+  }
+
+  const db = getDb();
+  const employee = getEmployeeById(db, employeeId, tenantId);
+
+  if (!employee) {
+    return c.text('Employee not found', 404);
+  }
+
+  db.prepare(`
+    UPDATE employees
+    SET archived_at = NULL,
+        archived_by_user_id = NULL
+    WHERE id = ? AND tenant_id = ?
+  `).run(employeeId, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser.id,
+    eventType: 'employee.restored',
+    entityType: 'employee',
+    entityId: employeeId,
+    description: `${currentUser.name} restored employee ${employee.name}.`,
+    metadata: {
+      name: employee.name,
+      pay_type: employee.pay_type,
+      hourly_rate: Number(employee.hourly_rate || 0),
+      annual_salary: Number(employee.annual_salary || 0),
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect('/employees?show_archived=1');
 });
 
 export default employeeRoutes;

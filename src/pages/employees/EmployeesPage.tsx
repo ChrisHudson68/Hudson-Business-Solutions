@@ -1,32 +1,41 @@
 import type { FC } from 'hono/jsx';
 
-interface Employee {
+interface EmployeeRow {
   id: number;
   name: string;
   pay_type: string;
   hourly_rate: number | null;
   annual_salary: number | null;
   active: number;
+  archived_at?: string | null;
 }
 
 interface EmployeesPageProps {
-  employees: Employee[];
+  employees: EmployeeRow[];
   csrfToken: string;
+  showArchived?: boolean;
 }
 
-function formatCurrency(value: number): string {
+function formatMoney(value: number): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export const EmployeesPage: FC<EmployeesPageProps> = ({ employees }) => {
+export const EmployeesPage: FC<EmployeesPageProps> = ({
+  employees,
+  csrfToken,
+  showArchived,
+}) => {
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>Employees</h1>
-          <p>Manage your team and pay rates.</p>
+          <p class="muted">Manage pay setup and employee status.</p>
         </div>
         <div class="actions">
+          <a class="btn" href={showArchived ? '/employees' : '/employees?show_archived=1'}>
+            {showArchived ? 'Hide Archived' : 'Show Archived'}
+          </a>
           <a class="btn btn-primary" href="/add_employee">Add Employee</a>
         </div>
       </div>
@@ -38,41 +47,68 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({ employees }) => {
               <tr>
                 <th>Name</th>
                 <th>Pay Type</th>
-                <th class="right">Rate</th>
-                <th class="right">Status</th>
+                <th class="right">Rate / Salary</th>
+                <th>Status</th>
                 <th class="right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {employees.length > 0 ? (
-                employees.map((e) => (
+                employees.map((employee) => (
                   <tr>
-                    <td><b>{e.name}</b></td>
-                    <td>{e.pay_type}</td>
-                    <td class="right">
-                      {e.pay_type === 'Hourly'
-                        ? `$${formatCurrency(e.hourly_rate || 0)}/hr`
-                        : `$${formatCurrency(e.annual_salary || 0)}/yr`}
+                    <td>
+                      <div><b>{employee.name}</b></div>
+                      <div class="muted">
+                        {employee.archived_at ? 'Archived' : employee.active ? 'Active record' : 'Inactive record'}
+                      </div>
                     </td>
+                    <td>{employee.pay_type}</td>
                     <td class="right">
-                      {e.active ? (
+                      {employee.pay_type === 'Salary'
+                        ? `$${formatMoney(Number(employee.annual_salary || 0))}/yr`
+                        : `$${formatMoney(Number(employee.hourly_rate || 0))}/hr`}
+                    </td>
+                    <td>
+                      {employee.archived_at ? (
+                        <span class="badge badge-warn">Archived</span>
+                      ) : employee.active ? (
                         <span class="badge badge-good">Active</span>
                       ) : (
-                        <span class="badge badge-bad">Inactive</span>
+                        <span class="badge">Inactive</span>
                       )}
                     </td>
                     <td class="right">
-                      <a class="btn" href={`/edit_employee/${e.id}`}>Edit</a>
+                      <div class="actions" style="justify-content:flex-end;">
+                        <a class="btn" href={`/edit_employee/${employee.id}`}>Edit</a>
+
+                        {employee.archived_at ? (
+                          <form method="post" action={`/restore_employee/${employee.id}`} style="display:inline;">
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
+                            <button class="btn" type="submit">Restore</button>
+                          </form>
+                        ) : (
+                          <form method="post" action={`/archive_employee/${employee.id}`} style="display:inline;">
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
+                            <button class="btn" type="submit">Archive</button>
+                          </form>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colspan={5} class="muted">No employees yet.</td>
+                  <td colspan={5} class="muted">
+                    {showArchived ? 'No archived employees found.' : 'No active employees found.'}
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        <div class="muted" style="margin-top:12px;">
+          Archived employees are removed from normal operations but preserved for historical records and recovery.
         </div>
       </div>
     </div>
