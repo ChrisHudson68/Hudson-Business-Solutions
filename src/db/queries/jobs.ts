@@ -26,15 +26,32 @@ export function listWithFinancials(db: DB, tenantId: number) {
   `).all(tenantId) as JobWithFinancials[];
 }
 
+export function findWithFinancialsById(db: DB, jobId: number, tenantId: number) {
+  return db.prepare(`
+    SELECT j.id, j.job_name, j.job_code, j.client_name, j.contract_amount, j.retainage_percent,
+           j.start_date, j.status, j.tenant_id,
+      (SELECT COALESCE(SUM(i.amount), 0) FROM income i WHERE i.job_id = j.id AND i.tenant_id = j.tenant_id) AS total_income,
+      (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.job_id = j.id AND e.tenant_id = j.tenant_id) AS total_expenses,
+      (SELECT COALESCE(SUM(t.labor_cost), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_labor,
+      (SELECT COALESCE(SUM(t.hours), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_hours,
+      (SELECT COALESCE(SUM(inv.amount), 0) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_invoiced,
+      (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN invoices inv ON inv.id = p.invoice_id WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
+      (SELECT COUNT(*) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id AND inv.status = 'Unpaid') AS unpaid_invoices
+    FROM jobs j
+    WHERE j.id = ? AND j.tenant_id = ?
+    LIMIT 1
+  `).get(jobId, tenantId) as JobWithFinancials | undefined;
+}
+
 export function listByTenant(db: DB, tenantId: number) {
   return db.prepare(
-    'SELECT id, job_name, job_code, client_name, contract_amount, retainage_percent, start_date, status FROM jobs WHERE tenant_id = ? ORDER BY job_name ASC'
+    'SELECT id, job_name, job_code, client_name, contract_amount, retainage_percent, start_date, status, tenant_id FROM jobs WHERE tenant_id = ? ORDER BY job_name ASC'
   ).all(tenantId) as Job[];
 }
 
 export function listByTenantSorted(db: DB, tenantId: number) {
   return db.prepare(`
-    SELECT id, job_name, job_code, client_name, contract_amount, retainage_percent, start_date, status
+    SELECT id, job_name, job_code, client_name, contract_amount, retainage_percent, start_date, status, tenant_id
     FROM jobs WHERE tenant_id = ?
     ORDER BY
       CASE
@@ -110,6 +127,10 @@ export function update(db: DB, jobId: number, tenantId: number, data: {
   );
 }
 
+export function remove(db: DB, jobId: number, tenantId: number) {
+  db.prepare('DELETE FROM jobs WHERE id = ? AND tenant_id = ?').run(jobId, tenantId);
+}
+
 export function deleteWithCascade(db: DB, jobId: number, tenantId: number) {
   const deleteAll = db.transaction(() => {
     db.prepare('DELETE FROM income WHERE job_id = ? AND tenant_id = ?').run(jobId, tenantId);
@@ -123,3 +144,16 @@ export function deleteWithCascade(db: DB, jobId: number, tenantId: number) {
   });
   deleteAll();
 }
+
+export default {
+  listWithFinancials,
+  findWithFinancialsById,
+  listByTenant,
+  listByTenantSorted,
+  findById,
+  findByCode,
+  create,
+  update,
+  remove,
+  deleteWithCascade,
+};

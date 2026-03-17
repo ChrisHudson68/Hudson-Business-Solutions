@@ -354,6 +354,7 @@ function isActive(path: string, patterns: string[]): boolean {
 const navItems = [
   { label: 'Overview', href: '/admin', patterns: ['/admin'] },
   { label: 'Tenants', href: '/admin/tenants', patterns: ['/admin/tenants'] },
+  { label: 'Activity', href: '/admin/activity', patterns: ['/admin/activity'] },
 ];
 
 export const AdminLayout: FC<AdminLayoutProps> = ({
@@ -415,7 +416,7 @@ export const AdminLayout: FC<AdminLayoutProps> = ({
 
               <div class="top-actions">
                 <a class="btn" href="/">Main Site</a>
-                <a class="btn btn-primary" href="/admin/tenants">View Tenants</a>
+                <a class="btn btn-primary" href="/admin/activity">View Activity</a>
               </div>
             </div>
 

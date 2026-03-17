@@ -17,6 +17,7 @@ import { AdminLoginPage } from '../pages/admin/AdminLoginPage.js';
 import { AdminDashboardPage } from '../pages/admin/AdminDashboardPage.js';
 import { AdminTenantsPage } from '../pages/admin/AdminTenantsPage.js';
 import { AdminTenantDetailPage } from '../pages/admin/AdminTenantDetailPage.js';
+import { AdminActivityPage } from '../pages/admin/AdminActivityPage.js';
 
 function renderPublicLayout(children: any) {
   const env = getEnv();
@@ -102,6 +103,12 @@ function parseTenantId(c: any): number | null {
   return tenantId;
 }
 
+function parsePositiveInt(value: string): number | null {
+  if (!/^\d+$/.test(String(value || '').trim())) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 function toSqlDate(value: Date): string {
   return value.toISOString().slice(0, 19).replace('T', ' ');
 }
@@ -146,7 +153,14 @@ function redirectTenantDetail(tenantId: number, query: string) {
   return `/admin/tenants/${tenantId}${query ? `?${query}` : ''}`;
 }
 
-export const platformAdminRoutes = new Hono<AppEnv>();
+function titleizeEventType(value: string): string {
+  return value
+    .split('.')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' / ');
+}
+
+const platformAdminRoutes = new Hono<AppEnv>();
 
 platformAdminRoutes.get('/admin/login', (c) => {
   const subdomainBlock = requireBaseDomain(c);
@@ -259,6 +273,94 @@ platformAdminRoutes.get('/admin', platformAdminRequired, (c) => {
   );
 });
 
+platformAdminRoutes.get('/admin/activity', platformAdminRequired, (c) => {
+  const db = getDb();
+
+  const selectedTenantId = String(c.req.query('tenant_id') || '').trim();
+  const selectedEventType = String(c.req.query('event_type') || '').trim();
+  const tenantId = selectedTenantId ? parsePositiveInt(selectedTenantId) : null;
+
+  const whereParts = ['1 = 1'];
+  const params: Array<string | number> = [];
+
+  if (tenantId) {
+    whereParts.push('a.tenant_id = ?');
+    params.push(tenantId);
+  }
+
+  if (selectedEventType) {
+    whereParts.push('a.event_type = ?');
+    params.push(selectedEventType);
+  }
+
+  const rows = db.prepare(`
+    SELECT
+      a.id,
+      a.created_at,
+      a.tenant_id,
+      t.name AS tenant_name,
+      t.subdomain AS tenant_subdomain,
+      u.name AS actor_name,
+      u.email AS actor_email,
+      a.event_type,
+      a.entity_type,
+      a.entity_id,
+      a.description,
+      a.ip_address,
+      a.metadata_json
+    FROM activity_logs a
+    JOIN tenants t
+      ON t.id = a.tenant_id
+    LEFT JOIN users u
+      ON u.id = a.actor_user_id
+     AND u.tenant_id = a.tenant_id
+    WHERE ${whereParts.join(' AND ')}
+    ORDER BY a.id DESC
+    LIMIT 300
+  `).all(...params) as Array<{
+    id: number;
+    created_at: string;
+    tenant_id: number;
+    tenant_name: string;
+    tenant_subdomain: string;
+    actor_name: string | null;
+    actor_email: string | null;
+    event_type: string;
+    entity_type: string | null;
+    entity_id: number | null;
+    description: string;
+    ip_address: string | null;
+    metadata_json: string | null;
+  }>;
+
+  const tenants = db.prepare(`
+    SELECT id, name, subdomain
+    FROM tenants
+    ORDER BY name COLLATE NOCASE ASC
+  `).all() as Array<{ id: number; name: string; subdomain: string }>;
+
+  const eventTypes = db.prepare(`
+    SELECT DISTINCT event_type
+    FROM activity_logs
+    ORDER BY event_type ASC
+  `).all() as Array<{ event_type: string }>;
+
+  return renderAdminLayout(
+    c,
+    'Cross-tenant activity visibility',
+    <AdminActivityPage
+      rows={rows}
+      selectedTenantId={selectedTenantId}
+      selectedEventType={selectedEventType}
+      tenants={tenants}
+      eventTypes={eventTypes.map((row) => ({
+        value: row.event_type,
+        label: titleizeEventType(row.event_type),
+      }))}
+    />,
+  );
+});
+
 platformAdminRoutes.get('/admin/tenants', platformAdminRequired, (c) => {
   const db = getDb();
 
@@ -353,12 +455,18 @@ platformAdminRoutes.get('/admin/tenants/:id', platformAdminRequired, (c) => {
   return renderAdminLayout(
     c,
     `Tenant Detail: ${tenant.name}`,
-    <AdminTenantDetailPage
-      tenant={tenant}
-      workspaceLoginUrl={buildTenantLoginUrl(tenant.subdomain)}
-      csrfToken={c.get('csrfToken')}
-      notice={resolveNotice(c)}
-    />,
+    <div class="grid" style="gap:14px;">
+      <div style="display:flex; justify-content:flex-end;">
+        <a class="btn" href={`/admin/activity?tenant_id=${tenant.id}`}>View Tenant Activity</a>
+      </div>
+
+      <AdminTenantDetailPage
+        tenant={tenant}
+        workspaceLoginUrl={buildTenantLoginUrl(tenant.subdomain)}
+        csrfToken={c.get('csrfToken')}
+        notice={resolveNotice(c)}
+      />
+    </div>,
   );
 });
 
@@ -490,3 +598,6 @@ platformAdminRoutes.post('/admin/tenants/:id/billing/extend-grace', platformAdmi
 
   return c.redirect(redirectTenantDetail(tenantId, 'updated=grace'));
 });
+
+export { platformAdminRoutes };
+export default platformAdminRoutes;
