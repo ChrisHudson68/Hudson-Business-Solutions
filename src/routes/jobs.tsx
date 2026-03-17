@@ -7,6 +7,7 @@ import * as expenses from '../db/queries/expenses.js';
 import * as timeEntries from '../db/queries/time-entries.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { JobsListPage } from '../pages/jobs/JobsListPage.js';
 import { JobDetailPage } from '../pages/jobs/JobDetailPage.js';
 import { AddJobPage } from '../pages/jobs/AddJobPage.js';
@@ -238,12 +239,12 @@ function getDeleteBlockReason(db: any, jobId: number, tenantId: number): string 
     return 'This job cannot be deleted because it already has expense records.';
   }
 
-  const timeEntryCount = db
+  const timeCount = db
     .prepare('SELECT COUNT(*) as total FROM time_entries WHERE job_id = ? AND tenant_id = ?')
     .get(jobId, tenantId) as { total: number };
 
-  if ((timeEntryCount?.total || 0) > 0) {
-    return 'This job cannot be deleted because it already has timesheet entries.';
+  if ((timeCount?.total || 0) > 0) {
+    return 'This job cannot be deleted because it already has time entries.';
   }
 
   const invoiceCount = db
@@ -257,29 +258,31 @@ function getDeleteBlockReason(db: any, jobId: number, tenantId: number): string 
   return null;
 }
 
-function ensureUniqueJobCode(db: any, tenantId: number, jobCode: string | undefined, ignoreJobId?: number) {
+function ensureUniqueJobCode(db: any, tenantId: number, jobCode?: string, ignoreJobId?: number) {
   if (!jobCode) return;
 
-  const existing = ignoreJobId
+  const row = ignoreJobId
     ? db.prepare(`
         SELECT id
         FROM jobs
-        WHERE tenant_id = ? AND UPPER(job_code) = UPPER(?) AND id != ?
+        WHERE tenant_id = ? AND upper(job_code) = upper(?) AND id != ?
         LIMIT 1
-      `).get(tenantId, jobCode, ignoreJobId) as { id: number } | undefined
+      `).get(tenantId, jobCode, ignoreJobId)
     : db.prepare(`
         SELECT id
         FROM jobs
-        WHERE tenant_id = ? AND UPPER(job_code) = UPPER(?)
+        WHERE tenant_id = ? AND upper(job_code) = upper(?)
         LIMIT 1
-      `).get(tenantId, jobCode) as { id: number } | undefined;
+      `).get(tenantId, jobCode);
 
-  if (existing) {
-    throw new Error('That job code already exists for this company.');
+  if (row) {
+    throw new Error('That job code already exists.');
   }
 }
 
 export const jobRoutes = new Hono<AppEnv>();
+
+jobRoutes.get('/', loginRequired, (c) => c.redirect('/dashboard'));
 
 jobRoutes.get('/jobs', loginRequired, (c) => {
   const tenant = c.get('tenant');
@@ -317,62 +320,38 @@ jobRoutes.get('/job/:id', loginRequired, (c) => {
     return c.text('Job not found', 404);
   }
 
-  const job = jobs.findById(db, jobId, tenantId);
+  const job = jobs.findWithFinancialsById(db, jobId, tenantId);
   if (!job) {
     return c.text('Job not found', 404);
   }
 
-  const incomeRows = income.listByJob(db, jobId, tenantId);
-  const totalIncomeVal = Number(income.sumByJob(db, jobId, tenantId) || 0);
+  const incomes = income.listByJob(db, jobId, tenantId);
+  const jobExpenses = expenses.listByJob(db, jobId, tenantId);
+  const jobTime = timeEntries.listByJob(db, jobId, tenantId);
 
-  const expenseRows = expenses.listByJob(db, jobId, tenantId);
-  const baseExpenses = Number(expenses.sumByJob(db, jobId, tenantId) || 0);
-
-  const laborSums = timeEntries.sumByJob(db, jobId, tenantId);
-  const laborHours = Number(laborSums.totalHours || 0);
-  const laborCost = Number(laborSums.totalCost || 0);
-
-  const totalExpenses = baseExpenses + laborCost;
-  const profit = totalIncomeVal - totalExpenses;
-
-  const contractAmount = Number(job.contract_amount || 0);
-  const retainagePercent = Number(job.retainage_percent || 0);
-  const remainingContract = contractAmount - totalIncomeVal;
-  const profitMargin = totalIncomeVal > 0 ? (profit / totalIncomeVal) * 100 : 0;
-  const retainageHeld = retainagePercent > 0 ? (totalIncomeVal * retainagePercent) / 100 : 0;
-
-  const invoiceTotal = db.prepare(
-    'SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE job_id = ? AND tenant_id = ?'
-  ).get(jobId, tenantId) as { total: number };
-
-  const paymentsTotal = db.prepare(
-    'SELECT COALESCE(SUM(p.amount), 0) as total FROM payments p JOIN invoices i ON p.invoice_id = i.id WHERE i.job_id = ? AND p.tenant_id = ? AND i.tenant_id = ?'
-  ).get(jobId, tenantId, tenantId) as { total: number };
-
-  const unpaidInvoiceBalance = Math.max(
-    Number(invoiceTotal.total || 0) - Number(paymentsTotal.total || 0),
-    0,
-  );
+  const totalIncome = Number(job.total_income || 0);
+  const totalExpenses = Number(job.total_expenses || 0);
+  const totalLabor = Number(job.total_labor || 0);
+  const totalCosts = totalExpenses + totalLabor;
+  const profit = totalIncome - totalCosts;
+  const retainageHeld = Number(job.retainage_percent || 0) > 0
+    ? (totalIncome * Number(job.retainage_percent || 0)) / 100
+    : 0;
 
   return renderApp(
     c,
     'Job Detail',
     <JobDetailPage
       job={job}
-      incomeRows={incomeRows}
-      expenseRows={expenseRows}
-      totalIncome={totalIncomeVal}
-      baseExpenses={baseExpenses}
-      laborHours={laborHours}
-      laborCost={laborCost}
+      incomes={incomes}
+      expenses={jobExpenses}
+      timeEntries={jobTime}
+      totalIncome={totalIncome}
       totalExpenses={totalExpenses}
+      totalLabor={totalLabor}
+      totalCosts={totalCosts}
       profit={profit}
-      profitMargin={profitMargin}
-      remainingContract={remainingContract}
       retainageHeld={retainageHeld}
-      invoiceTotal={Number(invoiceTotal.total || 0)}
-      paymentsTotal={Number(paymentsTotal.total || 0)}
-      unpaidInvoiceBalance={unpaidInvoiceBalance}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -399,6 +378,7 @@ jobRoutes.get('/add_job', roleRequired('Admin', 'Manager'), (c) => {
 
 jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
+  const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const db = getDb();
   const body = (await c.req.parseBody()) as Record<string, unknown>;
@@ -415,7 +395,7 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
 
     ensureUniqueJobCode(db, tenantId, jobCode);
 
-    jobs.create(db, tenantId, {
+    const jobId = jobs.create(db, tenantId, {
       job_name: jobName,
       job_code: jobCode,
       client_name: clientName,
@@ -424,6 +404,27 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
       start_date: startDate,
       status,
     });
+
+    if (currentUser) {
+      logActivity(db, {
+        tenantId,
+        actorUserId: currentUser.id,
+        eventType: 'job.created',
+        entityType: 'job',
+        entityId: jobId,
+        description: `${currentUser.name} created job ${jobName}.`,
+        metadata: {
+          job_name: jobName,
+          job_code: jobCode ?? null,
+          client_name: clientName,
+          contract_amount: contractAmount,
+          retainage_percent: retainagePercent,
+          start_date: startDate ?? null,
+          status,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
 
     return c.redirect('/jobs');
   } catch (error) {
@@ -465,6 +466,7 @@ jobRoutes.get('/edit_job/:id', roleRequired('Admin', 'Manager'), (c) => {
 
 jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
+  const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
@@ -492,6 +494,16 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
 
     ensureUniqueJobCode(db, tenantId, jobCode, jobId);
 
+    const previousValues = {
+      job_name: job.job_name ?? null,
+      job_code: job.job_code ?? null,
+      client_name: job.client_name ?? null,
+      contract_amount: Number(job.contract_amount || 0),
+      retainage_percent: Number(job.retainage_percent || 0),
+      start_date: job.start_date ?? null,
+      status: job.status ?? null,
+    };
+
     jobs.update(db, jobId, tenantId, {
       job_name: jobName,
       job_code: jobCode,
@@ -501,6 +513,30 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
       start_date: startDate,
       status,
     });
+
+    if (currentUser) {
+      logActivity(db, {
+        tenantId,
+        actorUserId: currentUser.id,
+        eventType: 'job.updated',
+        entityType: 'job',
+        entityId: jobId,
+        description: `${currentUser.name} updated job ${jobName}.`,
+        metadata: {
+          before: previousValues,
+          after: {
+            job_name: jobName,
+            job_code: jobCode ?? null,
+            client_name: clientName,
+            contract_amount: contractAmount,
+            retainage_percent: retainagePercent,
+            start_date: startDate ?? null,
+            status,
+          },
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
 
     return c.redirect('/jobs');
   } catch (error) {
@@ -528,6 +564,7 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
 
 jobRoutes.post('/delete_job/:id', roleRequired('Admin'), (c) => {
   const tenant = c.get('tenant');
+  const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
@@ -559,14 +596,34 @@ jobRoutes.post('/delete_job/:id', roleRequired('Admin'), (c) => {
         totalInvoiced={summary.totalInvoiced}
         totalPayments={summary.totalPayments}
         totalUnpaidInvoiceBalance={summary.totalUnpaidInvoiceBalance}
+        deleteError={deleteBlockReason}
         csrfToken={c.get('csrfToken')}
-        error={deleteBlockReason}
       />,
       400,
     );
   }
 
-  jobs.deleteWithCascade(db, jobId, tenantId);
+  jobs.remove(db, jobId, tenantId);
+
+  if (currentUser) {
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'job.deleted',
+      entityType: 'job',
+      entityId: jobId,
+      description: `${currentUser.name} deleted job ${job.job_name}.`,
+      metadata: {
+        job_name: job.job_name,
+        job_code: job.job_code ?? null,
+        client_name: job.client_name ?? null,
+        contract_amount: Number(job.contract_amount || 0),
+        status: job.status ?? null,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+  }
+
   return c.redirect('/jobs');
 });
 

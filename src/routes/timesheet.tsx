@@ -4,6 +4,7 @@ import { getDb } from '../db/connection.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { TimesheetPage } from '../pages/timesheet/TimesheetPage.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
   return c.html(
@@ -909,6 +910,25 @@ timesheetRoutes.post('/timeclock/request-edit/:id', loginRequired, async (c) => 
       SET approval_status = 'pending_edit'
       WHERE id = ? AND tenant_id = ?
     `).run(timeEntryId, tenant.id);
+    
+    logActivity(db, {
+      tenantId: tenant.id,
+      actorUserId: currentUser.id,
+      eventType: 'time.edit_requested',
+      entityType: 'time_entry',
+      entityId: timeEntryId,
+      description: `${currentUser.name} requested a time edit for entry #${timeEntryId}.`,
+      metadata: {
+        employee_id: employeeId,
+        proposed_date: proposedDate,
+        proposed_clock_in_at: clockInUtc,
+        proposed_clock_out_at: clockOutUtc,
+        proposed_hours: hours,
+        proposed_note: note,
+        request_reason: requestReason,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
 
     const currentEmployeeContext = link?.employee_name
       ? { employeeId, employeeName: link.employee_name }
@@ -1051,6 +1071,26 @@ timesheetRoutes.post('/timeclock/edit-request/:id/approve', roleRequired('Admin'
     WHERE id = ? AND tenant_id = ?
   `).run(currentUser.id, requestId, tenant.id);
 
+  logActivity(db, {
+    tenantId: tenant.id,
+    actorUserId: currentUser.id,
+    eventType: 'time.edit_approved',
+    entityType: 'time_entry',
+    entityId: request.time_entry_id,
+    description: `${currentUser.name} approved a time edit for entry #${request.time_entry_id}.`,
+    metadata: {
+      request_id: requestId,
+      employee_id: request.employee_id,
+      proposed_job_id: request.proposed_job_id,
+      proposed_date: request.proposed_date,
+      proposed_clock_in_at: request.proposed_clock_in_at,
+      proposed_clock_out_at: request.proposed_clock_out_at,
+      proposed_hours: request.proposed_hours,
+      proposed_note: request.proposed_note,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
   return c.redirect('/timesheet');
 });
 
@@ -1090,6 +1130,20 @@ timesheetRoutes.post('/timeclock/edit-request/:id/reject', roleRequired('Admin',
     SET approval_status = 'approved'
     WHERE id = ? AND tenant_id = ?
   `).run(request.time_entry_id, tenant.id);
+
+  logActivity(db, {
+    tenantId: tenant.id,
+    actorUserId: currentUser.id,
+    eventType: 'time.edit_rejected',
+    entityType: 'time_entry',
+    entityId: request.time_entry_id,
+    description: `${currentUser.name} rejected a time edit for entry #${request.time_entry_id}.`,
+    metadata: {
+      request_id: requestId,
+      time_entry_id: request.time_entry_id,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
 
   return c.redirect('/timesheet');
 });

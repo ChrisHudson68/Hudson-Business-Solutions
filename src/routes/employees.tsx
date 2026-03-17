@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
 import { roleRequired } from '../middleware/auth.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { EmployeesPage } from '../pages/employees/EmployeesPage.js';
 import { AddEmployeePage } from '../pages/employees/AddEmployeePage.js';
 import { EditEmployeePage } from '../pages/employees/EditEmployeePage.js';
@@ -78,18 +79,7 @@ function parseNonNegativeMoney(value: unknown, fieldLabel: string): number {
   return Number(parsed.toFixed(2));
 }
 
-function buildEmployeeFormData(source: Record<string, unknown>) {
-  return {
-    name: String(source.name ?? ''),
-    pay_type: String(source.pay_type ?? 'Hourly'),
-    hourly_rate: String(source.hourly_rate ?? '0'),
-    annual_salary: String(source.annual_salary ?? '0'),
-    active: String(source.active ?? '1'),
-  };
-}
-
 function normalizeEmployeeInput(body: Record<string, unknown>) {
-  const name = requireName(body.name);
   const payType = parsePayType(body.pay_type);
   const hourlyRate = parseNonNegativeMoney(body.hourly_rate, 'Hourly rate');
   const annualSalary = parseNonNegativeMoney(body.annual_salary, 'Annual salary');
@@ -99,14 +89,24 @@ function normalizeEmployeeInput(body: Record<string, unknown>) {
   }
 
   if (payType === 'Salary' && annualSalary <= 0) {
-    throw new Error('Salary employees must have an annual salary greater than 0.');
+    throw new Error('Salaried employees must have an annual salary greater than 0.');
   }
 
   return {
-    name,
+    name: requireName(body.name),
     pay_type: payType,
     hourly_rate: payType === 'Hourly' ? hourlyRate : 0,
     annual_salary: payType === 'Salary' ? annualSalary : 0,
+  };
+}
+
+function buildEmployeeFormData(source: Record<string, unknown>) {
+  return {
+    name: String(source.name ?? ''),
+    pay_type: String(source.pay_type ?? 'Hourly'),
+    hourly_rate: String(source.hourly_rate ?? '0'),
+    annual_salary: String(source.annual_salary ?? '0'),
+    active: String(source.active ?? '1'),
   };
 }
 
@@ -140,7 +140,14 @@ employeeRoutes.get('/employees', roleRequired('Admin', 'Manager'), (c) => {
     FROM employees
     WHERE tenant_id = ?
     ORDER BY active DESC, name ASC
-  `).all(tenantId) as any[];
+  `).all(tenantId) as Array<{
+    id: number;
+    name: string;
+    pay_type: string;
+    hourly_rate: number | null;
+    annual_salary: number | null;
+    active: number;
+  }>;
 
   return renderApp(
     c,
@@ -167,7 +174,8 @@ employeeRoutes.get('/add_employee', roleRequired('Admin', 'Manager'), (c) => {
 
 employeeRoutes.post('/add_employee', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
-  if (!tenant) return c.redirect('/login');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
   const tenantId = tenant.id;
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
@@ -177,7 +185,7 @@ employeeRoutes.post('/add_employee', roleRequired('Admin', 'Manager'), async (c)
     const normalized = normalizeEmployeeInput(body);
 
     const db = getDb();
-    db.prepare(`
+    const result = db.prepare(`
       INSERT INTO employees (name, pay_type, hourly_rate, annual_salary, active, tenant_id)
       VALUES (?, ?, ?, ?, 1, ?)
     `).run(
@@ -187,6 +195,23 @@ employeeRoutes.post('/add_employee', roleRequired('Admin', 'Manager'), async (c)
       normalized.annual_salary,
       tenantId,
     );
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'employee.created',
+      entityType: 'employee',
+      entityId: Number(result.lastInsertRowid),
+      description: `${currentUser.name} created employee ${normalized.name}.`,
+      metadata: {
+        name: normalized.name,
+        pay_type: normalized.pay_type,
+        hourly_rate: normalized.hourly_rate,
+        annual_salary: normalized.annual_salary,
+        active: 1,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
 
     return c.redirect('/employees');
   } catch (error) {
@@ -230,7 +255,8 @@ employeeRoutes.get('/edit_employee/:id', roleRequired('Admin', 'Manager'), (c) =
 
 employeeRoutes.post('/edit_employee/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
-  if (!tenant) return c.redirect('/login');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
   const tenantId = tenant.id;
   const employeeId = parsePositiveInt(c.req.param('id'));
 
@@ -252,6 +278,14 @@ employeeRoutes.post('/edit_employee/:id', roleRequired('Admin', 'Manager'), asyn
     const normalized = normalizeEmployeeInput(body);
     const active = String(body.active ?? '1') === '1' ? 1 : 0;
 
+    const before = {
+      name: existingEmployee.name,
+      pay_type: existingEmployee.pay_type,
+      hourly_rate: Number(existingEmployee.hourly_rate || 0),
+      annual_salary: Number(existingEmployee.annual_salary || 0),
+      active: Number(existingEmployee.active || 0),
+    };
+
     db.prepare(`
       UPDATE employees
       SET name = ?, pay_type = ?, hourly_rate = ?, annual_salary = ?, active = ?
@@ -265,6 +299,38 @@ employeeRoutes.post('/edit_employee/:id', roleRequired('Admin', 'Manager'), asyn
       employeeId,
       tenantId,
     );
+
+    const after = {
+      name: normalized.name,
+      pay_type: normalized.pay_type,
+      hourly_rate: normalized.hourly_rate,
+      annual_salary: normalized.annual_salary,
+      active,
+    };
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'employee.updated',
+      entityType: 'employee',
+      entityId: employeeId,
+      description: `${currentUser.name} updated employee ${normalized.name}.`,
+      metadata: { before, after },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    if (before.active !== after.active) {
+      logActivity(db, {
+        tenantId,
+        actorUserId: currentUser.id,
+        eventType: active === 1 ? 'employee.reactivated' : 'employee.deactivated',
+        entityType: 'employee',
+        entityId: employeeId,
+        description: `${currentUser.name} ${active === 1 ? 'reactivated' : 'deactivated'} employee ${normalized.name}.`,
+        metadata: { before_active: before.active, after_active: active },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
 
     const updatedEmployee = getEmployeeById(db, employeeId, tenantId);
     if (!updatedEmployee) {
@@ -289,11 +355,10 @@ employeeRoutes.post('/edit_employee/:id', roleRequired('Admin', 'Manager'), asyn
       <EditEmployeePage
         employee={{
           ...existingEmployee,
-          name: formData.name,
-          pay_type: formData.pay_type,
-          hourly_rate: formData.hourly_rate,
-          annual_salary: formData.annual_salary,
-          active: formData.active === '1' ? 1 : 0,
+          ...formData,
+          active: String(formData.active) === '1' ? 1 : 0,
+          hourly_rate: Number(formData.hourly_rate || 0),
+          annual_salary: Number(formData.annual_salary || 0),
         }}
         error={message}
         csrfToken={c.get('csrfToken')}

@@ -4,6 +4,7 @@ import { getDb } from '../db/connection.js';
 import * as userQueries from '../db/queries/users.js';
 import { roleRequired } from '../middleware/auth.js';
 import { hashPassword } from '../services/password.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { UsersPage } from '../pages/users/UsersPage.js';
 import { AddUserPage } from '../pages/users/AddUserPage.js';
@@ -198,7 +199,8 @@ userRoutes.get('/add_user', roleRequired('Admin'), (c) => {
 
 userRoutes.post('/add_user', roleRequired('Admin'), async (c) => {
   const tenant = c.get('tenant');
-  if (!tenant) return c.redirect('/login');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
   const db = getDb();
@@ -242,9 +244,24 @@ userRoutes.post('/add_user', roleRequired('Admin'), async (c) => {
       VALUES (?, ?, ?, ?, 1, ?, ?)
     `).run(name, email, hashPassword(password), role, tenant.id, employeeId);
 
-    if (!result.lastInsertRowid) {
-      throw new Error('User insert failed.');
-    }
+    const newUserId = Number(result.lastInsertRowid);
+
+    logActivity(db, {
+      tenantId: tenant.id,
+      actorUserId: currentUser.id,
+      eventType: 'user.created',
+      entityType: 'user',
+      entityId: newUserId,
+      description: `${currentUser.name} created user ${name}.`,
+      metadata: {
+        name,
+        email,
+        role,
+        active: 1,
+        employee_id: employeeId,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
 
     return c.redirect('/users');
   } catch (error) {
@@ -355,9 +372,13 @@ userRoutes.post('/edit_user/:id', roleRequired('Admin'), async (c) => {
       throw new ValidationError('Your company must have at least one active Admin user.');
     }
 
-    if (role === 'Employee' && employeeId === null) {
-      throw new ValidationError('Employee users must be linked to an employee record.');
-    }
+    const before = {
+      name: existingUser.name,
+      email: existingUser.email,
+      role: existingUser.role,
+      active: existingUser.active,
+      employee_id: existingUser.employee_id,
+    };
 
     db.prepare(`
       UPDATE users
@@ -368,6 +389,58 @@ userRoutes.post('/edit_user/:id', roleRequired('Admin'), async (c) => {
     if (newPasswordRaw.trim()) {
       const validatedPassword = validatePassword(newPasswordRaw, 'New password');
       userQueries.updatePassword(db, userId, tenant.id, hashPassword(validatedPassword));
+    }
+
+    const after = {
+      name,
+      email,
+      role,
+      active,
+      employee_id: employeeId,
+    };
+
+    const changedGeneral =
+      before.name !== after.name ||
+      before.email !== after.email ||
+      before.employee_id !== after.employee_id;
+
+    if (changedGeneral) {
+      logActivity(db, {
+        tenantId: tenant.id,
+        actorUserId: currentUser.id,
+        eventType: 'user.updated',
+        entityType: 'user',
+        entityId: userId,
+        description: `${currentUser.name} updated user ${name}.`,
+        metadata: { before, after },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
+
+    if (before.role !== after.role) {
+      logActivity(db, {
+        tenantId: tenant.id,
+        actorUserId: currentUser.id,
+        eventType: 'user.role_changed',
+        entityType: 'user',
+        entityId: userId,
+        description: `${currentUser.name} changed ${name}'s role from ${before.role} to ${after.role}.`,
+        metadata: { before_role: before.role, after_role: after.role },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
+
+    if (before.active !== after.active) {
+      logActivity(db, {
+        tenantId: tenant.id,
+        actorUserId: currentUser.id,
+        eventType: after.active === 1 ? 'user.reactivated' : 'user.deactivated',
+        entityType: 'user',
+        entityId: userId,
+        description: `${currentUser.name} ${after.active === 1 ? 'reactivated' : 'deactivated'} user ${name}.`,
+        metadata: { before_active: before.active, after_active: after.active },
+        ipAddress: resolveRequestIp(c),
+      });
     }
 
     return c.redirect('/users');
