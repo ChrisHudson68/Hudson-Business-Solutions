@@ -66,7 +66,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
           <h1>Jobs</h1>
           <p class="muted">Track project profitability, invoices, collections, and labor.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href={showArchived ? '/jobs' : '/jobs?show_archived=1'}>
             {showArchived ? 'Hide Archived' : 'Show Archived'}
           </a>
@@ -83,53 +83,53 @@ export const JobsListPage: FC<JobsListPageProps> = ({
         </div>
       ) : null}
 
-      <div class="grid grid-4" style="margin-bottom:14px;">
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Jobs</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">{totalJobs}</div>
+      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Jobs</div>
+          <div class="metric-value">{totalJobs}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Contract Value</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalContract || 0)}</div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Contract Value</div>
+          <div class="metric-value">${formatMoney(totalContract || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Invoiced</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalInvoiced || 0)}</div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Invoiced</div>
+          <div class="metric-value">${formatMoney(totalInvoiced || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Collected</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalPayments || 0)}</div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Collected</div>
+          <div class="metric-value">${formatMoney(totalPayments || 0)}</div>
         </div>
       </div>
 
-      <div class="grid grid-4" style="margin-bottom:14px;">
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Income</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalIncome || 0)}</div>
+      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Income</div>
+          <div class="metric-value">${formatMoney(totalIncome || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Costs</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalCost || 0)}</div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Costs</div>
+          <div class="metric-value">${formatMoney(totalCost || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Profit</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalProfit || 0)}</div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Profit</div>
+          <div class="metric-value">${formatMoney(totalProfit || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Unpaid Invoices</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalUnpaidInvoiceBalance || 0)}</div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Unpaid Invoices</div>
+          <div class="metric-value">${formatMoney(totalUnpaidInvoiceBalance || 0)}</div>
         </div>
       </div>
 
       <div class="card">
-        <div class="table-wrap">
-          <table>
+        <div class="table-wrap table-wrap-tight">
+          <table class="table">
             <thead>
               <tr>
                 <th>Job</th>
@@ -148,7 +148,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                   <tr>
                     <td>
                       <div><b>{job.job_name}</b></div>
-                      <div class="muted">
+                      <div class="muted small">
                         {job.job_code || 'No job code'}
                         {job.archived_at ? ' • Archived' : ''}
                       </div>
@@ -166,17 +166,17 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                     <td class="right">${formatMoney(job.total_costs || 0)}</td>
                     <td class="right">${formatMoney(job.profit || 0)}</td>
                     <td class="right">
-                      <div class="actions" style="justify-content:flex-end;">
+                      <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
                         <a class="btn" href={`/job/${job.id}`}>View</a>
                         <a class="btn" href={`/edit_job/${job.id}`}>Edit</a>
 
                         {job.archived_at ? (
-                          <form method="post" action={`/restore_job/${job.id}`} style="display:inline;">
+                          <form method="post" action={`/restore_job/${job.id}`} class="inline-form">
                             <input type="hidden" name="csrf_token" value={csrfToken} />
                             <button class="btn" type="submit">Restore</button>
                           </form>
                         ) : (
-                          <form method="post" action={`/archive_job/${job.id}`} style="display:inline;">
+                          <form method="post" action={`/archive_job/${job.id}`} class="inline-form">
                             <input type="hidden" name="csrf_token" value={csrfToken} />
                             <button class="btn" type="submit">Archive</button>
                           </form>

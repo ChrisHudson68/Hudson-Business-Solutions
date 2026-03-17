@@ -61,89 +61,77 @@ export const DashboardPage: FC<DashboardPageProps> = ({
           <h1>Dashboard</h1>
           <p>Quick view of jobs, billing, costs, and recent labor activity.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/add_invoice">New Invoice</a>
           <a class="btn btn-primary" href="/add_job">New Job</a>
         </div>
       </div>
 
-      <div class="grid grid-4">
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Active Jobs</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">{stats.active_jobs || 0}</div>
-          <div class="muted" style="font-size:12px; margin-top:6px;">
+      <div class="grid grid-4 mobile-card-grid">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Active Jobs</div>
+          <div class="metric-value">{stats.active_jobs || 0}</div>
+          <div class="muted small" style="margin-top:6px;">
             {stats.on_hold_jobs || 0} on hold
           </div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Invoiced (MTD)</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${fmt(stats.invoiced_mtd || 0)}
-          </div>
-          <div class="muted" style="font-size:12px; margin-top:6px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Invoiced (MTD)</div>
+          <div class="metric-value">${fmt(stats.invoiced_mtd || 0)}</div>
+          <div class="muted small" style="margin-top:6px;">
             ${fmt(stats.collected_mtd || 0)} collected this month
           </div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Costs (MTD)</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${fmt(stats.costs_mtd || 0)}
-          </div>
-          <div class="muted" style="font-size:12px; margin-top:6px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Costs (MTD)</div>
+          <div class="metric-value">${fmt(stats.costs_mtd || 0)}</div>
+          <div class="muted small" style="margin-top:6px;">
             ${fmt(stats.labor_mtd || 0)} labor · ${fmt(stats.expenses_mtd || 0)} expenses
           </div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Open Receivables</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${fmt(stats.invoices_due_total || 0)}
-          </div>
-          <div class="muted" style="font-size:12px; margin-top:6px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Open Receivables</div>
+          <div class="metric-value">${fmt(stats.invoices_due_total || 0)}</div>
+          <div class="muted small" style="margin-top:6px;">
             {stats.invoices_due_count || 0} unpaid invoices
           </div>
         </div>
       </div>
 
-      <div class="grid grid-4" style="margin-top:14px;">
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Recorded Income (MTD)</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${fmt(stats.revenue_mtd || 0)}
-          </div>
-          <div class="muted" style="font-size:12px; margin-top:6px;">
+      <div class="grid grid-4 mobile-card-grid" style="margin-top:14px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Recorded Income (MTD)</div>
+          <div class="metric-value">${fmt(stats.revenue_mtd || 0)}</div>
+          <div class="muted small" style="margin-top:6px;">
             Manual income entries this month
           </div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Overdue Receivables</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${fmt(stats.overdue_invoice_total || 0)}
-          </div>
-          <div class="muted" style="font-size:12px; margin-top:6px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Overdue Receivables</div>
+          <div class="metric-value">${fmt(stats.overdue_invoice_total || 0)}</div>
+          <div class="muted small" style="margin-top:6px;">
             {stats.overdue_invoice_count || 0} overdue invoices
           </div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Portfolio Profit</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${fmt(stats.total_profit_all || 0)}
-          </div>
-          <div class="muted" style="font-size:12px; margin-top:6px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Portfolio Profit</div>
+          <div class="metric-value">${fmt(stats.total_profit_all || 0)}</div>
+          <div class="muted small" style="margin-top:6px;">
             Income minus labor and expenses
           </div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Closed / Cancelled Jobs</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Closed / Cancelled Jobs</div>
+          <div class="metric-value">
             {(stats.completed_jobs || 0) + (stats.cancelled_jobs || 0)}
           </div>
-          <div class="muted" style="font-size:12px; margin-top:6px;">
+          <div class="muted small" style="margin-top:6px;">
             {stats.completed_jobs || 0} completed · {stats.cancelled_jobs || 0} cancelled
           </div>
         </div>
@@ -151,14 +139,14 @@ export const DashboardPage: FC<DashboardPageProps> = ({
 
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div class="card-head">
             <b>Active Jobs</b>
             <a class="btn" href="/jobs">View Jobs</a>
           </div>
 
           {activeJobs && activeJobs.length ? (
-            <div class="table-wrap">
-              <table>
+            <div class="table-wrap table-wrap-tight">
+              <table class="table">
                 <thead>
                   <tr>
                     <th>Job</th>
@@ -172,9 +160,9 @@ export const DashboardPage: FC<DashboardPageProps> = ({
                     <tr>
                       <td>
                         <b>{j.name}</b>
-                        <div class="muted" style="font-size:12px;">#{j.code || j.id}</div>
+                        <div class="muted small">#{j.code || j.id}</div>
                       </td>
-                      <td>{j.client || '\u2014'}</td>
+                      <td>{j.client || '—'}</td>
                       <td><span class="badge">{j.status || 'Active'}</span></td>
                       <td class="right">${fmt(j.budget || 0)}</td>
                     </tr>
@@ -188,14 +176,14 @@ export const DashboardPage: FC<DashboardPageProps> = ({
         </div>
 
         <div class="card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div class="card-head">
             <b>Invoices Due</b>
             <a class="btn" href="/invoices">View</a>
           </div>
 
           {invoicesDue && invoicesDue.length ? (
-            <div class="table-wrap">
-              <table>
+            <div class="table-wrap table-wrap-tight">
+              <table class="table">
                 <thead>
                   <tr>
                     <th>Invoice</th>
@@ -210,10 +198,10 @@ export const DashboardPage: FC<DashboardPageProps> = ({
                     <tr>
                       <td>
                         <b>{inv.number || `INV-${inv.id}`}</b>
-                        <div class="muted" style="font-size:12px;">{inv.job_name || '\u2014'}</div>
+                        <div class="muted small">{inv.job_name || '—'}</div>
                       </td>
-                      <td>{inv.customer || '\u2014'}</td>
-                      <td>{inv.due_date || '\u2014'}</td>
+                      <td>{inv.customer || '—'}</td>
+                      <td>{inv.due_date || '—'}</td>
                       <td>
                         <span class={`badge ${inv.derived_status === 'Overdue' ? 'badge-bad' : ''}`}>
                           {inv.derived_status}
@@ -232,14 +220,14 @@ export const DashboardPage: FC<DashboardPageProps> = ({
       </div>
 
       <div class="card" style="margin-top:14px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div class="card-head">
           <b>Recent Time Activity</b>
           <a class="btn" href="/timesheet">View Timesheets</a>
         </div>
 
         {recentTime && recentTime.length ? (
-          <div class="table-wrap">
-            <table>
+          <div class="table-wrap table-wrap-tight">
+            <table class="table">
               <thead>
                 <tr>
                   <th>Date</th>
