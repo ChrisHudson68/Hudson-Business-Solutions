@@ -467,17 +467,29 @@ function isActive(path: string, patterns: string[]): boolean {
   return false;
 }
 
-const navItems = [
-  { label: 'Dashboard', href: '/', patterns: ['/'] },
-  { label: 'Jobs', href: '/jobs', patterns: ['/jobs', '/add_job', '/job/', '/edit_job/'] },
-  { label: 'Reports', href: '/reports', patterns: ['/reports', '/profit', '/job_costs'] },
-  { label: 'Employees', href: '/employees', patterns: ['/employees', '/add_employee', '/edit_employee/'] },
-  { label: 'Timesheets', href: '/timesheet', patterns: ['/timesheet'] },
-  { label: 'Invoices', href: '/invoices', patterns: ['/invoices', '/add_invoice', '/invoice/'] },
-  { label: 'Users', href: '/users', patterns: ['/users', '/add_user', '/edit_user/'] },
-  { label: 'Billing', href: '/billing', patterns: ['/billing'] },
-  { label: 'Settings', href: '/settings', patterns: ['/settings'] },
-];
+function canManageWorkspace(currentUser: AppLayoutProps['currentUser']): boolean {
+  const role = String(currentUser?.role || '');
+  return role === 'Admin' || role === 'Manager';
+}
+
+function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
+  const managerAccess = canManageWorkspace(currentUser);
+
+  return [
+    { label: 'Dashboard', href: '/', patterns: ['/'] },
+    { label: 'Jobs', href: '/jobs', patterns: ['/jobs', '/add_job', '/job/', '/edit_job/'] },
+    { label: 'Reports', href: '/reports', patterns: ['/reports', '/profit', '/job_costs'] },
+    { label: 'Employees', href: '/employees', patterns: ['/employees', '/add_employee', '/edit_employee/'] },
+    { label: 'Timesheets', href: '/timesheet', patterns: ['/timesheet'] },
+    { label: 'Invoices', href: '/invoices', patterns: ['/invoices', '/add_invoice', '/invoice/'] },
+    ...(managerAccess
+      ? [{ label: 'Activity', href: '/activity', patterns: ['/activity'] }]
+      : []),
+    { label: 'Users', href: '/users', patterns: ['/users', '/add_user', '/edit_user/'] },
+    { label: 'Billing', href: '/billing', patterns: ['/billing'] },
+    { label: 'Settings', href: '/settings', patterns: ['/settings'] },
+  ];
+}
 
 function billingBadgeClass(tenant: AppLayoutProps['currentTenant']): string {
   if (!tenant) return 'badge';
@@ -516,6 +528,7 @@ export const AppLayout: FC<AppLayoutProps> = ({
   const titlePrefix = currentTenant ? `${currentTenant.name} | ` : '';
   const displayAppName = appName || 'Hudson Business Solutions';
   const billingBanner = getBillingBanner(currentTenant);
+  const navItems = buildNavItems(currentUser);
 
   return (
     <html lang="en">

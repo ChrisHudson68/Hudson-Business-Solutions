@@ -6,6 +6,7 @@ import * as tenantQueries from '../db/queries/tenants.js';
 import * as userQueries from '../db/queries/users.js';
 import { createSessionCookie, SESSION_COOKIE_NAME } from '../services/session.js';
 import { hashPassword, verifyPassword } from '../services/password.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { PublicLayout } from '../pages/layouts/PublicLayout.js';
 import { LoginPage } from '../pages/auth/LoginPage.js';
 import { SignupPage } from '../pages/auth/SignupPage.js';
@@ -239,6 +240,20 @@ authRoutes.post('/login', async (c) => {
 
   setSessionCookie(c, sessionCookie);
 
+  logActivity(db, {
+    tenantId: tenant.id,
+    actorUserId: row!.id,
+    eventType: 'auth.login',
+    entityType: 'user',
+    entityId: row!.id,
+    description: `${row!.name} signed in.`,
+    metadata: {
+      email: row!.email,
+      role: row!.role,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
   return c.redirect('/dashboard');
 });
 
@@ -332,12 +347,26 @@ authRoutes.post('/signup', async (c) => {
         billing_trial_ends_at: buildTenantTrialEndDate(),
       });
 
-      userQueries.create(db, {
+      const adminUserId = userQueries.create(db, {
         name: admin_name,
         email: admin_email,
         password_hash: hashPassword(password),
         role: 'Admin',
         tenant_id: tenantId,
+      });
+
+      logActivity(db, {
+        tenantId,
+        actorUserId: adminUserId,
+        eventType: 'tenant.signup',
+        entityType: 'tenant',
+        entityId: tenantId,
+        description: `${company_name} was created with ${admin_name} as the initial admin.`,
+        metadata: {
+          subdomain,
+          admin_email,
+        },
+        ipAddress: resolveRequestIp(c),
       });
 
       return tenantId;
