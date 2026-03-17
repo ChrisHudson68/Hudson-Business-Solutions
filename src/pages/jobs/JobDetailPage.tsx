@@ -25,6 +25,7 @@ interface ExpenseRow {
   vendor: string | null;
   amount: number;
   date: string | null;
+  receipt_filename?: string | null;
 }
 
 interface TimeRow {
@@ -108,43 +109,57 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
       <div class="grid grid-4" style="margin-bottom:14px;">
         <div class="card">
           <div class="muted" style="font-weight:900; font-size:12px;">Contract</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(Number(job.contract_amount || 0))}</div>
+          <div style="font-size:28px; font-weight:900; margin-top:8px;">
+            ${formatMoney(Number(job.contract_amount || 0))}
+          </div>
         </div>
 
         <div class="card">
           <div class="muted" style="font-weight:900; font-size:12px;">Income</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalIncome || 0)}</div>
+          <div style="font-size:28px; font-weight:900; margin-top:8px;">
+            ${formatMoney(totalIncome || 0)}
+          </div>
         </div>
 
         <div class="card">
           <div class="muted" style="font-weight:900; font-size:12px;">Costs</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalCosts || 0)}</div>
+          <div style="font-size:28px; font-weight:900; margin-top:8px;">
+            ${formatMoney(totalCosts || 0)}
+          </div>
         </div>
 
         <div class="card">
           <div class="muted" style="font-weight:900; font-size:12px;">Profit</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(profit || 0)}</div>
+          <div style="font-size:28px; font-weight:900; margin-top:8px;">
+            ${formatMoney(profit || 0)}
+          </div>
         </div>
       </div>
 
       <div class="grid grid-3" style="margin-bottom:14px;">
         <div class="card">
           <div class="muted" style="font-weight:900; font-size:12px;">Expenses</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalExpenses || 0)}</div>
+          <div style="font-size:28px; font-weight:900; margin-top:8px;">
+            ${formatMoney(totalExpenses || 0)}
+          </div>
         </div>
 
         <div class="card">
           <div class="muted" style="font-weight:900; font-size:12px;">Labor</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(totalLabor || 0)}</div>
+          <div style="font-size:28px; font-weight:900; margin-top:8px;">
+            ${formatMoney(totalLabor || 0)}
+          </div>
         </div>
 
         <div class="card">
           <div class="muted" style="font-weight:900; font-size:12px;">Retainage Held</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">${formatMoney(retainageHeld || 0)}</div>
+          <div style="font-size:28px; font-weight:900; margin-top:8px;">
+            ${formatMoney(retainageHeld || 0)}
+          </div>
         </div>
       </div>
 
-      <div class="grid grid-3">
+      <div class="grid grid-2" style="margin-bottom:14px;">
         <div class="card">
           <b>Job Info</b>
           <div class="muted" style="margin-top:10px; line-height:1.8;">
@@ -157,6 +172,25 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
 
         <div class="card">
+          <b>Actions</b>
+          <div class="actions" style="margin-top:12px; flex-wrap:wrap;">
+            {job.archived_at ? (
+              <span class="muted">Restore this job to add new income or expenses.</span>
+            ) : (
+              <>
+                <a class="btn btn-primary" href={`/add_income/${job.id}`}>Add Income</a>
+                <a class="btn" href={`/add_expense/${job.id}`}>Add Expense</a>
+              </>
+            )}
+          </div>
+          <p class="muted" style="margin-top:10px;">
+            Use these to keep job costing and cash flow accurate.
+          </p>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <div class="card">
           <b>Income</b>
           <div class="table-wrap" style="margin-top:10px;">
             <table>
@@ -165,6 +199,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                   <th>Date</th>
                   <th>Description</th>
                   <th class="right">Amount</th>
+                  <th class="right">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -174,11 +209,26 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                       <td>{row.date || '—'}</td>
                       <td>{row.description || '—'}</td>
                       <td class="right">${formatMoney(Number(row.amount || 0))}</td>
+                      <td class="right">
+                        {job.archived_at ? (
+                          <span class="muted">Locked</span>
+                        ) : (
+                          <form
+                            method="post"
+                            action={`/delete_income/${row.id}`}
+                            style="display:inline;"
+                            onsubmit="return confirm('Delete this income entry?');"
+                          >
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
+                            <button class="btn" type="submit">Delete</button>
+                          </form>
+                        )}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colspan={3} class="muted">No income records yet.</td>
+                    <td colspan={4} class="muted">No income records yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -193,8 +243,10 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Category</th>
                   <th>Vendor</th>
                   <th class="right">Amount</th>
+                  <th class="right">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -202,13 +254,29 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                   expenses.map((row) => (
                     <tr>
                       <td>{row.date || '—'}</td>
-                      <td>{row.vendor || row.category || '—'}</td>
+                      <td>{row.category || '—'}</td>
+                      <td>{row.vendor || '—'}</td>
                       <td class="right">${formatMoney(Number(row.amount || 0))}</td>
+                      <td class="right">
+                        {job.archived_at ? (
+                          <span class="muted">Locked</span>
+                        ) : (
+                          <form
+                            method="post"
+                            action={`/delete_expense/${row.id}`}
+                            style="display:inline;"
+                            onsubmit="return confirm('Delete this expense entry?');"
+                          >
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
+                            <button class="btn" type="submit">Delete</button>
+                          </form>
+                        )}
+                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colspan={3} class="muted">No expense records yet.</td>
+                    <td colspan={5} class="muted">No expense records yet.</td>
                   </tr>
                 )}
               </tbody>
