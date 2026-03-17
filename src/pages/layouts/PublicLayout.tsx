@@ -21,8 +21,12 @@ const publicCss = `
 
     *{ box-sizing:border-box; }
 
-    body{
+    html, body{
       margin:0;
+      padding:0;
+    }
+
+    body{
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
       background:var(--bg);
       color:var(--text);
@@ -36,32 +40,41 @@ const publicCss = `
       text-decoration:none;
     }
 
+    .public-shell{
+      min-height:100vh;
+      padding:32px 20px 24px;
+    }
+
     .wrapper{
-      width:100%;
-      max-width:820px;
-      margin:60px auto;
-      padding:0 16px;
+      width:min(1180px, 100%);
+      margin:0 auto;
     }
 
     .brand{
-      text-align:center;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:14px;
+      text-align:left;
       margin-bottom:28px;
     }
 
     .brand img{
-      height:56px;
-      width:auto;
+      height:58px;
+      width:58px;
+      object-fit:contain;
       display:block;
-      margin:0 auto 10px;
+      flex:0 0 58px;
     }
 
-    .brand h1{
+    .brand-copy h1{
       margin:0;
       font-size:28px;
       letter-spacing:-.3px;
+      line-height:1.05;
     }
 
-    .brand p{
+    .brand-copy p{
       margin:6px 0 0;
       color:var(--muted);
       font-size:14px;
@@ -80,6 +93,7 @@ const publicCss = `
     .page-head p{
       margin:6px 0 0;
       color:var(--muted);
+      line-height:1.6;
     }
 
     .card{
@@ -101,19 +115,19 @@ const publicCss = `
       color:#334155;
     }
 
-    input, select{
+    input, select, textarea{
       width:100%;
       padding:11px 12px;
       border:1px solid var(--border);
       border-radius:12px;
       font-size:14px;
       background:#fff;
+      outline:none;
     }
 
-    input:focus, select:focus{
+    input:focus, select:focus, textarea:focus{
       border-color:rgba(30,58,95,.35);
       box-shadow:0 0 0 4px rgba(30,58,95,.10);
-      outline:none;
     }
 
     .row{
@@ -139,16 +153,17 @@ const publicCss = `
       display:inline-flex;
       align-items:center;
       justify-content:center;
-      height:36px;
+      min-height:40px;
       padding:0 16px;
       border-radius:12px;
       border:1px solid var(--border);
       background:#fff;
       font-weight:700;
-      font-size:13px;
+      font-size:14px;
       cursor:pointer;
       text-decoration:none;
       color:inherit;
+      white-space:nowrap;
     }
 
     .btn-primary{
@@ -169,12 +184,17 @@ const publicCss = `
     }
 
     .badge{
-      display:block;
-      padding:10px 12px;
-      margin-bottom:16px;
-      border-radius:12px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-height:32px;
+      padding:0 12px;
+      border-radius:999px;
       font-size:13px;
       font-weight:700;
+      border:1px solid var(--border);
+      background:#fff;
+      color:#334155;
     }
 
     .badge-bad{
@@ -184,7 +204,7 @@ const publicCss = `
     }
 
     .public-footer{
-      padding:24px 0 8px;
+      padding:28px 0 8px;
       text-align:center;
       color:var(--muted);
       font-size:13px;
@@ -196,6 +216,65 @@ const publicCss = `
       gap:14px;
       flex-wrap:wrap;
       margin-top:8px;
+    }
+
+    @media (max-width: 900px){
+      .public-shell{
+        padding:24px 16px 20px;
+      }
+
+      .wrapper{
+        width:min(100%, 100%);
+      }
+    }
+
+    @media (max-width: 640px){
+      .brand{
+        flex-direction:column;
+        text-align:center;
+        gap:10px;
+        margin-bottom:22px;
+      }
+
+      .brand-copy{
+        text-align:center;
+      }
+
+      .brand-copy h1{
+        font-size:24px;
+      }
+
+      .brand-copy p{
+        font-size:13px;
+      }
+
+      .card{
+        padding:18px;
+      }
+
+      .actions{
+        flex-direction:column;
+        align-items:stretch;
+      }
+
+      .actions .btn,
+      .actions button,
+      .actions form{
+        width:100%;
+      }
+
+      .btn{
+        min-height:44px;
+      }
+
+      .row{
+        flex-direction:column;
+      }
+
+      .row > *{
+        min-width:0;
+        width:100%;
+      }
     }
 `;
 
@@ -218,20 +297,24 @@ export const PublicLayout: FC<PublicLayoutProps> = ({
         <style dangerouslySetInnerHTML={{ __html: publicCss }} />
       </head>
       <body>
-        <div class="wrapper">
-          <div class="brand">
-            <img src={appLogo} alt="Hudson Business Solutions Logo" />
-            <h1>{displayAppName}</h1>
-            <p>Construction finances, job costing, timesheets, and invoicing.</p>
-          </div>
+        <div class="public-shell">
+          <div class="wrapper">
+            <div class="brand">
+              <img src={appLogo} alt="Hudson Business Solutions Logo" />
+              <div class="brand-copy">
+                <h1>{displayAppName}</h1>
+                <p>Construction finances, job costing, timesheets, and invoicing.</p>
+              </div>
+            </div>
 
-          {children}
+            {children}
 
-          <div class="public-footer">
-            <div>© {year} {displayAppName}</div>
-            <div class="public-footer-links">
-              <a href="/terms">Terms of Service</a>
-              <a href="/privacy">Privacy Policy</a>
+            <div class="public-footer">
+              <div>© {year} {displayAppName}</div>
+              <div class="public-footer-links">
+                <a href="/terms">Terms of Service</a>
+                <a href="/privacy">Privacy Policy</a>
+              </div>
             </div>
           </div>
         </div>
