@@ -116,8 +116,17 @@ function loadInvoiceDetailData(db: any, tenantId: number, invoiceId: number) {
   const inv = db
     .prepare(
       `
-        SELECT i.id, i.job_id, j.job_name, j.client_name,
-               i.invoice_number, i.date_issued, i.due_date, i.amount, i.notes
+        SELECT
+          i.id,
+          i.job_id,
+          j.job_name,
+          j.client_name,
+          i.invoice_number,
+          i.date_issued,
+          i.due_date,
+          i.amount,
+          i.notes,
+          i.archived_at
         FROM invoices i
         JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
@@ -227,15 +236,26 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
 
   const tenantId = tenant.id;
   const db = getDb();
+  const showArchived = c.req.query('show_archived') === '1';
 
   const invRows = db
     .prepare(
       `
-        SELECT i.id, i.job_id, j.job_name, j.client_name,
-               i.invoice_number, i.date_issued, i.due_date, i.amount, i.status
+        SELECT
+          i.id,
+          i.job_id,
+          j.job_name,
+          j.client_name,
+          i.invoice_number,
+          i.date_issued,
+          i.due_date,
+          i.amount,
+          i.status,
+          i.archived_at
         FROM invoices i
         JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.tenant_id = ?
+          AND ${showArchived ? 'i.archived_at IS NOT NULL' : 'i.archived_at IS NULL'}
         ORDER BY i.due_date DESC, i.id DESC
       `,
     )
@@ -291,6 +311,7 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
       outstanding,
       status,
       payment_count: paymentInfo.paymentCount,
+      archived_at: row.archived_at || null,
     });
   }
 
@@ -302,6 +323,7 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
       totalOutstanding={totalOutstanding}
       totalOverdue={totalOverdue}
       csrfToken={c.get('csrfToken')}
+      showArchived={showArchived}
     />,
   );
 });
@@ -321,7 +343,7 @@ invoiceRoutes.get('/add_invoice', roleRequired('Admin', 'Manager'), (c) => {
       `
         SELECT id, job_name, client_name
         FROM jobs
-        WHERE tenant_id = ?
+        WHERE tenant_id = ? AND archived_at IS NULL
         ORDER BY job_name ASC
       `,
     )
@@ -366,7 +388,7 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
       `
         SELECT id, job_name, client_name
         FROM jobs
-        WHERE tenant_id = ?
+        WHERE tenant_id = ? AND archived_at IS NULL
         ORDER BY job_name ASC
       `,
     )
@@ -398,7 +420,7 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
     const notes = optionalTrimmedString(body['notes'], 2000);
 
     const job = db
-      .prepare('SELECT id, job_name FROM jobs WHERE id = ? AND tenant_id = ?')
+      .prepare('SELECT id, job_name FROM jobs WHERE id = ? AND tenant_id = ? AND archived_at IS NULL')
       .get(jobId, tenantId) as { id: number; job_name: string } | undefined;
 
     if (!job) {
@@ -422,8 +444,10 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
 
     const result = db.prepare(
       `
-        INSERT INTO invoices (job_id, invoice_number, date_issued, due_date, amount, status, notes, tenant_id)
-        VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?)
+        INSERT INTO invoices (
+          job_id, invoice_number, date_issued, due_date, amount, status, notes, tenant_id, archived_at, archived_by_user_id
+        )
+        VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?, NULL, NULL)
       `,
     ).run(jobId, invoiceNumber, dateIssued, dueDate, amount, notes, tenantId);
 
@@ -566,7 +590,93 @@ invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
   });
 });
 
-invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
+invoiceRoutes.post('/archive_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  let invoiceId: number;
+  try {
+    invoiceId = parseRouteId(c.req.param('id'), 'Invoice');
+  } catch {
+    return c.text('Invoice not found', 404);
+  }
+
+  const tenantId = tenant.id;
+  const db = getDb();
+
+  const invoice = db
+    .prepare(
+      `
+        SELECT i.id, i.invoice_number, i.amount, i.job_id, i.archived_at, j.job_name
+        FROM invoices i
+        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        WHERE i.id = ? AND i.tenant_id = ?
+      `,
+    )
+    .get(invoiceId, tenantId) as
+      | { id: number; invoice_number: string | null; amount: number; job_id: number; archived_at: string | null; job_name: string }
+      | undefined;
+
+  if (!invoice) {
+    return c.text('Invoice not found', 404);
+  }
+
+  const paymentRow = db
+    .prepare(
+      `
+        SELECT COUNT(*) as total
+        FROM payments
+        WHERE invoice_id = ? AND tenant_id = ?
+      `,
+    )
+    .get(invoiceId, tenantId) as { total: number };
+
+  const paymentCount = Number(paymentRow?.total || 0);
+
+  if (paymentCount > 0) {
+    return renderInvoiceDetail(
+      c,
+      tenantId,
+      invoiceId,
+      {
+        error: 'Cannot archive this invoice while payments are attached. Remove the payments first, then archive the invoice.',
+      },
+      400,
+    );
+  }
+
+  if (!invoice.archived_at) {
+    db.prepare(
+      `
+        UPDATE invoices
+        SET archived_at = CURRENT_TIMESTAMP,
+            archived_by_user_id = ?
+        WHERE id = ? AND tenant_id = ?
+      `,
+    ).run(currentUser.id, invoiceId, tenantId);
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'invoice.archived',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      description: `${currentUser.name} archived invoice ${invoice.invoice_number || `#${invoiceId}`}.`,
+      metadata: {
+        invoice_number: invoice.invoice_number,
+        amount: Number(invoice.amount || 0),
+        job_id: invoice.job_id,
+        job_name: invoice.job_name,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+  }
+
+  return c.redirect('/invoices');
+});
+
+invoiceRoutes.post('/restore_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -591,40 +701,18 @@ invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin', 'Manager'), asyn
       `,
     )
     .get(invoiceId, tenantId) as
-    | { id: number; invoice_number: string | null; amount: number; job_id: number; job_name: string }
-    | undefined;
+      | { id: number; invoice_number: string | null; amount: number; job_id: number; job_name: string }
+      | undefined;
 
   if (!invoice) {
     return c.text('Invoice not found', 404);
   }
 
-  const paymentRow = db
-    .prepare(
-      `
-        SELECT COUNT(*) as total
-        FROM payments
-        WHERE invoice_id = ? AND tenant_id = ?
-      `,
-    )
-    .get(invoiceId, tenantId) as { total: number };
-
-  const paymentCount = Number(paymentRow?.total || 0);
-
-  if (paymentCount > 0) {
-    return renderInvoiceDetail(
-      c,
-      tenantId,
-      invoiceId,
-      {
-        error: 'Cannot delete this invoice while payments are attached. Delete the payments first, then delete the invoice.',
-      },
-      400,
-    );
-  }
-
   db.prepare(
     `
-      DELETE FROM invoices
+      UPDATE invoices
+      SET archived_at = NULL,
+          archived_by_user_id = NULL
       WHERE id = ? AND tenant_id = ?
     `,
   ).run(invoiceId, tenantId);
@@ -632,10 +720,10 @@ invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin', 'Manager'), asyn
   logActivity(db, {
     tenantId,
     actorUserId: currentUser.id,
-    eventType: 'invoice.deleted',
+    eventType: 'invoice.restored',
     entityType: 'invoice',
     entityId: invoiceId,
-    description: `${currentUser.name} deleted invoice ${invoice.invoice_number || `#${invoiceId}`}.`,
+    description: `${currentUser.name} restored invoice ${invoice.invoice_number || `#${invoiceId}`}.`,
     metadata: {
       invoice_number: invoice.invoice_number,
       amount: Number(invoice.amount || 0),
@@ -645,7 +733,7 @@ invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin', 'Manager'), asyn
     ipAddress: resolveRequestIp(c),
   });
 
-  return c.redirect('/invoices');
+  return c.redirect('/invoices?show_archived=1');
 });
 
 export default invoiceRoutes;

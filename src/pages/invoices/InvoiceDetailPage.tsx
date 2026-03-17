@@ -10,6 +10,7 @@ interface Invoice {
   due_date: string;
   amount: number;
   notes: string | null;
+  archived_at?: string | null;
 }
 
 interface Payment {
@@ -83,15 +84,33 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
         </div>
         <div class="actions">
           <a class="btn" href={`/invoice/${inv.id}/pdf`}>Download PDF</a>
-          <form method="post" action={`/delete_invoice/${inv.id}`} style="display:inline;">
-            <input type="hidden" name="csrf_token" value={csrfToken} />
-            <button class="btn" type="submit" disabled={paymentCount > 0}>
-              {paymentCount > 0 ? 'Has Payments' : 'Delete Invoice'}
-            </button>
-          </form>
+
+          {inv.archived_at ? (
+            <form method="post" action={`/restore_invoice/${inv.id}`} style="display:inline;">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+              <button class="btn" type="submit">Restore</button>
+            </form>
+          ) : (
+            <form method="post" action={`/archive_invoice/${inv.id}`} style="display:inline;">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+              <button class="btn" type="submit" disabled={paymentCount > 0}>
+                {paymentCount > 0 ? 'Has Payments' : 'Archive Invoice'}
+              </button>
+            </form>
+          )}
+
           <a class="btn" href="/invoices">Back</a>
         </div>
       </div>
+
+      {inv.archived_at ? (
+        <div
+          class="card"
+          style="margin-bottom:14px; border-color:#FDE68A; background:#FFFBEB; color:#92400E;"
+        >
+          This invoice is archived. It remains preserved for history and can be restored.
+        </div>
+      ) : null}
 
       {error ? (
         <div
@@ -141,7 +160,7 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
             <div><b>Invoice #:</b> {inv.invoice_number}</div>
             <div><b>Date Issued:</b> {inv.date_issued}</div>
             <div><b>Due Date:</b> {inv.due_date}</div>
-            <div><b>Status:</b> {status}</div>
+            <div><b>Status:</b> {inv.archived_at ? 'Archived' : status}</div>
             <div><b>Client:</b> {inv.client_name}</div>
             <div><b>Job:</b> {inv.job_name}</div>
           </div>
@@ -179,34 +198,40 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
 
         <div class="card">
           <b>Add Payment</b>
-          <form method="post" action={`/add_payment/${inv.id}`} style="margin-top:10px;">
-            <input type="hidden" name="csrf_token" value={csrfToken} />
-            <div class="row">
-              <div>
-                <label>Date</label>
-                <input type="date" name="date" value={paymentValues.date} required />
-              </div>
-              <div>
-                <label>Amount</label>
-                <input type="number" step="0.01" min="0.01" name="amount" value={paymentValues.amount} required />
-              </div>
+          {inv.archived_at ? (
+            <div class="muted" style="margin-top:10px;">
+              Payments cannot be added while this invoice is archived.
             </div>
+          ) : (
+            <form method="post" action={`/add_payment/${inv.id}`} style="margin-top:10px;">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+              <div class="row">
+                <div>
+                  <label>Date</label>
+                  <input type="date" name="date" value={paymentValues.date} required />
+                </div>
+                <div>
+                  <label>Amount</label>
+                  <input type="number" step="0.01" min="0.01" name="amount" value={paymentValues.amount} required />
+                </div>
+              </div>
 
-            <div class="row">
-              <div>
-                <label>Method</label>
-                <input name="method" value={paymentValues.method} />
+              <div class="row">
+                <div>
+                  <label>Method</label>
+                  <input name="method" value={paymentValues.method} />
+                </div>
+                <div>
+                  <label>Reference</label>
+                  <input name="reference" value={paymentValues.reference} />
+                </div>
               </div>
-              <div>
-                <label>Reference</label>
-                <input name="reference" value={paymentValues.reference} />
-              </div>
-            </div>
 
-            <div class="actions" style="margin-top:16px;">
-              <button class="btn btn-primary" type="submit">Add Payment</button>
-            </div>
-          </form>
+              <div class="actions" style="margin-top:16px;">
+                <button class="btn btn-primary" type="submit">Add Payment</button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
 
@@ -235,10 +260,14 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
                     <td>{p.reference || '\u2014'}</td>
                     <td class="right">${formatCurrency(p.amount || 0)}</td>
                     <td class="right">
-                      <form method="post" action={`/delete_payment/${p.id}/${inv.id}`} style="display:inline;">
-                        <input type="hidden" name="csrf_token" value={csrfToken} />
-                        <button class="btn" type="submit">Delete</button>
-                      </form>
+                      {inv.archived_at ? (
+                        <span class="muted">Locked</span>
+                      ) : (
+                        <form method="post" action={`/delete_payment/${p.id}/${inv.id}`} style="display:inline;">
+                          <input type="hidden" name="csrf_token" value={csrfToken} />
+                          <button class="btn" type="submit">Delete</button>
+                        </form>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -252,7 +281,7 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
         </div>
 
         <div class="muted" style="margin-top:12px;">
-          Invoices can only be deleted when no payments are attached.
+          Invoices can be archived only when no payments are attached in this phase.
         </div>
       </div>
     </div>

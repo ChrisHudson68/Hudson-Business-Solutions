@@ -56,7 +56,7 @@ function loadInvoiceDetailData(db: any, tenantId: number, invoiceId: number) {
     .prepare(
       `
         SELECT i.id, i.job_id, j.job_name, j.client_name,
-               i.invoice_number, i.date_issued, i.due_date, i.amount, i.notes
+               i.invoice_number, i.date_issued, i.due_date, i.amount, i.notes, i.archived_at
         FROM invoices i
         JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
@@ -177,15 +177,15 @@ paymentRoutes.post('/add_payment/:invoiceId', roleRequired('Admin', 'Manager'), 
   const invoice = db
     .prepare(
       `
-        SELECT i.id, i.invoice_number, i.amount, i.job_id, j.job_name
+        SELECT i.id, i.invoice_number, i.amount, i.job_id, i.archived_at, j.job_name
         FROM invoices i
         JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
       `,
     )
     .get(invoiceId, tenantId) as
-    | { id: number; invoice_number: string | null; amount: number; job_id: number; job_name: string }
-    | undefined;
+      | { id: number; invoice_number: string | null; amount: number; job_id: number; archived_at: string | null; job_name: string }
+      | undefined;
 
   if (!invoice) {
     return c.text('Invoice not found', 404);
@@ -200,6 +200,10 @@ paymentRoutes.post('/add_payment/:invoiceId', roleRequired('Admin', 'Manager'), 
   };
 
   try {
+    if (invoice.archived_at) {
+      throw new ValidationError('Cannot add a payment to an archived invoice.');
+    }
+
     const date = parseIsoDate(body['date'], 'Payment date');
     const amount = parseMoney(body['amount'], 'Payment amount');
     const method = optionalTrimmedString(body['method'], 120);
@@ -306,6 +310,7 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', roleRequired('Admin'
           p.reference,
           i.invoice_number,
           i.job_id,
+          i.archived_at,
           j.job_name
         FROM payments p
         JOIN invoices i
@@ -318,21 +323,34 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', roleRequired('Admin'
       `,
     )
     .get(paymentId, invoiceId, tenantId) as
-    | {
-        id: number;
-        invoice_id: number;
-        date: string;
-        amount: number;
-        method: string | null;
-        reference: string | null;
-        invoice_number: string | null;
-        job_id: number;
-        job_name: string;
-      }
-    | undefined;
+      | {
+          id: number;
+          invoice_id: number;
+          date: string;
+          amount: number;
+          method: string | null;
+          reference: string | null;
+          invoice_number: string | null;
+          job_id: number;
+          archived_at: string | null;
+          job_name: string;
+        }
+      | undefined;
 
   if (!payment) {
     return c.text('Payment not found', 404);
+  }
+
+  if (payment.archived_at) {
+    return renderInvoiceDetail(
+      c,
+      tenantId,
+      invoiceId,
+      {
+        error: 'Cannot delete a payment while its invoice is archived. Restore the invoice first.',
+      },
+      400,
+    );
   }
 
   db.prepare(

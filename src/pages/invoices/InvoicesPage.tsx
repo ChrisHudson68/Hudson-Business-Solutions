@@ -13,6 +13,7 @@ interface InvoiceRow {
   outstanding: number;
   status: string;
   payment_count: number;
+  archived_at?: string | null;
 }
 
 interface InvoicesPageProps {
@@ -20,6 +21,7 @@ interface InvoicesPageProps {
   totalOutstanding: number;
   totalOverdue: number;
   csrfToken: string;
+  showArchived?: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -31,6 +33,7 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
   totalOutstanding,
   totalOverdue,
   csrfToken,
+  showArchived,
 }) => {
   return (
     <div>
@@ -40,6 +43,9 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
           <p>Create invoices and track balances.</p>
         </div>
         <div class="actions">
+          <a class="btn" href={showArchived ? '/invoices' : '/invoices?show_archived=1'}>
+            {showArchived ? 'Hide Archived' : 'Show Archived'}
+          </a>
           <a class="btn btn-primary" href="/add_invoice">Create Invoice</a>
         </div>
       </div>
@@ -70,6 +76,7 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
                 <th>Date</th>
                 <th>Due</th>
                 <th class="right">Amount</th>
+                <th>Status</th>
                 <th class="right">Actions</th>
               </tr>
             </thead>
@@ -77,27 +84,47 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
               {invoices.length > 0 ? (
                 invoices.map((inv) => (
                   <tr>
-                    <td><b>{inv.invoice_number}</b></td>
+                    <td>
+                      <div><b>{inv.invoice_number}</b></div>
+                      <div class="muted">{inv.archived_at ? 'Archived' : 'Active'}</div>
+                    </td>
                     <td>{inv.job_name}</td>
                     <td>{inv.date_issued}</td>
                     <td>{inv.due_date}</td>
                     <td class="right">${formatCurrency(inv.amount || 0)}</td>
+                    <td>
+                      {inv.archived_at ? (
+                        <span class="badge badge-warn">Archived</span>
+                      ) : (
+                        <span class="badge">{inv.status}</span>
+                      )}
+                    </td>
                     <td class="right">
                       <div class="actions" style="justify-content:flex-end;">
                         <a class="btn" href={`/invoice/${inv.id}`}>View</a>
-                        <form method="post" action={`/delete_invoice/${inv.id}`} style="display:inline;">
-                          <input type="hidden" name="csrf_token" value={csrfToken} />
-                          <button class="btn" type="submit" disabled={inv.payment_count > 0}>
-                            {inv.payment_count > 0 ? 'Has Payments' : 'Delete'}
-                          </button>
-                        </form>
+
+                        {inv.archived_at ? (
+                          <form method="post" action={`/restore_invoice/${inv.id}`} style="display:inline;">
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
+                            <button class="btn" type="submit">Restore</button>
+                          </form>
+                        ) : (
+                          <form method="post" action={`/archive_invoice/${inv.id}`} style="display:inline;">
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
+                            <button class="btn" type="submit" disabled={inv.payment_count > 0}>
+                              {inv.payment_count > 0 ? 'Has Payments' : 'Archive'}
+                            </button>
+                          </form>
+                        )}
                       </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colspan={6} class="muted">No invoices yet.</td>
+                  <td colspan={7} class="muted">
+                    {showArchived ? 'No archived invoices found.' : 'No active invoices yet.'}
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -105,7 +132,7 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
         </div>
 
         <div class="muted" style="margin-top:12px;">
-          Invoices can only be deleted when no payments are attached.
+          Archived invoices are hidden from normal lists but preserved for financial history and recovery. Invoices with payments attached cannot be archived in this phase.
         </div>
       </div>
     </div>
