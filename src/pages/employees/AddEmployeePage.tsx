@@ -30,12 +30,12 @@ export const AddEmployeePage: FC<AddEmployeePageProps> = ({
           <h1>Add Employee</h1>
           <p>Create an employee for timesheets and labor cost.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/employees">Back</a>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" style="max-width:760px;">
         {error ? (
           <div
             class="badge badge-bad"
@@ -68,7 +68,7 @@ export const AddEmployeePage: FC<AddEmployeePageProps> = ({
             </div>
           </div>
 
-          <div style="margin-top:16px;" class="actions">
+          <div class="actions actions-mobile-stack" style="margin-top:16px;">
             <button class="btn btn-primary" type="submit">Add Employee</button>
           </div>
         </form>

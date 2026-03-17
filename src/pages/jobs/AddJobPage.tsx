@@ -36,7 +36,7 @@ export const AddJobPage: FC<AddJobPageProps> = ({
           <h1>Add Job</h1>
           <p>Create a new job and set the starting details.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/jobs">Back</a>
         </div>
       </div>
@@ -113,7 +113,7 @@ export const AddJobPage: FC<AddJobPageProps> = ({
             </div>
           </div>
 
-          <div style="margin-top:16px;" class="actions">
+          <div class="actions actions-mobile-stack" style="margin-top:16px;">
             <button class="btn btn-primary" type="submit">Create Job</button>
           </div>
         </form>

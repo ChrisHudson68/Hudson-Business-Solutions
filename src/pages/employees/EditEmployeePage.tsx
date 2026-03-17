@@ -30,16 +30,16 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
           <h1>Edit Employee</h1>
           <p class="muted">Update employee pay setup and status.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/employees">Back</a>
 
           {employee.archived_at ? (
-            <form method="post" action={`/restore_employee/${employee.id}`} style="display:inline;">
+            <form method="post" action={`/restore_employee/${employee.id}`} class="inline-form">
               <input type="hidden" name="csrf_token" value={csrfToken} />
               <button class="btn" type="submit">Restore</button>
             </form>
           ) : (
-            <form method="post" action={`/archive_employee/${employee.id}`} style="display:inline;">
+            <form method="post" action={`/archive_employee/${employee.id}`} class="inline-form">
               <input type="hidden" name="csrf_token" value={csrfToken} />
               <button class="btn" type="submit">Archive</button>
             </form>
@@ -87,23 +87,29 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
             <option value="Salary" selected={employee.pay_type === 'Salary'}>Salary</option>
           </select>
 
-          <label>Hourly Rate</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            name="hourly_rate"
-            value={String(employee.hourly_rate ?? 0)}
-          />
+          <div class="row">
+            <div>
+              <label>Hourly Rate</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                name="hourly_rate"
+                value={String(employee.hourly_rate ?? 0)}
+              />
+            </div>
 
-          <label>Annual Salary</label>
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            name="annual_salary"
-            value={String(employee.annual_salary ?? 0)}
-          />
+            <div>
+              <label>Annual Salary</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                name="annual_salary"
+                value={String(employee.annual_salary ?? 0)}
+              />
+            </div>
+          </div>
 
           <label>Status</label>
           <select name="active">
@@ -111,7 +117,7 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
             <option value="0" selected={employee.active === 0}>Inactive</option>
           </select>
 
-          <div class="actions" style="margin-top:16px;">
+          <div class="actions actions-mobile-stack" style="margin-top:16px;">
             <button class="btn btn-primary" type="submit">Save Changes</button>
           </div>
         </form>

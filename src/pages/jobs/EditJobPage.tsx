@@ -42,7 +42,7 @@ export const EditJobPage: FC<EditJobPageProps> = ({
           <h1>Edit Job</h1>
           <p>Update job information and financial settings.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/jobs">Back</a>
         </div>
       </div>
@@ -119,7 +119,7 @@ export const EditJobPage: FC<EditJobPageProps> = ({
             </div>
           </div>
 
-          <div style="margin-top:16px;" class="actions">
+          <div class="actions actions-mobile-stack" style="margin-top:16px;">
             <button class="btn btn-primary" type="submit">Save Changes</button>
           </div>
         </form>

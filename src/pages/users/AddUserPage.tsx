@@ -33,7 +33,7 @@ export const AddUserPage: FC<AddUserPageProps> = ({
           <h1>Add User</h1>
           <p>Create a user, assign a role, and optionally link them to an employee record.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/users">Back</a>
         </div>
       </div>
@@ -80,7 +80,7 @@ export const AddUserPage: FC<AddUserPageProps> = ({
           <label>Password</label>
           <input name="password" type="password" required />
 
-          <div style="margin-top:16px;" class="actions">
+          <div class="actions actions-mobile-stack" style="margin-top:16px;">
             <button class="btn btn-primary" type="submit">Create User</button>
           </div>
         </form>

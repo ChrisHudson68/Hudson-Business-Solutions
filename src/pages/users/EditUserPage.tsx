@@ -52,7 +52,7 @@ export const EditUserPage: FC<EditUserPageProps> = ({
           <h1>Edit User</h1>
           <p class="muted">Update user info, role, employee link, or deactivate access.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/users">Back</a>
         </div>
       </div>
@@ -109,7 +109,7 @@ export const EditUserPage: FC<EditUserPageProps> = ({
             placeholder="Leave blank to keep current password"
           />
 
-          <div style="margin-top:16px;" class="actions">
+          <div class="actions actions-mobile-stack" style="margin-top:16px;">
             <button class="btn btn-primary" type="submit">Save</button>
           </div>
         </form>

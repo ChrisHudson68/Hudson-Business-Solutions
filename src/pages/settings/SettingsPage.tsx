@@ -60,7 +60,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
 
             <label>Subdomain</label>
             <input value={tenant.subdomain || ''} disabled />
-            <div class="muted" style="font-size:12px; margin-top:6px;">
+            <div class="muted small" style="margin-top:6px;">
               Subdomain changes should be handled manually for now.
             </div>
 
@@ -125,13 +125,13 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
               value={String(tenant.default_labor_rate || 0)}
             />
 
-            <div class="muted" style="margin-top:10px; font-size:12px;">
+            <div class="muted small" style="margin-top:10px;">
               This can be used later for faster job costing and default employee setup.
             </div>
           </div>
         </div>
 
-        <div class="actions" style="margin-top:16px;">
+        <div class="actions actions-mobile-stack" style="margin-top:16px;">
           <button class="btn btn-primary" type="submit">Save Settings</button>
         </div>
       </form>

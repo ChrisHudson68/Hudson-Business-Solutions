@@ -32,7 +32,7 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
           <h1>Employees</h1>
           <p class="muted">Manage pay setup and employee status.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href={showArchived ? '/employees' : '/employees?show_archived=1'}>
             {showArchived ? 'Hide Archived' : 'Show Archived'}
           </a>
@@ -41,8 +41,8 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
       </div>
 
       <div class="card">
-        <div class="table-wrap">
-          <table>
+        <div class="table-wrap table-wrap-tight">
+          <table class="table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -58,7 +58,7 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
                   <tr>
                     <td>
                       <div><b>{employee.name}</b></div>
-                      <div class="muted">
+                      <div class="muted small">
                         {employee.archived_at ? 'Archived' : employee.active ? 'Active record' : 'Inactive record'}
                       </div>
                     </td>
@@ -78,16 +78,16 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
                       )}
                     </td>
                     <td class="right">
-                      <div class="actions" style="justify-content:flex-end;">
+                      <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
                         <a class="btn" href={`/edit_employee/${employee.id}`}>Edit</a>
 
                         {employee.archived_at ? (
-                          <form method="post" action={`/restore_employee/${employee.id}`} style="display:inline;">
+                          <form method="post" action={`/restore_employee/${employee.id}`} class="inline-form">
                             <input type="hidden" name="csrf_token" value={csrfToken} />
                             <button class="btn" type="submit">Restore</button>
                           </form>
                         ) : (
-                          <form method="post" action={`/archive_employee/${employee.id}`} style="display:inline;">
+                          <form method="post" action={`/archive_employee/${employee.id}`} class="inline-form">
                             <input type="hidden" name="csrf_token" value={csrfToken} />
                             <button class="btn" type="submit">Archive</button>
                           </form>

@@ -59,7 +59,7 @@ export const AddInvoicePage: FC<AddInvoicePageProps> = ({
           <h1>Create Invoice</h1>
           <p>Generate a new invoice for a job.</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/invoices">Back</a>
         </div>
       </div>
@@ -118,7 +118,7 @@ export const AddInvoicePage: FC<AddInvoicePageProps> = ({
               {notes}
             </textarea>
 
-            <div style="margin-top:16px;" class="actions">
+            <div class="actions actions-mobile-stack" style="margin-top:16px;">
               <button class="btn btn-primary" type="submit">Create Invoice</button>
             </div>
           </form>
@@ -141,24 +141,31 @@ export const AddInvoicePage: FC<AddInvoicePageProps> = ({
             </div>
           ) : null}
 
-          <div class="muted" style="line-height:1.6;">
+          <div class="mobile-info-list" style="margin-top:0;">
             {tenant.company_address ? (
-              <div>
-                <strong>Address:</strong> {tenant.company_address}
+              <div class="mobile-info-row">
+                <span class="mobile-info-label">Address</span>
+                <span class="mobile-info-value">{tenant.company_address}</span>
               </div>
             ) : null}
+
             {tenant.company_email ? (
-              <div>
-                <strong>Email:</strong> {tenant.company_email}
+              <div class="mobile-info-row">
+                <span class="mobile-info-label">Email</span>
+                <span class="mobile-info-value">{tenant.company_email}</span>
               </div>
             ) : null}
+
             {tenant.company_phone ? (
-              <div>
-                <strong>Phone:</strong> {tenant.company_phone}
+              <div class="mobile-info-row">
+                <span class="mobile-info-label">Phone</span>
+                <span class="mobile-info-value">{tenant.company_phone}</span>
               </div>
             ) : null}
-            <div>
-              <strong>Invoice Prefix:</strong> {tenant.invoice_prefix || 'INV'}
+
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Invoice Prefix</span>
+              <span class="mobile-info-value">{tenant.invoice_prefix || 'INV'}</span>
             </div>
           </div>
         </div>
