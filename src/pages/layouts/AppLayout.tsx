@@ -69,6 +69,7 @@ const appCss = `
       display:flex;
       flex-direction:column;
       gap:10px;
+      flex:0 0 260px;
     }
 
     .brand{
@@ -156,19 +157,21 @@ const appCss = `
     }
 
     .topbar{
-      height:62px;
+      min-height:62px;
       background:var(--card);
       border-bottom:1px solid var(--border);
       display:flex;
       align-items:center;
       justify-content:space-between;
-      padding:0 18px;
+      gap:12px;
+      padding:10px 18px;
     }
 
     .tenant{
       display:flex;
       flex-direction:column;
       line-height:1.15;
+      min-width:0;
     }
 
     .tenant strong{
@@ -178,19 +181,21 @@ const appCss = `
     .tenant span{
       font-size:12px;
       color:var(--muted);
+      word-break:break-word;
     }
 
     .top-actions{
       display:flex;
       align-items:center;
       gap:10px;
+      flex-wrap:wrap;
     }
 
     .btn{
       display:inline-flex;
       align-items:center;
       justify-content:center;
-      height:36px;
+      min-height:36px;
       padding:0 12px;
       border-radius:12px;
       border:1px solid var(--border);
@@ -199,6 +204,7 @@ const appCss = `
       font-size:13px;
       cursor:pointer;
       text-decoration:none;
+      white-space:nowrap;
     }
 
     .btn-primary{
@@ -270,6 +276,57 @@ const appCss = `
 
       .sidebar{
         width:100%;
+        flex:0 0 auto;
+        padding:14px 12px;
+      }
+
+      .brand{
+        min-height:auto;
+        padding:12px;
+      }
+
+      .brand img{
+        height:48px;
+        width:48px;
+        flex-basis:48px;
+      }
+
+      .nav{
+        flex-direction:row;
+        overflow:auto;
+        padding-bottom:2px;
+        margin-top:6px;
+      }
+
+      .nav a{
+        flex:0 0 auto;
+        white-space:nowrap;
+      }
+
+      .side-foot{
+        margin-top:6px;
+      }
+
+      .topbar{
+        align-items:flex-start;
+        flex-direction:column;
+        padding:12px 14px;
+      }
+
+      .top-actions{
+        width:100%;
+      }
+
+      .top-actions .btn{
+        width:100%;
+      }
+
+      .content{
+        padding:14px;
+      }
+
+      .page-head{
+        flex-direction:column;
       }
 
       .grid-2,
@@ -290,6 +347,7 @@ const appCss = `
 
     .table-wrap{
       overflow:auto;
+      -webkit-overflow-scrolling:touch;
     }
 
     table{
@@ -347,10 +405,19 @@ const appCss = `
     .row{
       display:flex;
       gap:12px;
+      align-items:flex-end;
     }
 
     .row > *{
       flex:1;
+      min-width:0;
+    }
+
+    @media (max-width:760px){
+      .row{
+        flex-direction:column;
+        align-items:stretch;
+      }
     }
 
     .muted{
@@ -360,7 +427,7 @@ const appCss = `
     .badge{
       display:inline-flex;
       align-items:center;
-      height:22px;
+      min-height:22px;
       padding:0 10px;
       border-radius:999px;
       border:1px solid var(--border);
@@ -393,6 +460,20 @@ const appCss = `
       display:flex;
       gap:10px;
       align-items:center;
+      flex-wrap:wrap;
+    }
+
+    @media (max-width:760px){
+      .actions{
+        width:100%;
+        align-items:stretch;
+      }
+
+      .actions > .btn,
+      .actions > a.btn,
+      .actions > form{
+        width:100%;
+      }
     }
 
     .billing-banner{
@@ -447,6 +528,10 @@ const appCss = `
       .billing-banner{
         flex-direction:column;
         align-items:flex-start;
+      }
+
+      .billing-banner .btn{
+        width:100%;
       }
     }
   `;

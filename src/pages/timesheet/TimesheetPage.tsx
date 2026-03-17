@@ -192,7 +192,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
               : 'Manage weekly time entries, review edit approvals, and use your own clock when linked.'}
           </p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn btn-primary" href="/timesheet">Refresh</a>
         </div>
       </div>
@@ -229,24 +229,26 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
           {activeClockEntry ? (
             <div>
               <div class="badge badge-good" style="margin-bottom:10px;">Currently Clocked In</div>
-              <div class="grid grid-3">
-                <div class="card">
+              <div class="clock-status-grid">
+                <div class="card clock-card">
                   <div class="muted">Type</div>
-                  <div><b>{activeClockEntry.job_name}</b></div>
+                  <div class="clock-card-value"><b>{activeClockEntry.job_name}</b></div>
                 </div>
-                <div class="card">
+                <div class="card clock-card">
                   <div class="muted">Clock In</div>
-                  <div data-utc-display={activeClockEntry.clock_in_at}>
+                  <div class="clock-card-value" data-utc-display={activeClockEntry.clock_in_at}>
                     {activeClockEntry.clock_in_at}
                   </div>
                 </div>
-                <div class="card">
+                <div class="card clock-card">
                   <div class="muted">Action</div>
-                  <form method="post" action="/timeclock/punch-out" data-punch-now>
-                    <input type="hidden" name="csrf_token" value={csrfToken} />
-                    <input type="hidden" name="client_now_utc" value="" />
-                    <button class="btn btn-primary" type="submit">Punch Out</button>
-                  </form>
+                  <div class="actions actions-mobile-stack" style="margin-top:10px;">
+                    <form method="post" action="/timeclock/punch-out" data-punch-now>
+                      <input type="hidden" name="csrf_token" value={csrfToken} />
+                      <input type="hidden" name="client_now_utc" value="" />
+                      <button class="btn btn-primary" type="submit">Punch Out</button>
+                    </form>
+                  </div>
                 </div>
               </div>
             </div>
@@ -269,7 +271,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
             </form>
           )}
 
-          <div class="muted" style="margin-top:10px;">
+          <div class="muted mobile-note">
             Global time clock entries are not tied to a specific job at punch-in.
           </div>
         </div>
@@ -316,8 +318,8 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
 
       <div class="card" style="margin-top:14px;">
         <b>{isEmployeeUser ? 'My Entries' : 'Existing Entries'}</b>
-        <div class="table-wrap" style="margin-top:10px;">
-          <table>
+        <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+          <table class="table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -352,9 +354,9 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                     <td class="right">
                       {isEmployeeUser ? (
                         t.clock_in_at && t.clock_out_at ? (
-                          <details style="display:inline-block; text-align:left;">
-                            <summary class="btn" style="list-style:none; cursor:pointer;">Request Edit</summary>
-                            <div class="card" style="margin-top:10px; min-width:420px; text-align:left;">
+                          <details style="display:inline-block; text-align:left; width:100%;">
+                            <summary class="btn edit-request-summary">Request Edit</summary>
+                            <div class="card details-card" style="min-width:420px;">
                               <form
                                 method="post"
                                 action={`/timeclock/request-edit/${t.id}`}
@@ -363,7 +365,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                                 <input type="hidden" name="csrf_token" value={csrfToken} />
 
                                 <label>Clock In</label>
-                                <div class="actions" style="margin-bottom:6px;">
+                                <div class="edit-request-actions">
                                   <input
                                     id={`clock-in-local-${t.id}`}
                                     type="datetime-local"
@@ -382,7 +384,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                                 <input type="hidden" name="clock_in_utc" value="" />
 
                                 <label>Clock Out</label>
-                                <div class="actions" style="margin-bottom:6px;">
+                                <div class="edit-request-actions">
                                   <input
                                     id={`clock-out-local-${t.id}`}
                                     type="datetime-local"
@@ -406,7 +408,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                                 <label>Why are you requesting this edit?</label>
                                 <textarea name="request_reason" required maxLength={500} />
 
-                                <div class="actions" style="margin-top:12px;">
+                                <div class="actions actions-mobile-stack" style="margin-top:12px;">
                                   <button
                                     class="btn btn-primary"
                                     type="submit"
@@ -448,8 +450,8 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
             <input type="hidden" name="employee_id" value={String(employeeId || '')} />
             <input type="hidden" name="start" value={start} />
 
-            <div class="table-wrap">
-              <table>
+            <div class="table-wrap table-wrap-tight">
+              <table class="table">
                 <thead>
                   <tr>
                     <th>Date</th>
@@ -492,7 +494,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
               </table>
             </div>
 
-            <div class="actions" style="margin-top:16px;">
+            <div class="actions actions-mobile-stack" style="margin-top:16px;">
               <button class="btn btn-primary" type="submit" disabled={employees.length === 0 || jobs.length === 0}>
                 Save Entries
               </button>
@@ -504,8 +506,8 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
       {!isEmployeeUser ? (
         <div class="card" style="margin-top:14px;">
           <b>Pending Edit Requests</b>
-          <div class="table-wrap" style="margin-top:10px;">
-            <table>
+          <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+            <table class="table">
               <thead>
                 <tr>
                   <th>Employee</th>
@@ -544,7 +546,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                       <td>{request.request_reason}</td>
                       <td data-utc-display={request.created_at}>{request.created_at}</td>
                       <td class="right">
-                        <div class="actions" style="justify-content:flex-end;">
+                        <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
                           <form method="post" action={`/timeclock/edit-request/${request.id}/approve`}>
                             <input type="hidden" name="csrf_token" value={csrfToken} />
                             <button class="btn btn-primary" type="submit">Approve</button>

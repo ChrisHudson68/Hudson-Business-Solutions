@@ -80,16 +80,16 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
             {job.client_name || 'No client'} • {job.job_code || 'No job code'}
           </p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href="/jobs">Back</a>
           <a class="btn" href={`/edit_job/${job.id}`}>Edit</a>
           {job.archived_at ? (
-            <form method="post" action={`/restore_job/${job.id}`} style="display:inline;">
+            <form method="post" action={`/restore_job/${job.id}`} class="inline-form">
               <input type="hidden" name="csrf_token" value={csrfToken} />
               <button class="btn" type="submit">Restore</button>
             </form>
           ) : (
-            <form method="post" action={`/archive_job/${job.id}`} style="display:inline;">
+            <form method="post" action={`/archive_job/${job.id}`} class="inline-form">
               <input type="hidden" name="csrf_token" value={csrfToken} />
               <button class="btn" type="submit">Archive</button>
             </form>
@@ -106,74 +106,75 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
       ) : null}
 
-      <div class="grid grid-4" style="margin-bottom:14px;">
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Contract</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatMoney(Number(job.contract_amount || 0))}
-          </div>
+      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Contract</div>
+          <div class="metric-value">${formatMoney(Number(job.contract_amount || 0))}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Income</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatMoney(totalIncome || 0)}
-          </div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Income</div>
+          <div class="metric-value">${formatMoney(totalIncome || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Costs</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatMoney(totalCosts || 0)}
-          </div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Costs</div>
+          <div class="metric-value">${formatMoney(totalCosts || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Profit</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatMoney(profit || 0)}
-          </div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Profit</div>
+          <div class="metric-value">${formatMoney(profit || 0)}</div>
         </div>
       </div>
 
-      <div class="grid grid-3" style="margin-bottom:14px;">
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Expenses</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatMoney(totalExpenses || 0)}
-          </div>
+      <div class="grid grid-3 mobile-card-grid" style="margin-bottom:14px;">
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Expenses</div>
+          <div class="metric-value">${formatMoney(totalExpenses || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Labor</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatMoney(totalLabor || 0)}
-          </div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Labor</div>
+          <div class="metric-value">${formatMoney(totalLabor || 0)}</div>
         </div>
 
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Retainage Held</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatMoney(retainageHeld || 0)}
-          </div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Retainage Held</div>
+          <div class="metric-value">${formatMoney(retainageHeld || 0)}</div>
         </div>
       </div>
 
       <div class="grid grid-2" style="margin-bottom:14px;">
         <div class="card">
           <b>Job Info</b>
-          <div class="muted" style="margin-top:10px; line-height:1.8;">
-            <div><b>Client:</b> {job.client_name || '—'}</div>
-            <div><b>Job Code:</b> {job.job_code || '—'}</div>
-            <div><b>Status:</b> {job.status || '—'}</div>
-            <div><b>Start Date:</b> {job.start_date || '—'}</div>
-            <div><b>Retainage %:</b> {Number(job.retainage_percent || 0).toFixed(2)}%</div>
+          <div class="mobile-info-list">
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Client</span>
+              <span class="mobile-info-value">{job.client_name || '—'}</span>
+            </div>
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Job Code</span>
+              <span class="mobile-info-value">{job.job_code || '—'}</span>
+            </div>
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Status</span>
+              <span class="mobile-info-value">{job.status || '—'}</span>
+            </div>
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Start Date</span>
+              <span class="mobile-info-value">{job.start_date || '—'}</span>
+            </div>
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Retainage %</span>
+              <span class="mobile-info-value">{Number(job.retainage_percent || 0).toFixed(2)}%</span>
+            </div>
           </div>
         </div>
 
         <div class="card">
           <b>Actions</b>
-          <div class="actions" style="margin-top:12px; flex-wrap:wrap;">
+          <div class="actions actions-mobile-stack" style="margin-top:12px;">
             {job.archived_at ? (
               <span class="muted">Restore this job to add new income or expenses.</span>
             ) : (
@@ -189,11 +190,11 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
       </div>
 
-      <div class="grid grid-2" style="margin-top:14px;">
+      <div class="grid grid-2 mobile-section-gap">
         <div class="card">
           <b>Income</b>
-          <div class="table-wrap" style="margin-top:10px;">
-            <table>
+          <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+            <table class="table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -216,7 +217,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                           <form
                             method="post"
                             action={`/delete_income/${row.id}`}
-                            style="display:inline;"
+                            class="inline-form"
                             onsubmit="return confirm('Delete this income entry?');"
                           >
                             <input type="hidden" name="csrf_token" value={csrfToken} />
@@ -238,8 +239,8 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
 
         <div class="card">
           <b>Expenses</b>
-          <div class="table-wrap" style="margin-top:10px;">
-            <table>
+          <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+            <table class="table">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -264,7 +265,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                           <form
                             method="post"
                             action={`/delete_expense/${row.id}`}
-                            style="display:inline;"
+                            class="inline-form"
                             onsubmit="return confirm('Delete this expense entry?');"
                           >
                             <input type="hidden" name="csrf_token" value={csrfToken} />
@@ -285,10 +286,10 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
       </div>
 
-      <div class="card" style="margin-top:14px;">
+      <div class="card mobile-section-gap">
         <b>Labor Entries</b>
-        <div class="table-wrap" style="margin-top:10px;">
-          <table>
+        <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+          <table class="table">
             <thead>
               <tr>
                 <th>Date</th>
