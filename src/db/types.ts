@@ -37,6 +37,7 @@ export interface User {
   role: string;
   active: number;
   tenant_id: number;
+  employee_id: number | null;
 }
 
 export interface Job {
@@ -81,15 +82,26 @@ export interface Employee {
   tenant_id: number;
 }
 
+export type TimeEntryApprovalStatus = 'approved' | 'pending_edit';
+
 export interface TimeEntry {
   id: number;
-  job_id: number;
+  job_id: number | null;
   employee_id: number;
   date: string;
   hours: number;
   note: string | null;
   labor_cost: number;
   tenant_id: number;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+  entry_method: 'manual' | 'clock';
+  approval_status: TimeEntryApprovalStatus;
+  approved_by_user_id: number | null;
+  approved_at: string | null;
+  last_edited_by_user_id: number | null;
+  last_edited_at: string | null;
+  edit_reason: string | null;
 }
 
 export interface Invoice {
@@ -131,5 +143,25 @@ export interface InvoiceWithJob extends Invoice {
 
 export interface TimeEntryWithNames extends TimeEntry {
   employee_name: string;
-  job_name: string;
+  job_name: string | null;
+}
+
+export interface TimeEntryEditRequest {
+  id: number;
+  tenant_id: number;
+  time_entry_id: number;
+  employee_id: number;
+  requested_by_user_id: number;
+  proposed_job_id: number | null;
+  proposed_date: string;
+  proposed_clock_in_at: string;
+  proposed_clock_out_at: string;
+  proposed_hours: number;
+  proposed_note: string | null;
+  request_reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by_user_id: number | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
 }

@@ -470,6 +470,7 @@ function isActive(path: string, patterns: string[]): boolean {
 const navItems = [
   { label: 'Dashboard', href: '/', patterns: ['/'] },
   { label: 'Jobs', href: '/jobs', patterns: ['/jobs', '/add_job', '/job/', '/edit_job/'] },
+  { label: 'Reports', href: '/reports', patterns: ['/reports', '/profit', '/job_costs'] },
   { label: 'Employees', href: '/employees', patterns: ['/employees', '/add_employee', '/edit_employee/'] },
   { label: 'Timesheets', href: '/timesheet', patterns: ['/timesheet'] },
   { label: 'Invoices', href: '/invoices', patterns: ['/invoices', '/add_invoice', '/invoice/'] },

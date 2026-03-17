@@ -1,33 +1,44 @@
 import type { FC } from 'hono/jsx';
 
+interface EmployeeOption {
+  id: number;
+  name: string;
+}
+
 interface AddUserPageProps {
   error?: string;
   formData?: {
     name: string;
     email: string;
     role: string;
+    employee_id?: string;
   };
+  employeeOptions: EmployeeOption[];
   csrfToken: string;
 }
 
 export const AddUserPage: FC<AddUserPageProps> = ({
   error,
   formData,
+  employeeOptions,
   csrfToken,
 }) => {
+  const selectedRole = formData?.role || 'Employee';
+  const selectedEmployeeId = formData?.employee_id || '';
+
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>Add User</h1>
-          <p>Create a user and assign a role.</p>
+          <p>Create a user, assign a role, and optionally link them to an employee record.</p>
         </div>
         <div class="actions">
           <a class="btn" href="/users">Back</a>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" style="max-width:760px;">
         {error ? (
           <div
             class="badge badge-bad"
@@ -48,14 +59,22 @@ export const AddUserPage: FC<AddUserPageProps> = ({
 
           <label>Role</label>
           <select name="role">
-            <option value="Admin" selected={formData?.role === 'Admin'}>Admin</option>
-            <option value="Manager" selected={formData?.role === 'Manager'}>Manager</option>
-            <option
-              value="Employee"
-              selected={!formData?.role || formData?.role === 'Employee'}
-            >
-              Employee
-            </option>
+            <option value="Admin" selected={selectedRole === 'Admin'}>Admin</option>
+            <option value="Manager" selected={selectedRole === 'Manager'}>Manager</option>
+            <option value="Employee" selected={selectedRole === 'Employee'}>Employee</option>
+          </select>
+
+          <label>Linked Employee Record (recommended for Employee users)</label>
+          <select name="employee_id">
+            <option value="">-- Not linked --</option>
+            {employeeOptions.map((employee) => (
+              <option
+                value={String(employee.id)}
+                selected={selectedEmployeeId === String(employee.id)}
+              >
+                {employee.name}
+              </option>
+            ))}
           </select>
 
           <label>Password</label>

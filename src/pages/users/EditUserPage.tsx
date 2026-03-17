@@ -6,6 +6,12 @@ interface UserRecord {
   email: string;
   role: string;
   active: number;
+  employee_id: number | null;
+}
+
+interface EmployeeOption {
+  id: number;
+  name: string;
 }
 
 interface EditUserFormData {
@@ -13,10 +19,12 @@ interface EditUserFormData {
   email: string;
   role: string;
   active: number;
+  employee_id: string;
 }
 
 interface EditUserPageProps {
   user: UserRecord;
+  employeeOptions: EmployeeOption[];
   formData?: EditUserFormData;
   error?: string;
   csrfToken: string;
@@ -24,6 +32,7 @@ interface EditUserPageProps {
 
 export const EditUserPage: FC<EditUserPageProps> = ({
   user,
+  employeeOptions,
   formData,
   error,
   csrfToken,
@@ -33,6 +42,7 @@ export const EditUserPage: FC<EditUserPageProps> = ({
     email: formData?.email ?? user.email,
     role: formData?.role ?? user.role,
     active: formData?.active ?? user.active,
+    employee_id: formData?.employee_id ?? String(user.employee_id ?? ''),
   };
 
   return (
@@ -40,7 +50,7 @@ export const EditUserPage: FC<EditUserPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Edit User</h1>
-          <p class="muted">Update user info, role, or deactivate access.</p>
+          <p class="muted">Update user info, role, employee link, or deactivate access.</p>
         </div>
         <div class="actions">
           <a class="btn" href="/users">Back</a>
@@ -71,6 +81,19 @@ export const EditUserPage: FC<EditUserPageProps> = ({
             <option value="Admin" selected={values.role === 'Admin'}>Admin</option>
             <option value="Manager" selected={values.role === 'Manager'}>Manager</option>
             <option value="Employee" selected={values.role === 'Employee'}>Employee</option>
+          </select>
+
+          <label>Linked Employee Record</label>
+          <select name="employee_id">
+            <option value="">-- Not linked --</option>
+            {employeeOptions.map((employee) => (
+              <option
+                value={String(employee.id)}
+                selected={values.employee_id === String(employee.id)}
+              >
+                {employee.name}
+              </option>
+            ))}
           </select>
 
           <label>Active</label>

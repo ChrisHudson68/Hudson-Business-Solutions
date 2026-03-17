@@ -7,6 +7,7 @@ interface UsersPageProps {
     email: string;
     role: string;
     active: number;
+    employee_name: string | null;
   }>;
 }
 
@@ -16,7 +17,7 @@ export const UsersPage: FC<UsersPageProps> = ({ users }) => {
       <div class="page-head">
         <div>
           <h1>Users</h1>
-          <p class="muted">Manage tenant users and access roles.</p>
+          <p class="muted">Manage tenant users, access roles, and employee links.</p>
         </div>
         <div class="actions">
           <a class="btn btn-primary" href="/add_user">Add User</a>
@@ -31,6 +32,7 @@ export const UsersPage: FC<UsersPageProps> = ({ users }) => {
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
+                <th>Employee Link</th>
                 <th>Status</th>
                 <th>Action</th>
               </tr>
@@ -42,6 +44,7 @@ export const UsersPage: FC<UsersPageProps> = ({ users }) => {
                     <td>{user.name}</td>
                     <td>{user.email}</td>
                     <td>{user.role}</td>
+                    <td>{user.employee_name || <span class="muted">Not linked</span>}</td>
                     <td>
                       {user.active ? (
                         <span class="badge badge-good">Active</span>
@@ -56,7 +59,7 @@ export const UsersPage: FC<UsersPageProps> = ({ users }) => {
                 ))
               ) : (
                 <tr>
-                  <td colspan={5} class="muted">No users found.</td>
+                  <td colspan={6} class="muted">No users found.</td>
                 </tr>
               )}
             </tbody>

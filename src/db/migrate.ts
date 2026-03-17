@@ -128,6 +128,25 @@ function isMigrationAlreadySatisfied(db: Database.Database, filename: string): b
   return false;
 }
 
+function shouldRunWithoutWrapperTransaction(filename: string): boolean {
+  return filename === '007_make_timeclock_job_optional.sql';
+}
+
+function runMigration(db: Database.Database, filename: string, sql: string): void {
+  if (shouldRunWithoutWrapperTransaction(filename)) {
+    db.exec(sql);
+    recordMigration(db, filename);
+    return;
+  }
+
+  const tx = db.transaction(() => {
+    db.exec(sql);
+    recordMigration(db, filename);
+  });
+
+  tx();
+}
+
 export function migrateDatabase(db: Database.Database): void {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
@@ -174,12 +193,7 @@ export function migrateDatabase(db: Database.Database): void {
       throw new Error(`Migration file "${filename}" is empty.`);
     }
 
-    const tx = db.transaction(() => {
-      db.exec(sql);
-      recordMigration(db, filename);
-    });
-
-    tx();
+    runMigration(db, filename, sql);
     applied.add(filename);
   }
 }
