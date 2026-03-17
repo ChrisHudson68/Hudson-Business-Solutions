@@ -277,15 +277,18 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                         {job.archived_at ? (
                           <span class="muted">Locked</span>
                         ) : (
-                          <form
-                            method="post"
-                            action={`/delete_expense/${row.id}`}
-                            class="inline-form"
-                            onsubmit="return confirm('Delete this expense entry?');"
-                          >
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Delete</button>
-                          </form>
+                          <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
+                            <a class="btn" href={`/edit_expense/${row.id}`}>Edit</a>
+                            <form
+                              method="post"
+                              action={`/delete_expense/${row.id}`}
+                              class="inline-form"
+                              onsubmit="return confirm('Delete this expense entry?');"
+                            >
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit">Delete</button>
+                            </form>
+                          </div>
                         )}
                       </td>
                     </tr>

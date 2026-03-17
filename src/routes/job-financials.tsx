@@ -22,6 +22,7 @@ import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { AddIncomePage } from '../pages/jobs/AddIncomePage.js';
 import { AddExpensePage } from '../pages/jobs/AddExpensePage.js';
+import { EditExpensePage } from '../pages/jobs/EditExpensePage.js';
 import { getEnv } from '../config/env.js';
 
 const receiptRootDir = path.join(getEnv().uploadDir, 'receipts');
@@ -368,6 +369,222 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
       400,
     );
   }
+});
+
+jobFinancialRoutes.get('/edit_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const tenantId = tenant!.id;
+  const expenseId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!expenseId) {
+    return c.text('Expense entry not found', 404);
+  }
+
+  const expense = expenses.findById(db, expenseId, tenantId);
+  if (!expense) {
+    return c.text('Expense entry not found', 404);
+  }
+
+  const job = loadJobOr404(db, expense.job_id, tenantId);
+  if (!job) {
+    return c.text('Job not found', 404);
+  }
+
+  return renderApp(
+    c,
+    'Edit Expense',
+    <EditExpensePage
+      expenseId={expense.id}
+      job={job}
+      formData={{
+        category: String(expense.category ?? ''),
+        vendor: String(expense.vendor ?? ''),
+        amount: String(expense.amount ?? ''),
+        date: String(expense.date ?? ''),
+      }}
+      currentReceiptFilename={expense.receipt_filename}
+      csrfToken={c.get('csrfToken')}
+    />,
+  );
+});
+
+jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const expenseId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+  const env = getEnv();
+
+  if (!expenseId) {
+    return c.text('Expense entry not found', 404);
+  }
+
+  const existingExpense = expenses.findById(db, expenseId, tenantId);
+  if (!existingExpense) {
+    return c.text('Expense entry not found', 404);
+  }
+
+  const job = loadJobOr404(db, existingExpense.job_id, tenantId);
+  if (!job) {
+    return c.text('Job not found', 404);
+  }
+
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const formData = buildExpenseFormData(body);
+
+  try {
+    const category = requireText(body.category, 'Category', 120);
+    const vendor = optionalText(body.vendor, 'Vendor', 120);
+    const amount = parsePositiveMoney(body.amount, 'Amount');
+    const date = requireDate(body.date, 'Date');
+
+    let nextReceiptFilename = existingExpense.receipt_filename || null;
+    let oldReceiptToDelete: string | null = null;
+
+    const file = body.receipt;
+    if (file && file instanceof File && file.size > 0) {
+      const tenantReceiptDir = buildTenantReceiptUploadDir(receiptRootDir, tenantId);
+      const savedFilename = await saveUploadedFile(file, tenantReceiptDir, {
+        allowedExtensions: RECEIPT_EXTENSIONS,
+        allowedMimeTypes: RECEIPT_MIME_TYPES,
+        maxBytes: env.maxReceiptUploadBytes,
+      });
+
+      nextReceiptFilename = buildTenantReceiptStoredPath(tenantId, savedFilename);
+      oldReceiptToDelete = existingExpense.receipt_filename || null;
+    }
+
+    expenses.update(db, expenseId, tenantId, {
+      category,
+      vendor,
+      amount,
+      date,
+      receipt_filename: nextReceiptFilename,
+    });
+
+    if (oldReceiptToDelete) {
+      deleteUploadedFile(oldReceiptToDelete, receiptRootDir);
+    }
+
+    if (currentUser) {
+      logActivity(db, {
+        tenantId,
+        actorUserId: currentUser.id,
+        eventType: 'expense.updated',
+        entityType: 'expense',
+        entityId: expenseId,
+        description: `${currentUser.name} updated expense ${category} on job ${job.job_name}.`,
+        metadata: {
+          job_id: job.id,
+          job_name: job.job_name,
+          previous_category: existingExpense.category,
+          previous_vendor: existingExpense.vendor,
+          previous_amount: existingExpense.amount,
+          previous_date: existingExpense.date,
+          new_category: category,
+          new_vendor: vendor ?? null,
+          new_amount: amount,
+          new_date: date,
+          receipt_filename: nextReceiptFilename,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+
+      if (file && file instanceof File && file.size > 0) {
+        logActivity(db, {
+          tenantId,
+          actorUserId: currentUser.id,
+          eventType: 'expense.receipt_replaced',
+          entityType: 'expense',
+          entityId: expenseId,
+          description: `${currentUser.name} replaced the receipt for expense ${category} on job ${job.job_name}.`,
+          metadata: {
+            job_id: job.id,
+            job_name: job.job_name,
+            category,
+            vendor: vendor ?? null,
+            amount,
+            date,
+            previous_receipt_filename: existingExpense.receipt_filename,
+            receipt_filename: nextReceiptFilename,
+          },
+          ipAddress: resolveRequestIp(c),
+        });
+      }
+    }
+
+    return c.redirect(`/job/${job.id}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to update expense entry.';
+
+    return renderApp(
+      c,
+      'Edit Expense',
+      <EditExpensePage
+        expenseId={existingExpense.id}
+        job={job}
+        formData={formData}
+        currentReceiptFilename={existingExpense.receipt_filename}
+        error={message}
+        csrfToken={c.get('csrfToken')}
+      />,
+      400,
+    );
+  }
+});
+
+jobFinancialRoutes.post('/delete_expense_receipt/:id', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const expenseId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!expenseId) {
+    return c.text('Expense entry not found', 404);
+  }
+
+  const expense = expenses.findById(db, expenseId, tenantId);
+  if (!expense) {
+    return c.text('Expense entry not found', 404);
+  }
+
+  const job = loadJobOr404(db, expense.job_id, tenantId);
+  if (!job) {
+    return c.text('Job not found', 404);
+  }
+
+  if (!expense.receipt_filename) {
+    return c.redirect(`/edit_expense/${expense.id}`);
+  }
+
+  deleteUploadedFile(expense.receipt_filename, receiptRootDir);
+  expenses.clearReceipt(db, expense.id, tenantId);
+
+  if (currentUser) {
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'expense.receipt_removed',
+      entityType: 'expense',
+      entityId: expense.id,
+      description: `${currentUser.name} removed the receipt from expense ${expense.category || `#${expense.id}`}.`,
+      metadata: {
+        job_id: job.id,
+        job_name: job.job_name,
+        category: expense.category,
+        vendor: expense.vendor,
+        amount: Number(expense.amount || 0),
+        date: expense.date,
+        receipt_filename: expense.receipt_filename,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+  }
+
+  return c.redirect(`/edit_expense/${expense.id}`);
 });
 
 jobFinancialRoutes.get('/expense-receipts/:id', loginRequired, (c) => {
