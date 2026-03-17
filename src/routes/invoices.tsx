@@ -3,6 +3,7 @@ import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { generateInvoicePdf } from '../services/invoice-pdf.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { InvoicesPage } from '../pages/invoices/InvoicesPage.js';
 import { InvoiceDetailPage } from '../pages/invoices/InvoiceDetailPage.js';
 import { AddInvoicePage } from '../pages/invoices/AddInvoicePage.js';
@@ -351,7 +352,8 @@ invoiceRoutes.get('/add_invoice', roleRequired('Admin', 'Manager'), (c) => {
 
 invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
-  if (!tenant) return c.redirect('/login');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
 
   const tenantId = tenant.id;
   const db = getDb();
@@ -396,8 +398,8 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
     const notes = optionalTrimmedString(body['notes'], 2000);
 
     const job = db
-      .prepare('SELECT id FROM jobs WHERE id = ? AND tenant_id = ?')
-      .get(jobId, tenantId) as { id: number } | undefined;
+      .prepare('SELECT id, job_name FROM jobs WHERE id = ? AND tenant_id = ?')
+      .get(jobId, tenantId) as { id: number; job_name: string } | undefined;
 
     if (!job) {
       throw new ValidationError('Selected job was not found for this company.');
@@ -418,12 +420,32 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
       throw new ValidationError('Invoice number already exists. Please choose a different one.');
     }
 
-    db.prepare(
+    const result = db.prepare(
       `
         INSERT INTO invoices (job_id, invoice_number, date_issued, due_date, amount, status, notes, tenant_id)
         VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?)
       `,
     ).run(jobId, invoiceNumber, dateIssued, dueDate, amount, notes, tenantId);
+
+    const invoiceId = Number(result.lastInsertRowid);
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'invoice.created',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      description: `${currentUser.name} created invoice ${invoiceNumber}.`,
+      metadata: {
+        invoice_number: invoiceNumber,
+        job_id: job.id,
+        job_name: job.job_name,
+        amount,
+        date_issued: dateIssued,
+        due_date: dueDate,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
 
     return c.redirect('/invoices');
   } catch (error) {
@@ -546,7 +568,8 @@ invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
 
 invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
-  if (!tenant) return c.redirect('/login');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
 
   let invoiceId: number;
   try {
@@ -561,12 +584,15 @@ invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin', 'Manager'), asyn
   const invoice = db
     .prepare(
       `
-        SELECT id
-        FROM invoices
-        WHERE id = ? AND tenant_id = ?
+        SELECT i.id, i.invoice_number, i.amount, i.job_id, j.job_name
+        FROM invoices i
+        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        WHERE i.id = ? AND i.tenant_id = ?
       `,
     )
-    .get(invoiceId, tenantId) as { id: number } | undefined;
+    .get(invoiceId, tenantId) as
+    | { id: number; invoice_number: string | null; amount: number; job_id: number; job_name: string }
+    | undefined;
 
   if (!invoice) {
     return c.text('Invoice not found', 404);
@@ -602,6 +628,22 @@ invoiceRoutes.post('/delete_invoice/:id', roleRequired('Admin', 'Manager'), asyn
       WHERE id = ? AND tenant_id = ?
     `,
   ).run(invoiceId, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser.id,
+    eventType: 'invoice.deleted',
+    entityType: 'invoice',
+    entityId: invoiceId,
+    description: `${currentUser.name} deleted invoice ${invoice.invoice_number || `#${invoiceId}`}.`,
+    metadata: {
+      invoice_number: invoice.invoice_number,
+      amount: Number(invoice.amount || 0),
+      job_id: invoice.job_id,
+      job_name: invoice.job_name,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
 
   return c.redirect('/invoices');
 });
