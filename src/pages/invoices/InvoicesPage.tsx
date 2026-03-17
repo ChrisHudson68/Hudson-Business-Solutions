@@ -13,6 +13,7 @@ interface InvoiceRow {
   outstanding: number;
   status: string;
   payment_count: number;
+  attachment_filename?: string | null;
   archived_at?: string | null;
 }
 
@@ -71,6 +72,7 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
                 <th>Job</th>
                 <th>Date</th>
                 <th>Due</th>
+                <th>Attachment</th>
                 <th class="right">Amount</th>
                 <th>Status</th>
                 <th class="right">Actions</th>
@@ -87,12 +89,33 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
                     <td>{inv.job_name}</td>
                     <td>{inv.date_issued}</td>
                     <td>{inv.due_date}</td>
+                    <td>
+                      {inv.attachment_filename ? (
+                        <div class="actions actions-mobile-stack">
+                          <span class="badge badge-good">Attached</span>
+                          <a
+                            class="btn"
+                            href={`/invoice-attachments/${inv.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View
+                          </a>
+                        </div>
+                      ) : (
+                        <span class="muted">No attachment</span>
+                      )}
+                    </td>
                     <td class="right">${formatCurrency(inv.amount || 0)}</td>
                     <td>
                       {inv.archived_at ? (
                         <span class="badge badge-warn">Archived</span>
+                      ) : inv.status === 'Overdue' ? (
+                        <span class="badge badge-bad">Overdue</span>
+                      ) : inv.status === 'Paid' ? (
+                        <span class="badge badge-good">Paid</span>
                       ) : (
-                        <span class="badge">{inv.status}</span>
+                        <span class="badge">Unpaid</span>
                       )}
                     </td>
                     <td class="right">
@@ -118,7 +141,7 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
                 ))
               ) : (
                 <tr>
-                  <td colspan={7} class="muted">
+                  <td colspan={8} class="muted">
                     {showArchived ? 'No archived invoices found.' : 'No active invoices yet.'}
                   </td>
                 </tr>

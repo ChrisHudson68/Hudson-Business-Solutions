@@ -1,8 +1,21 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getDb } from '../db/connection.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { generateInvoicePdf } from '../services/invoice-pdf.js';
+import {
+  DOCUMENT_ATTACHMENT_EXTENSIONS,
+  DOCUMENT_ATTACHMENT_MIME_TYPES,
+  saveUploadedFile,
+  buildTenantScopedStoredPath,
+  buildTenantScopedUploadDir,
+  resolveUploadedFilePath,
+  inferMimeTypeFromStoredFilename,
+  buildSafeDownloadFilename,
+  deleteUploadedFile,
+} from '../services/file-upload.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { InvoicesPage } from '../pages/invoices/InvoicesPage.js';
 import { InvoiceDetailPage } from '../pages/invoices/InvoiceDetailPage.js';
@@ -18,6 +31,9 @@ import {
   parseMoney,
   parsePositiveInt,
 } from '../lib/validation.js';
+import { getEnv } from '../config/env.js';
+
+const invoiceAttachmentRootDir = path.join(getEnv().uploadDir, 'invoice_attachments');
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 | 404 = 200) {
   return c.html(
@@ -126,6 +142,7 @@ function loadInvoiceDetailData(db: any, tenantId: number, invoiceId: number) {
           i.due_date,
           i.amount,
           i.notes,
+          i.attachment_filename,
           i.archived_at
         FROM invoices i
         JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
@@ -251,6 +268,7 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
           i.due_date,
           i.amount,
           i.status,
+          i.attachment_filename,
           i.archived_at
         FROM invoices i
         JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
@@ -311,6 +329,7 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
       outstanding,
       status,
       payment_count: paymentInfo.paymentCount,
+      attachment_filename: row.attachment_filename || null,
       archived_at: row.archived_at || null,
     });
   }
@@ -379,6 +398,7 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
 
   const tenantId = tenant.id;
   const db = getDb();
+  const env = getEnv();
 
   const tenantSettings = getTenantSettings(db, tenantId);
   if (!tenantSettings) return c.text('Tenant not found', 404);
@@ -402,6 +422,8 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
   const formValues = buildInvoiceFormValues(body, fallbackInvoiceNumber, null);
+
+  let attachmentFilename: string | null = null;
 
   try {
     const jobId = parsePositiveInt(body['job_id'], 'Job');
@@ -442,14 +464,26 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
       throw new ValidationError('Invoice number already exists. Please choose a different one.');
     }
 
+    const attachment = body['attachment'];
+    if (attachment && attachment instanceof File && attachment.size > 0) {
+      const tenantAttachmentDir = buildTenantScopedUploadDir(invoiceAttachmentRootDir, tenantId);
+      const savedFilename = await saveUploadedFile(attachment, tenantAttachmentDir, {
+        allowedExtensions: DOCUMENT_ATTACHMENT_EXTENSIONS,
+        allowedMimeTypes: DOCUMENT_ATTACHMENT_MIME_TYPES,
+        maxBytes: env.maxReceiptUploadBytes,
+      });
+
+      attachmentFilename = buildTenantScopedStoredPath(tenantId, savedFilename);
+    }
+
     const result = db.prepare(
       `
         INSERT INTO invoices (
-          job_id, invoice_number, date_issued, due_date, amount, status, notes, tenant_id, archived_at, archived_by_user_id
+          job_id, invoice_number, date_issued, due_date, amount, status, notes, attachment_filename, tenant_id, archived_at, archived_by_user_id
         )
-        VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?, NULL, NULL)
+        VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?, ?, NULL, NULL)
       `,
-    ).run(jobId, invoiceNumber, dateIssued, dueDate, amount, notes, tenantId);
+    ).run(jobId, invoiceNumber, dateIssued, dueDate, amount, notes, attachmentFilename, tenantId);
 
     const invoiceId = Number(result.lastInsertRowid);
 
@@ -467,12 +501,36 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
         amount,
         date_issued: dateIssued,
         due_date: dueDate,
+        attachment_filename: attachmentFilename,
       },
       ipAddress: resolveRequestIp(c),
     });
 
+    if (attachmentFilename) {
+      logActivity(db, {
+        tenantId,
+        actorUserId: currentUser.id,
+        eventType: 'invoice.attachment_uploaded',
+        entityType: 'invoice',
+        entityId: invoiceId,
+        description: `${currentUser.name} uploaded an attachment for invoice ${invoiceNumber}.`,
+        metadata: {
+          invoice_number: invoiceNumber,
+          job_id: job.id,
+          job_name: job.job_name,
+          amount,
+          attachment_filename: attachmentFilename,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
+
     return c.redirect('/invoices');
   } catch (error) {
+    if (attachmentFilename) {
+      deleteUploadedFile(attachmentFilename, invoiceAttachmentRootDir);
+    }
+
     const message =
       error instanceof ValidationError ? error.message : 'Unable to create invoice right now.';
 
@@ -505,6 +563,98 @@ invoiceRoutes.get('/invoice/:id', loginRequired, (c) => {
   }
 
   return renderInvoiceDetail(c, tenant.id, invoiceId);
+});
+
+invoiceRoutes.get('/invoice-attachments/:id', loginRequired, (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) {
+    return c.redirect('/login');
+  }
+
+  const tenantId = tenant.id;
+  let invoiceId: number;
+  try {
+    invoiceId = parseRouteId(c.req.param('id'), 'Invoice');
+  } catch {
+    return c.text('Attachment not found', 404);
+  }
+
+  const db = getDb();
+
+  const invoice = db
+    .prepare(
+      `
+        SELECT
+          i.id,
+          i.invoice_number,
+          i.amount,
+          i.job_id,
+          i.attachment_filename,
+          j.job_name
+        FROM invoices i
+        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        WHERE i.id = ? AND i.tenant_id = ?
+        LIMIT 1
+      `,
+    )
+    .get(invoiceId, tenantId) as
+      | {
+          id: number;
+          invoice_number: string | null;
+          amount: number | null;
+          job_id: number;
+          attachment_filename: string | null;
+          job_name: string | null;
+        }
+      | undefined;
+
+  if (!invoice || !invoice.attachment_filename) {
+    return c.text('Attachment not found', 404);
+  }
+
+  try {
+    const filePath = resolveUploadedFilePath(invoice.attachment_filename, invoiceAttachmentRootDir);
+
+    if (!fs.existsSync(filePath)) {
+      return c.text('Attachment file not found', 404);
+    }
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'invoice.attachment_viewed',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      description: `${currentUser.name} viewed an attachment for invoice ${invoice.invoice_number || `#${invoice.id}`}.`,
+      metadata: {
+        invoice_number: invoice.invoice_number,
+        amount: Number(invoice.amount || 0),
+        job_id: invoice.job_id,
+        job_name: invoice.job_name,
+        attachment_filename: invoice.attachment_filename,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    const fileBuffer = fs.readFileSync(filePath);
+    const mimeType = inferMimeTypeFromStoredFilename(invoice.attachment_filename);
+    const downloadName = buildSafeDownloadFilename(
+      `invoice-${invoice.id}-attachment`,
+      invoice.attachment_filename,
+    );
+
+    return new Response(fileBuffer, {
+      headers: {
+        'Content-Type': mimeType,
+        'Content-Disposition': `inline; filename="${downloadName}"`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  } catch {
+    return c.text('Attachment not found', 404);
+  }
 });
 
 invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {

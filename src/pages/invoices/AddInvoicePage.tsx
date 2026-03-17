@@ -77,7 +77,7 @@ export const AddInvoicePage: FC<AddInvoicePageProps> = ({
         <div class="card">
           <h3 style="margin-top:0;">Invoice Details</h3>
 
-          <form method="post">
+          <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value={csrfToken} />
 
             <label>Job</label>
@@ -117,6 +117,16 @@ export const AddInvoicePage: FC<AddInvoicePageProps> = ({
             <textarea name="notes" rows={4} placeholder="Optional">
               {notes}
             </textarea>
+
+            <label>Attachment (optional)</label>
+            <input
+              type="file"
+              name="attachment"
+              accept=".png,.jpg,.jpeg,.webp,.pdf"
+            />
+            <div class="muted small" style="margin-top:6px;">
+              Supported types: PDF, PNG, JPG, JPEG, WEBP.
+            </div>
 
             <div class="actions actions-mobile-stack" style="margin-top:16px;">
               <button class="btn btn-primary" type="submit">Create Invoice</button>

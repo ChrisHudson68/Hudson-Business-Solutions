@@ -39,6 +39,15 @@ export function totalByJob(db: DB, jobId: number, tenantId: number) {
   const row = db.prepare(
     'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE job_id = ? AND tenant_id = ?'
   ).get(jobId, tenantId) as { total: number };
+
+  return row.total;
+}
+
+export function sumByJob(db: DB, jobId: number, tenantId: number) {
+  const row = db.prepare(
+    'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE job_id = ? AND tenant_id = ?'
+  ).get(jobId, tenantId) as { total: number };
+
   return row.total;
 }
 
@@ -46,6 +55,7 @@ export function totalAll(db: DB, tenantId: number) {
   const row = db.prepare(
     'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE tenant_id = ?'
   ).get(tenantId) as { total: number };
+
   return row.total;
 }
 

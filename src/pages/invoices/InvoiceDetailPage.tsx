@@ -10,6 +10,7 @@ interface Invoice {
   due_date: string;
   amount: number;
   notes: string | null;
+  attachment_filename?: string | null;
   archived_at?: string | null;
 }
 
@@ -82,7 +83,7 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
           <h1>Invoice {inv.invoice_number}</h1>
           <p class="muted">{inv.job_name}</p>
         </div>
-        <div class="actions">
+        <div class="actions actions-mobile-stack">
           <a class="btn" href={`/invoice/${inv.id}/pdf`}>Download PDF</a>
 
           {inv.archived_at ? (
@@ -197,6 +198,29 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
         </div>
 
         <div class="card">
+          <b>Attachment</b>
+          <div style="margin-top:10px;">
+            {inv.attachment_filename ? (
+              <div class="actions actions-mobile-stack">
+                <span class="badge badge-good">Attachment Uploaded</span>
+                <a
+                  class="btn"
+                  href={`/invoice-attachments/${inv.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View Attachment
+                </a>
+              </div>
+            ) : (
+              <div class="muted">No attachment uploaded.</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <div class="card">
           <b>Add Payment</b>
           {inv.archived_at ? (
             <div class="muted" style="margin-top:10px;">
@@ -219,69 +243,66 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
               <div class="row">
                 <div>
                   <label>Method</label>
-                  <input name="method" value={paymentValues.method} />
+                  <input type="text" name="method" maxLength={50} value={paymentValues.method} />
                 </div>
                 <div>
                   <label>Reference</label>
-                  <input name="reference" value={paymentValues.reference} />
+                  <input type="text" name="reference" maxLength={100} value={paymentValues.reference} />
                 </div>
               </div>
 
-              <div class="actions" style="margin-top:16px;">
+              <div class="actions actions-mobile-stack" style="margin-top:16px;">
                 <button class="btn btn-primary" type="submit">Add Payment</button>
               </div>
             </form>
           )}
         </div>
-      </div>
 
-      <div class="card" style="margin-top:14px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div class="card">
           <b>Payments</b>
-        </div>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Method</th>
-                <th>Reference</th>
-                <th class="right">Amount</th>
-                <th class="right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payments.length > 0 ? (
-                payments.map((p) => (
+          {payments.length > 0 ? (
+            <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+              <table class="table">
+                <thead>
                   <tr>
-                    <td>{p.date}</td>
-                    <td>{p.method || '\u2014'}</td>
-                    <td>{p.reference || '\u2014'}</td>
-                    <td class="right">${formatCurrency(p.amount || 0)}</td>
-                    <td class="right">
-                      {inv.archived_at ? (
-                        <span class="muted">Locked</span>
-                      ) : (
-                        <form method="post" action={`/delete_payment/${p.id}/${inv.id}`} style="display:inline;">
-                          <input type="hidden" name="csrf_token" value={csrfToken} />
-                          <button class="btn" type="submit">Delete</button>
-                        </form>
-                      )}
-                    </td>
+                    <th>Date</th>
+                    <th>Method</th>
+                    <th>Reference</th>
+                    <th class="right">Amount</th>
+                    <th class="right">Action</th>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colspan={5} class="muted">No payments recorded yet.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="muted" style="margin-top:12px;">
-          Invoices can be archived only when no payments are attached in this phase.
+                </thead>
+                <tbody>
+                  {payments.map((payment) => (
+                    <tr>
+                      <td>{payment.date}</td>
+                      <td>{payment.method || '—'}</td>
+                      <td>{payment.reference || '—'}</td>
+                      <td class="right">${formatCurrency(payment.amount || 0)}</td>
+                      <td class="right">
+                        {inv.archived_at ? (
+                          <span class="muted">Locked</span>
+                        ) : (
+                          <form
+                            method="post"
+                            action={`/delete_payment/${payment.id}`}
+                            class="inline-form"
+                            onsubmit="return confirm('Delete this payment?');"
+                          >
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
+                            <button class="btn" type="submit">Delete</button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div class="muted" style="margin-top:10px;">No payments recorded yet.</div>
+          )}
         </div>
       </div>
     </div>

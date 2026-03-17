@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     amount REAL NOT NULL,
     status TEXT NOT NULL DEFAULT 'Unpaid',
     notes TEXT,
+    attachment_filename TEXT,
     tenant_id INTEGER,
     archived_at TEXT,
     archived_by_user_id INTEGER,

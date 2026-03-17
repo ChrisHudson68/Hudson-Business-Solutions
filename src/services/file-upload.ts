@@ -130,23 +130,31 @@ export function deleteUploadedFile(storedRelativePath: string, uploadBaseDir: st
   }
 }
 
-export function buildTenantReceiptUploadDir(uploadBaseDir: string, tenantId: number): string {
+export function buildTenantScopedUploadDir(uploadBaseDir: string, tenantId: number): string {
   return path.join(uploadBaseDir, String(tenantId));
 }
 
-export function buildTenantReceiptStoredPath(tenantId: number, filename: string): string {
+export function buildTenantScopedStoredPath(tenantId: number, filename: string): string {
   const cleanTenantId = String(tenantId).trim();
   const cleanFilename = path.basename(String(filename || '').trim());
 
   if (!cleanTenantId || !/^\d+$/.test(cleanTenantId)) {
-    throw new Error('Invalid tenant receipt path.');
+    throw new Error('Invalid tenant upload path.');
   }
 
   if (!cleanFilename) {
-    throw new Error('Invalid tenant receipt filename.');
+    throw new Error('Invalid stored filename.');
   }
 
   return `${cleanTenantId}/${cleanFilename}`;
+}
+
+export function buildTenantReceiptUploadDir(uploadBaseDir: string, tenantId: number): string {
+  return buildTenantScopedUploadDir(uploadBaseDir, tenantId);
+}
+
+export function buildTenantReceiptStoredPath(tenantId: number, filename: string): string {
+  return buildTenantScopedStoredPath(tenantId, filename);
 }
 
 export function inferMimeTypeFromStoredFilename(storedRelativePath: string): string {
@@ -166,15 +174,18 @@ export function buildSafeDownloadFilename(prefix: string, storedRelativePath: st
   return `${prefix}${safeExt}`;
 }
 
-export const RECEIPT_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'pdf'];
+export const DOCUMENT_ATTACHMENT_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'pdf'];
+export const RECEIPT_EXTENSIONS = DOCUMENT_ATTACHMENT_EXTENSIONS;
 export const LOGO_EXTENSIONS = ['png', 'jpg', 'jpeg'];
 
-export const RECEIPT_MIME_TYPES = [
+export const DOCUMENT_ATTACHMENT_MIME_TYPES = [
   'image/png',
   'image/jpeg',
   'image/webp',
   'application/pdf',
 ];
+
+export const RECEIPT_MIME_TYPES = DOCUMENT_ATTACHMENT_MIME_TYPES;
 
 export const LOGO_MIME_TYPES = [
   'image/png',
