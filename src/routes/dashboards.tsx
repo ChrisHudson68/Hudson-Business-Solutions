@@ -409,6 +409,10 @@ dashboardRoutes.get('/reports', roleRequired('Admin', 'Manager'), (c) => {
       trend={reportData.trend}
       expenseCategories={reportData.expenseCategories}
       rows={reportData.rows}
+      topProfitJobs={reportData.topProfitJobs}
+      worstProfitJobs={reportData.worstProfitJobs}
+      topMarginJobs={reportData.topMarginJobs}
+      worstMarginJobs={reportData.worstMarginJobs}
     />,
   );
 });

@@ -37,6 +37,8 @@ export interface TrendPoint {
   inflow: number;
   outflow: number;
   net: number;
+  invoiced: number;
+  collected: number;
 }
 
 export interface ExpenseCategoryPoint {
@@ -70,6 +72,10 @@ export interface AdvancedReportsData {
   trend: TrendPoint[];
   expenseCategories: ExpenseCategoryPoint[];
   rows: ProfitabilityRow[];
+  topProfitJobs: ProfitabilityRow[];
+  worstProfitJobs: ProfitabilityRow[];
+  topMarginJobs: ProfitabilityRow[];
+  worstMarginJobs: ProfitabilityRow[];
 }
 
 function isIsoDate(value: string): boolean {
@@ -119,10 +125,14 @@ function roundMoney(value: number): number {
 }
 
 function diffDays(fromDate: string, toDate: string): number {
-  const from = new Date(`${fromDate}T00:00:00Z`);
-  const to = new Date(`${toDate}T00:00:00Z`);
+  const from = new Date(`${fromDate}T00:00:00Z}`);
+  const to = new Date(`${toDate}T00:00:00Z}`);
   const ms = to.getTime() - from.getTime();
   return Math.floor(ms / 86400000);
+}
+
+function cloneRow(row: ProfitabilityRow): ProfitabilityRow {
+  return { ...row };
 }
 
 export function parseReportFilter(query: {
@@ -306,7 +316,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     });
   }
 
-  const trendMap = new Map<string, { inflow: number; outflow: number }>();
+  const trendMap = new Map<string, { inflow: number; outflow: number; invoiced: number; collected: number }>();
   const categoryMap = new Map<string, number>();
 
   let recordedIncome = 0;
@@ -320,7 +330,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     recordedIncome += amount;
 
     const key = bucketKeyForRange(row.date, filter.range);
-    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0 };
+    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0, invoiced: 0, collected: 0 };
     bucket.inflow += amount;
     trendMap.set(key, bucket);
 
@@ -333,6 +343,11 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     const amount = Number(row.amount || 0);
     collectedPayments += amount;
 
+    const key = bucketKeyForRange(row.date, filter.range);
+    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0, invoiced: 0, collected: 0 };
+    bucket.collected += amount;
+    trendMap.set(key, bucket);
+
     if (row.job_id && jobMap.has(row.job_id)) {
       jobMap.get(row.job_id)!.collected += amount;
     }
@@ -341,6 +356,11 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
   for (const row of invoiceRows) {
     const amount = Number(row.amount || 0);
     invoicedAmount += amount;
+
+    const key = bucketKeyForRange(row.date_issued, filter.range);
+    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0, invoiced: 0, collected: 0 };
+    bucket.invoiced += amount;
+    trendMap.set(key, bucket);
 
     if (jobMap.has(row.job_id)) {
       jobMap.get(row.job_id)!.invoiced += amount;
@@ -352,7 +372,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     recordedExpenses += amount;
 
     const key = bucketKeyForRange(row.date, filter.range);
-    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0 };
+    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0, invoiced: 0, collected: 0 };
     bucket.outflow += amount;
     trendMap.set(key, bucket);
 
@@ -369,7 +389,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     laborCost += amount;
 
     const key = bucketKeyForRange(row.date, filter.range);
-    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0 };
+    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0, invoiced: 0, collected: 0 };
     bucket.outflow += amount;
     trendMap.set(key, bucket);
 
@@ -425,6 +445,8 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       inflow: roundMoney(values.inflow),
       outflow: roundMoney(values.outflow),
       net: roundMoney(values.inflow - values.outflow),
+      invoiced: roundMoney(values.invoiced),
+      collected: roundMoney(values.collected),
     }));
 
   const expenseCategories = [...categoryMap.entries()]
@@ -449,6 +471,8 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       return row;
     })
     .sort((a, b) => b.profit - a.profit);
+
+  const eligibleMarginRows = rows.filter((row) => row.income > 0);
 
   return {
     filter,
@@ -475,5 +499,9 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     trend,
     expenseCategories,
     rows,
+    topProfitJobs: rows.slice(0, 5).map(cloneRow),
+    worstProfitJobs: [...rows].sort((a, b) => a.profit - b.profit).slice(0, 5).map(cloneRow),
+    topMarginJobs: [...eligibleMarginRows].sort((a, b) => b.margin - a.margin).slice(0, 5).map(cloneRow),
+    worstMarginJobs: [...eligibleMarginRows].sort((a, b) => a.margin - b.margin).slice(0, 5).map(cloneRow),
   };
 }

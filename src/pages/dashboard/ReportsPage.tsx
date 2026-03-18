@@ -3,6 +3,7 @@ import type {
   AdvancedReportsData,
   ReportFilter,
   ReportRange,
+  ProfitabilityRow,
 } from '../../services/reporting.js';
 
 interface ReportsPageProps extends AdvancedReportsData {}
@@ -38,6 +39,55 @@ function activeRangeClass(current: ReportRange, value: ReportRange): string {
   return current === value ? 'btn btn-primary' : 'btn';
 }
 
+function RankingTable({
+  title,
+  rows,
+  valueLabel,
+  valueSelector,
+  secondarySelector,
+}: {
+  title: string;
+  rows: ProfitabilityRow[];
+  valueLabel: string;
+  valueSelector: (row: ProfitabilityRow) => string;
+  secondarySelector: (row: ProfitabilityRow) => string;
+}) {
+  return (
+    <div class="card">
+      <h3 style="margin-top:0;">{title}</h3>
+      {rows.length === 0 ? (
+        <div class="muted">No jobs found.</div>
+      ) : (
+        <div class="table-wrap table-wrap-tight">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Client</th>
+                <th class="right">{valueLabel}</th>
+                <th class="right">Secondary</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr>
+                  <td>
+                    <div><b>{row.job_name || `Job #${row.id}`}</b></div>
+                    <div class="muted small">{row.archived ? 'Archived' : row.status}</div>
+                  </td>
+                  <td>{row.client || '—'}</td>
+                  <td class="right">{valueSelector(row)}</td>
+                  <td class="right">{secondarySelector(row)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const ReportsPage: FC<ReportsPageProps> = ({
   filter,
   cash,
@@ -45,11 +95,17 @@ export const ReportsPage: FC<ReportsPageProps> = ({
   trend,
   expenseCategories,
   rows,
+  topProfitJobs,
+  worstProfitJobs,
+  topMarginJobs,
+  worstMarginJobs,
 }) => {
   const trendLabels = trend.map((point) => point.label);
   const inflowSeries = trend.map((point) => point.inflow);
   const outflowSeries = trend.map((point) => point.outflow);
   const netSeries = trend.map((point) => point.net);
+  const invoicedSeries = trend.map((point) => point.invoiced);
+  const collectedSeries = trend.map((point) => point.collected);
 
   const expenseLabels = expenseCategories.map((item) => item.label);
   const expenseValues = expenseCategories.map((item) => item.value);
@@ -59,7 +115,7 @@ export const ReportsPage: FC<ReportsPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Reports</h1>
-          <p>Cash flow, invoice aging, and job profitability for {filter.label}.</p>
+          <p>Cash flow, invoice aging, trends, and job profitability for {filter.label}.</p>
         </div>
 
         <div class="actions actions-mobile-stack">
@@ -180,13 +236,23 @@ export const ReportsPage: FC<ReportsPageProps> = ({
 
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card">
-          <h3 style="margin-top:0;">Cash Flow Trend</h3>
+          <h3 style="margin-top:0;">Operations Trend</h3>
           <div class="muted" style="margin-bottom:12px;">
-            Inflow is recorded income. Outflow combines expenses and labor. Net shows inflow minus outflow.
+            Income, outflow, and net movement over the selected period.
           </div>
           <canvas id="cashTrendChart"></canvas>
         </div>
 
+        <div class="card">
+          <h3 style="margin-top:0;">Billing Trend</h3>
+          <div class="muted" style="margin-bottom:12px;">
+            Compare invoiced work against actual cash collected.
+          </div>
+          <canvas id="billingTrendChart"></canvas>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:14px;">
         <div class="card">
           <h3 style="margin-top:0;">Expense Categories</h3>
           <div class="muted" style="margin-bottom:12px;">
@@ -194,6 +260,68 @@ export const ReportsPage: FC<ReportsPageProps> = ({
           </div>
           <canvas id="expenseBreakdownChart"></canvas>
         </div>
+
+        <div class="card">
+          <h3 style="margin-top:0;">Expense Category Totals</h3>
+          {expenseCategories.length === 0 ? (
+            <div class="muted">No expense category data found for this range.</div>
+          ) : (
+            <div class="table-wrap table-wrap-tight">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th class="right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenseCategories.map((item) => (
+                    <tr>
+                      <td>{item.label}</td>
+                      <td class="right">{formatMoney(item.value)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <RankingTable
+          title="Top Profit Jobs"
+          rows={topProfitJobs}
+          valueLabel="Profit"
+          valueSelector={(row) => formatMoney(row.profit)}
+          secondarySelector={(row) => formatPercent(row.margin)}
+        />
+
+        <RankingTable
+          title="Worst Profit Jobs"
+          rows={worstProfitJobs}
+          valueLabel="Profit"
+          valueSelector={(row) => formatMoney(row.profit)}
+          secondarySelector={(row) => formatPercent(row.margin)}
+        />
+      </div>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <RankingTable
+          title="Best Margin Jobs"
+          rows={topMarginJobs}
+          valueLabel="Margin"
+          valueSelector={(row) => formatPercent(row.margin)}
+          secondarySelector={(row) => formatMoney(row.profit)}
+        />
+
+        <RankingTable
+          title="Lowest Margin Jobs"
+          rows={worstMarginJobs}
+          valueLabel="Margin"
+          valueSelector={(row) => formatPercent(row.margin)}
+          secondarySelector={(row) => formatMoney(row.profit)}
+        />
       </div>
 
       <div class="card" style="margin-top:14px;">
@@ -269,6 +397,8 @@ export const ReportsPage: FC<ReportsPageProps> = ({
               const inflowSeries = ${JSON.stringify(inflowSeries)};
               const outflowSeries = ${JSON.stringify(outflowSeries)};
               const netSeries = ${JSON.stringify(netSeries)};
+              const invoicedSeries = ${JSON.stringify(invoicedSeries)};
+              const collectedSeries = ${JSON.stringify(collectedSeries)};
               const expenseLabels = ${JSON.stringify(expenseLabels)};
               const expenseValues = ${JSON.stringify(expenseValues)};
 
@@ -280,7 +410,7 @@ export const ReportsPage: FC<ReportsPageProps> = ({
                     datasets: [
                       {
                         type: 'bar',
-                        label: 'Inflow',
+                        label: 'Income',
                         data: inflowSeries,
                         backgroundColor: '#1E3A5F'
                       },
@@ -311,7 +441,44 @@ export const ReportsPage: FC<ReportsPageProps> = ({
               } else if (cashCanvas) {
                 cashCanvas.replaceWith(Object.assign(document.createElement('div'), {
                   className: 'muted',
-                  textContent: 'No cash flow trend data found for this range.'
+                  textContent: 'No operations trend data found for this range.'
+                }));
+              }
+
+              const billingCanvas = document.getElementById('billingTrendChart');
+              if (billingCanvas && trendLabels.length > 0) {
+                new Chart(billingCanvas, {
+                  data: {
+                    labels: trendLabels,
+                    datasets: [
+                      {
+                        type: 'bar',
+                        label: 'Invoiced',
+                        data: invoicedSeries,
+                        backgroundColor: '#3B82F6'
+                      },
+                      {
+                        type: 'line',
+                        label: 'Collected',
+                        data: collectedSeries,
+                        borderColor: '#10B981',
+                        backgroundColor: '#10B981',
+                        tension: 0.25
+                      }
+                    ]
+                  },
+                  options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                      y: { beginAtZero: true }
+                    }
+                  }
+                });
+              } else if (billingCanvas) {
+                billingCanvas.replaceWith(Object.assign(document.createElement('div'), {
+                  className: 'muted',
+                  textContent: 'No billing trend data found for this range.'
                 }));
               }
 
