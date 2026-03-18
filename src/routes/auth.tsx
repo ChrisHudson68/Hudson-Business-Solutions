@@ -4,7 +4,12 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { getDb } from '../db/connection.js';
 import * as tenantQueries from '../db/queries/tenants.js';
 import * as userQueries from '../db/queries/users.js';
-import { createSessionCookie, SESSION_COOKIE_NAME } from '../services/session.js';
+import {
+  createSessionCookie,
+  getImpersonationToken,
+  getSessionUser,
+  SESSION_COOKIE_NAME,
+} from '../services/session.js';
 import { hashPassword, verifyPassword } from '../services/password.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { PublicLayout } from '../pages/layouts/PublicLayout.js';
@@ -40,6 +45,16 @@ function buildTenantLoginUrl(subdomain: string, email?: string): string {
 
   const emailQs = email ? `?email=${encodeURIComponent(email)}` : '';
   return `${host}/login${emailQs}`;
+}
+
+function buildPlatformAdminTenantDetailUrl(tenantId: number): string {
+  const env = getEnv();
+
+  if (env.baseDomain === 'localhost') {
+    return `http://localhost:${env.port}/admin/tenants/${tenantId}`;
+  }
+
+  return `https://${env.baseDomain}/admin/tenants/${tenantId}`;
 }
 
 function buildTenantTrialEndDate(): string {
@@ -210,7 +225,9 @@ authRoutes.post('/login', async (c) => {
   const password = typeof body.password === 'string' ? body.password : '';
 
   const db = getDb();
-  const row = userQueries.findByEmailAndTenant(db, email, tenant.id);
+  const row = userQueries.findByEmailAndTenant(db, email, tenant.id) as
+    | { id: number; password_hash: string; active: number; name?: string; email?: string; role?: string }
+    | undefined;
 
   let error: string | undefined;
 
@@ -235,26 +252,160 @@ authRoutes.post('/login', async (c) => {
     );
   }
 
+  const fullUser = db
+    .prepare('SELECT id, name, email, role FROM users WHERE id = ? AND tenant_id = ? LIMIT 1')
+    .get(row!.id, tenant.id) as { id: number; name: string; email: string; role: string } | undefined;
+
+  if (!fullUser) {
+    return c.html(
+      renderPublicLayout(
+        <LoginPage
+          error="Invalid login"
+          prefillEmail={email}
+          csrfToken={c.get('csrfToken')}
+          currentTenant={tenant}
+        />,
+      ),
+      401,
+    );
+  }
+
   const env = getEnv();
-  const sessionCookie = createSessionCookie(row!.id, env.secretKey, env.sessionTtlSeconds);
+  const sessionCookie = createSessionCookie(fullUser.id, env.secretKey, env.sessionTtlSeconds);
 
   setSessionCookie(c, sessionCookie);
 
   logActivity(db, {
     tenantId: tenant.id,
-    actorUserId: row!.id,
+    actorUserId: fullUser.id,
     eventType: 'auth.login',
     entityType: 'user',
-    entityId: row!.id,
-    description: `${row!.name} signed in.`,
+    entityId: fullUser.id,
+    description: `${fullUser.name} signed in.`,
     metadata: {
-      email: row!.email,
-      role: row!.role,
+      email: fullUser.email,
+      role: fullUser.role,
     },
     ipAddress: resolveRequestIp(c),
   });
 
   return c.redirect('/dashboard');
+});
+
+authRoutes.get('/impersonation/start', (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) {
+    return c.redirect('/pick-tenant');
+  }
+
+  const env = getEnv();
+  const tokenValue = String(c.req.query('token') || '').trim();
+  if (!tokenValue) {
+    return c.redirect('/login');
+  }
+
+  const token = getImpersonationToken(tokenValue, env.secretKey);
+  if (!token) {
+    return c.redirect('/login');
+  }
+
+  if (token.targetTenantId !== tenant.id) {
+    return c.text('Invalid impersonation target.', 400);
+  }
+
+  if (env.platformAdminEmail && token.platformAdminEmail !== env.platformAdminEmail) {
+    return c.text('Invalid impersonation target.', 400);
+  }
+
+  const db = getDb();
+  const targetUser = db
+    .prepare('SELECT id, name, email, role, active, tenant_id FROM users WHERE id = ? LIMIT 1')
+    .get(token.targetUserId) as
+    | { id: number; name: string; email: string; role: string; active: number; tenant_id: number }
+    | undefined;
+
+  if (!targetUser || targetUser.active !== 1 || targetUser.tenant_id !== tenant.id) {
+    return c.text('Impersonation target is unavailable.', 404);
+  }
+
+  const startedAt = Math.floor(Date.now() / 1000);
+  const sessionCookie = createSessionCookie(
+    targetUser.id,
+    env.secretKey,
+    env.sessionTtlSeconds,
+    {
+      platformAdminEmail: token.platformAdminEmail,
+      impersonatedUserId: targetUser.id,
+      impersonatedTenantId: tenant.id,
+      startedAt,
+    },
+  );
+
+  setSessionCookie(c, sessionCookie);
+
+  logActivity(db, {
+    tenantId: tenant.id,
+    actorUserId: null,
+    eventType: 'auth.impersonation_started',
+    entityType: 'user',
+    entityId: targetUser.id,
+    description: `Platform admin ${token.platformAdminEmail} started impersonating ${targetUser.name}.`,
+    metadata: {
+      platform_admin_email: token.platformAdminEmail,
+      impersonated_user_id: targetUser.id,
+      impersonated_user_email: targetUser.email,
+      impersonated_user_role: targetUser.role,
+      started_at_unix: startedAt,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(token.redirectTo || '/dashboard');
+});
+
+authRoutes.get('/impersonation/stop', (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) {
+    return c.redirect('/pick-tenant');
+  }
+
+  const env = getEnv();
+  const cookie = getCookie(c, SESSION_COOKIE_NAME);
+  if (!cookie) {
+    return c.redirect('/login');
+  }
+
+  const session = getSessionUser(cookie, env.secretKey);
+  if (!session?.impersonation) {
+    return c.redirect('/dashboard');
+  }
+
+  const db = getDb();
+  const targetUser = db
+    .prepare('SELECT id, name, email, role, tenant_id FROM users WHERE id = ? LIMIT 1')
+    .get(session.userId) as { id: number; name: string; email: string; role: string; tenant_id: number } | undefined;
+
+  clearSessionCookie(c);
+
+  if (targetUser && targetUser.tenant_id === tenant.id) {
+    logActivity(db, {
+      tenantId: tenant.id,
+      actorUserId: null,
+      eventType: 'auth.impersonation_ended',
+      entityType: 'user',
+      entityId: targetUser.id,
+      description: `Platform admin ${session.impersonation.platformAdminEmail} ended impersonation for ${targetUser.name}.`,
+      metadata: {
+        platform_admin_email: session.impersonation.platformAdminEmail,
+        impersonated_user_id: targetUser.id,
+        impersonated_user_email: targetUser.email,
+        impersonated_user_role: targetUser.role,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+  }
+
+  return c.redirect(buildPlatformAdminTenantDetailUrl(session.impersonation.impersonatedTenantId));
 });
 
 authRoutes.get('/logout', (c) => {

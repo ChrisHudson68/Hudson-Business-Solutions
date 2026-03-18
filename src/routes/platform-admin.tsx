@@ -6,6 +6,8 @@ import { getEnv } from '../config/env.js';
 import { platformAdminRequired } from '../middleware/platform-admin.js';
 import * as tenantQueries from '../db/queries/tenants.js';
 import type { BillingStatus } from '../db/types.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import { createImpersonationToken } from '../services/session.js';
 import {
   PLATFORM_ADMIN_COOKIE_NAME,
   createPlatformAdminCookie,
@@ -89,6 +91,16 @@ function buildTenantLoginUrl(subdomain: string): string {
   return `https://${subdomain}.${env.baseDomain}/login`;
 }
 
+function buildTenantImpersonationUrl(subdomain: string, token: string): string {
+  const env = getEnv();
+
+  if (env.baseDomain === 'localhost') {
+    return `http://${subdomain}.localhost:${env.port}/impersonation/start?token=${encodeURIComponent(token)}`;
+  }
+
+  return `https://${subdomain}.${env.baseDomain}/impersonation/start?token=${encodeURIComponent(token)}`;
+}
+
 function requireBaseDomain(c: any) {
   const subdomain = c.get('subdomain');
   if (subdomain) {
@@ -138,12 +150,24 @@ function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string
   if (updated === 'grace') {
     return { tone: 'good', message: 'Tenant grace period was extended by 7 days.' };
   }
+  if (updated === 'impersonation-started') {
+    return { tone: 'good', message: 'Impersonation session started in the tenant workspace.' };
+  }
 
   if (error === 'tenant-not-found') {
     return { tone: 'bad', message: 'Tenant was not found.' };
   }
   if (error === 'invalid-status') {
     return { tone: 'bad', message: 'That billing status is not allowed from the admin portal.' };
+  }
+  if (error === 'user-not-found') {
+    return { tone: 'bad', message: 'That tenant user was not found or cannot be impersonated.' };
+  }
+  if (error === 'user-inactive') {
+    return { tone: 'bad', message: 'That user is inactive and cannot be impersonated.' };
+  }
+  if (error === 'admin-user-blocked') {
+    return { tone: 'bad', message: 'Platform admin impersonation of tenant Admin users is blocked in Phase 3A for safety.' };
   }
 
   return undefined;
@@ -452,6 +476,19 @@ platformAdminRoutes.get('/admin/tenants/:id', platformAdminRequired, (c) => {
     return c.text('Tenant not found', 404);
   }
 
+  const users = db.prepare(`
+    SELECT id, name, email, role, active
+    FROM users
+    WHERE tenant_id = ?
+    ORDER BY role ASC, name ASC
+  `).all(tenant.id) as Array<{
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    active: number;
+  }>;
+
   return renderAdminLayout(
     c,
     `Tenant Detail: ${tenant.name}`,
@@ -462,6 +499,7 @@ platformAdminRoutes.get('/admin/tenants/:id', platformAdminRequired, (c) => {
 
       <AdminTenantDetailPage
         tenant={tenant}
+        users={users}
         workspaceLoginUrl={buildTenantLoginUrl(tenant.subdomain)}
         csrfToken={c.get('csrfToken')}
         notice={resolveNotice(c)}
@@ -597,6 +635,77 @@ platformAdminRoutes.post('/admin/tenants/:id/billing/extend-grace', platformAdmi
   });
 
   return c.redirect(redirectTenantDetail(tenantId, 'updated=grace'));
+});
+
+platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired, async (c) => {
+  const db = getDb();
+  const tenantId = parseTenantId(c);
+  const platformAdmin = c.get('platformAdmin');
+
+  if (!tenantId) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const tenant = tenantQueries.findById(db, tenantId);
+  if (!tenant) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const body = await c.req.parseBody();
+  const userId = parsePositiveInt(String(body['user_id'] ?? ''));
+  if (!userId) {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=user-not-found'));
+  }
+
+  const user = db.prepare(`
+    SELECT id, name, email, role, active, tenant_id
+    FROM users
+    WHERE id = ?
+    LIMIT 1
+  `).get(userId) as
+    | { id: number; name: string; email: string; role: string; active: number; tenant_id: number }
+    | undefined;
+
+  if (!user || user.tenant_id !== tenantId) {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=user-not-found'));
+  }
+
+  if (user.active !== 1) {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=user-inactive'));
+  }
+
+  if (String(user.role).trim().toLowerCase() === 'admin') {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=admin-user-blocked'));
+  }
+
+  const env = getEnv();
+  const token = createImpersonationToken(
+    {
+      platformAdminEmail: platformAdmin?.email || env.platformAdminEmail || 'platform-admin',
+      targetUserId: user.id,
+      targetTenantId: tenantId,
+      redirectTo: '/dashboard',
+    },
+    env.secretKey,
+  );
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: null,
+    eventType: 'auth.impersonation_requested',
+    entityType: 'user',
+    entityId: user.id,
+    description: `Platform admin ${platformAdmin?.email || env.platformAdminEmail || 'platform-admin'} requested impersonation for ${user.name}.`,
+    metadata: {
+      platform_admin_email: platformAdmin?.email || env.platformAdminEmail || 'platform-admin',
+      impersonated_user_id: user.id,
+      impersonated_user_email: user.email,
+      impersonated_user_role: user.role,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(buildTenantImpersonationUrl(tenant.subdomain, token));
 });
 
 export { platformAdminRoutes };

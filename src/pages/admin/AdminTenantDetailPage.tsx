@@ -27,6 +27,13 @@ interface AdminTenantDetailPageProps {
     invoice_count: number;
     payment_count: number;
   };
+  users: Array<{
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    active: number;
+  }>;
   workspaceLoginUrl: string;
   csrfToken: string;
   notice?: {
@@ -56,6 +63,7 @@ function noticeStyle(tone: 'good' | 'warn' | 'bad'): string {
 
 export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
   tenant,
+  users,
   workspaceLoginUrl,
   csrfToken,
   notice,
@@ -204,6 +212,61 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
           <div class="muted" style="line-height:1.7;">
             Use internal / exempt for your own workspaces and non-billed support tenants. Use trial and grace extensions sparingly and only when you are intentionally overriding normal Stripe-driven behavior.
           </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; margin-bottom:12px;">
+          <div>
+            <div style="font-weight:900; font-size:18px;">Tenant Users</div>
+            <div class="muted" style="margin-top:6px; line-height:1.6;">
+              Start impersonation from here. This creates a temporary support session inside the tenant workspace without exposing passwords.
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.length ? users.map((user) => (
+                <tr>
+                  <td>
+                    <div style="font-weight:900;">{user.name}</div>
+                    <div class="muted" style="margin-top:4px;">{user.email}</div>
+                  </td>
+                  <td>{user.role}</td>
+                  <td>
+                    <span class={user.active === 1 ? 'badge badge-good' : 'badge badge-bad'}>
+                      {user.active === 1 ? 'Active' : 'Disabled'}
+                    </span>
+                  </td>
+                  <td>
+                    {user.active === 1 ? (
+                      <form method="post" action={`/admin/tenants/${tenant.id}/impersonate`} style="margin:0; display:inline;">
+                        <input type="hidden" name="csrf_token" value={csrfToken} />
+                        <input type="hidden" name="user_id" value={user.id} />
+                        <button class="btn" type="submit">Impersonate</button>
+                      </form>
+                    ) : (
+                      <span class="muted">Unavailable</span>
+                    )}
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={4} class="muted">No tenant users found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

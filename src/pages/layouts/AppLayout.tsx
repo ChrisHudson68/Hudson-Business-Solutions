@@ -16,7 +16,20 @@ interface AppLayoutProps {
       }
     | null;
   currentSubdomain: string | null;
-  currentUser: { id: number; name: string; email: string; role: string } | null;
+  currentUser:
+    | {
+        id: number;
+        name: string;
+        email: string;
+        role: string;
+        impersonation?: {
+          platformAdminEmail: string;
+          impersonatedUserId: number;
+          impersonatedTenantId: number;
+          startedAt: number;
+        } | null;
+      }
+    | null;
   appName: string;
   appLogo: string;
   path: string;
@@ -534,6 +547,44 @@ const appCss = `
         width:100%;
       }
     }
+
+    .impersonation-banner{
+      margin-bottom:14px;
+      border-radius:16px;
+      border:1px solid #FCD34D;
+      background:#FFFBEB;
+      box-shadow:var(--shadow);
+      padding:14px 16px;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+      color:#92400E;
+    }
+
+    .impersonation-banner strong{
+      display:block;
+      font-size:14px;
+      margin-bottom:4px;
+    }
+
+    .impersonation-banner p{
+      margin:0;
+      color:inherit;
+      line-height:1.45;
+      font-size:13px;
+    }
+
+    @media (max-width:760px){
+      .impersonation-banner{
+        flex-direction:column;
+        align-items:flex-start;
+      }
+
+      .impersonation-banner .btn{
+        width:100%;
+      }
+    }
   `;
 
 const pageshowScript = `
@@ -600,6 +651,14 @@ function billingBannerClass(tone: 'info' | 'warn' | 'bad'): string {
   return 'billing-banner billing-banner-info';
 }
 
+function formatImpersonationStartedAt(startedAt: number): string {
+  try {
+    return new Date(startedAt * 1000).toLocaleString();
+  } catch {
+    return 'Unknown';
+  }
+}
+
 export const AppLayout: FC<AppLayoutProps> = ({
   currentTenant,
   currentSubdomain,
@@ -614,6 +673,7 @@ export const AppLayout: FC<AppLayoutProps> = ({
   const displayAppName = appName || 'Hudson Business Solutions';
   const billingBanner = getBillingBanner(currentTenant);
   const navItems = buildNavItems(currentUser);
+  const impersonation = currentUser?.impersonation || null;
 
   return (
     <html lang="en">
@@ -673,6 +733,19 @@ export const AppLayout: FC<AppLayoutProps> = ({
 
             <div class="content">
               <div class="container">
+                {impersonation ? (
+                  <div class="impersonation-banner">
+                    <div>
+                      <strong>Impersonation active</strong>
+                      <p>
+                        You are viewing this workspace as <b>{currentUser?.name}</b> ({currentUser?.role}).
+                        Started by platform admin {impersonation.platformAdminEmail} on {formatImpersonationStartedAt(impersonation.startedAt)}.
+                      </p>
+                    </div>
+                    <a class="btn" href="/impersonation/stop">Return to Platform Admin</a>
+                  </div>
+                ) : null}
+
                 {billingBanner && path !== '/billing' ? (
                   <div class={billingBannerClass(billingBanner.tone)}>
                     <div>

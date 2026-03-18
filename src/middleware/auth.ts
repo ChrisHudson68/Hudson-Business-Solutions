@@ -1,24 +1,49 @@
 import { createMiddleware } from 'hono/factory';
 import { getCookie, deleteCookie } from 'hono/cookie';
-import { getSessionUserId, SESSION_COOKIE_NAME } from '../services/session.js';
+import { getSessionUser, SESSION_COOKIE_NAME } from '../services/session.js';
 import { getDb } from '../db/connection.js';
 import { getEnv } from '../config/env.js';
 import type { TenantVariables } from './tenant.js';
 
 export type AuthVariables = {
-  user: { id: number; name: string; email: string; role: string; tenant_id: number } | null;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    tenant_id: number;
+    impersonation: {
+      platformAdminEmail: string;
+      impersonatedUserId: number;
+      impersonatedTenantId: number;
+      startedAt: number;
+    } | null;
+  } | null;
 };
 
 function resolveUser(
   cookieValue: string | undefined,
   secretKey: string,
   tenantId: number | undefined,
-): { id: number; name: string; email: string; role: string; tenant_id: number } | null {
+): {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  tenant_id: number;
+  impersonation: {
+    platformAdminEmail: string;
+    impersonatedUserId: number;
+    impersonatedTenantId: number;
+    startedAt: number;
+  } | null;
+} | null {
   if (!cookieValue) return null;
 
-  const userId = getSessionUserId(cookieValue, secretKey);
-  if (userId === null) return null;
+  const session = getSessionUser(cookieValue, secretKey);
+  if (!session) return null;
 
+  const userId = session.userId;
   const db = getDb();
   const row = db
     .prepare('SELECT id, name, email, role, active, tenant_id FROM users WHERE id = ?')
@@ -30,12 +55,18 @@ function resolveUser(
   if (row.active !== 1) return null;
   if (tenantId !== undefined && row.tenant_id !== tenantId) return null;
 
+  if (session.impersonation) {
+    if (session.impersonation.impersonatedUserId !== row.id) return null;
+    if (session.impersonation.impersonatedTenantId !== row.tenant_id) return null;
+  }
+
   return {
     id: row.id,
     name: row.name,
     email: row.email,
     role: row.role,
     tenant_id: row.tenant_id,
+    impersonation: session.impersonation,
   };
 }
 
