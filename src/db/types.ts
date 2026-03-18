@@ -50,6 +50,8 @@ export interface Job {
   start_date: string | null;
   status: string | null;
   tenant_id: number;
+  archived_at: string | null;
+  archived_by_user_id: number | null;
 }
 
 export interface Income {
@@ -59,6 +61,8 @@ export interface Income {
   date: string | null;
   description: string | null;
   tenant_id: number;
+  archived_at: string | null;
+  archived_by_user_id: number | null;
 }
 
 export interface Expense {
@@ -70,6 +74,8 @@ export interface Expense {
   date: string | null;
   receipt_filename: string | null;
   tenant_id: number;
+  archived_at: string | null;
+  archived_by_user_id: number | null;
 }
 
 export interface Employee {
@@ -80,6 +86,8 @@ export interface Employee {
   annual_salary: number | null;
   active: number;
   tenant_id: number;
+  archived_at: string | null;
+  archived_by_user_id: number | null;
 }
 
 export type TimeEntryApprovalStatus = 'approved' | 'pending_edit';
@@ -114,6 +122,8 @@ export interface Invoice {
   status: string;
   notes: string | null;
   tenant_id: number;
+  archived_at: string | null;
+  archived_by_user_id: number | null;
 }
 
 export interface Payment {
@@ -124,6 +134,8 @@ export interface Payment {
   method: string | null;
   reference: string | null;
   tenant_id: number;
+  archived_at: string | null;
+  archived_by_user_id: number | null;
 }
 
 export interface JobWithFinancials extends Job {

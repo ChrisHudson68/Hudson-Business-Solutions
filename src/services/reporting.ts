@@ -200,6 +200,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       SELECT date, amount, job_id
       FROM income
       WHERE tenant_id = ?
+        AND archived_at IS NULL
         AND date >= ?
         AND date <= ?
       ORDER BY date ASC, id ASC
@@ -215,6 +216,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       SELECT date, amount, category, job_id
       FROM expenses
       WHERE tenant_id = ?
+        AND archived_at IS NULL
         AND date >= ?
         AND date <= ?
       ORDER BY date ASC, id ASC

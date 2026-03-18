@@ -79,8 +79,11 @@ CREATE TABLE IF NOT EXISTS income (
     date TEXT,
     description TEXT,
     tenant_id INTEGER,
+    archived_at TEXT,
+    archived_by_user_id INTEGER,
     FOREIGN KEY(job_id) REFERENCES jobs(id),
-    FOREIGN KEY(tenant_id) REFERENCES tenants(id)
+    FOREIGN KEY(tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY(archived_by_user_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_income_job_id
@@ -92,6 +95,12 @@ ON income(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_income_tenant_job_id
 ON income(tenant_id, job_id);
 
+CREATE INDEX IF NOT EXISTS idx_income_tenant_archived_at
+ON income(tenant_id, archived_at);
+
+CREATE INDEX IF NOT EXISTS idx_income_archived_by_user_id
+ON income(archived_by_user_id);
+
 CREATE TABLE IF NOT EXISTS expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER,
@@ -101,8 +110,11 @@ CREATE TABLE IF NOT EXISTS expenses (
     date TEXT,
     receipt_filename TEXT,
     tenant_id INTEGER,
+    archived_at TEXT,
+    archived_by_user_id INTEGER,
     FOREIGN KEY(job_id) REFERENCES jobs(id),
-    FOREIGN KEY(tenant_id) REFERENCES tenants(id)
+    FOREIGN KEY(tenant_id) REFERENCES tenants(id),
+    FOREIGN KEY(archived_by_user_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_expenses_job_id
@@ -113,6 +125,12 @@ ON expenses(tenant_id);
 
 CREATE INDEX IF NOT EXISTS idx_expenses_tenant_job_id
 ON expenses(tenant_id, job_id);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_tenant_archived_at
+ON expenses(tenant_id, archived_at);
+
+CREATE INDEX IF NOT EXISTS idx_expenses_archived_by_user_id
+ON expenses(archived_by_user_id);
 
 CREATE TABLE IF NOT EXISTS employees (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

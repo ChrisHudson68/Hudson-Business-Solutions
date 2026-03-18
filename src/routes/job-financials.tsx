@@ -6,7 +6,7 @@ import { getDb } from '../db/connection.js';
 import * as jobs from '../db/queries/jobs.js';
 import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
-import { loginRequired, permissionRequired } from '../middleware/auth.js';
+import { loginRequired, roleRequired } from '../middleware/auth.js';
 import {
   saveUploadedFile,
   deleteUploadedFile,
@@ -151,7 +151,7 @@ function buildExpenseFormData(source: Record<string, unknown>) {
 
 export const jobFinancialRoutes = new Hono<AppEnv>();
 
-jobFinancialRoutes.get('/add_income/:id', permissionRequired('financials.edit'), (c) => {
+jobFinancialRoutes.get('/add_income/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
@@ -178,7 +178,7 @@ jobFinancialRoutes.get('/add_income/:id', permissionRequired('financials.edit'),
   );
 });
 
-jobFinancialRoutes.post('/add_income/:id', permissionRequired('financials.edit'), async (c) => {
+jobFinancialRoutes.post('/add_income/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
@@ -227,8 +227,9 @@ jobFinancialRoutes.post('/add_income/:id', permissionRequired('financials.edit')
   }
 });
 
-jobFinancialRoutes.post('/delete_income/:id', permissionRequired('financials.edit'), (c) => {
+jobFinancialRoutes.post('/archive_income/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
+  const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const incomeId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
@@ -237,9 +238,7 @@ jobFinancialRoutes.post('/delete_income/:id', permissionRequired('financials.edi
     return c.text('Income entry not found', 404);
   }
 
-  const row = db
-    .prepare('SELECT id, job_id FROM income WHERE id = ? AND tenant_id = ?')
-    .get(incomeId, tenantId) as { id: number; job_id: number } | undefined;
+  const row = income.findById(db, incomeId, tenantId);
 
   if (!row) {
     return c.text('Income entry not found', 404);
@@ -250,12 +249,93 @@ jobFinancialRoutes.post('/delete_income/:id', permissionRequired('financials.edi
     return c.text('Job not found', 404);
   }
 
-  income.deleteById(db, incomeId, tenantId);
+  if (job.archived_at) {
+    return c.redirect(`/job/${row.job_id}`);
+  }
+
+  if (row.archived_at) {
+    return c.redirect(`/job/${row.job_id}`);
+  }
+
+  income.archive(db, incomeId, tenantId, currentUser!.id);
+
+  if (currentUser) {
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'income.archived',
+      entityType: 'income',
+      entityId: row.id,
+      description: `${currentUser.name} archived an income entry on job ${job.job_name}.`,
+      metadata: {
+        job_id: job.id,
+        job_name: job.job_name,
+        amount: Number(row.amount || 0),
+        date: row.date,
+        description: row.description,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+  }
 
   return c.redirect(`/job/${row.job_id}`);
 });
 
-jobFinancialRoutes.get('/add_expense/:id', permissionRequired('financials.edit'), (c) => {
+jobFinancialRoutes.post('/restore_income/:id', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const incomeId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!incomeId) {
+    return c.text('Income entry not found', 404);
+  }
+
+  const row = income.findById(db, incomeId, tenantId);
+
+  if (!row) {
+    return c.text('Income entry not found', 404);
+  }
+
+  const job = loadJobOr404(db, row.job_id, tenantId);
+  if (!job) {
+    return c.text('Job not found', 404);
+  }
+
+  if (job.archived_at) {
+    return c.redirect(`/job/${row.job_id}`);
+  }
+
+  if (!row.archived_at) {
+    return c.redirect(`/job/${row.job_id}`);
+  }
+
+  income.restore(db, incomeId, tenantId);
+
+  if (currentUser) {
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'income.restored',
+      entityType: 'income',
+      entityId: row.id,
+      description: `${currentUser.name} restored an income entry on job ${job.job_name}.`,
+      metadata: {
+        job_id: job.id,
+        job_name: job.job_name,
+        amount: Number(row.amount || 0),
+        date: row.date,
+        description: row.description,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+  }
+
+  return c.redirect(`/job/${row.job_id}`);
+});
+
+jobFinancialRoutes.get('/add_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
@@ -282,7 +362,7 @@ jobFinancialRoutes.get('/add_expense/:id', permissionRequired('financials.edit')
   );
 });
 
-jobFinancialRoutes.post('/add_expense/:id', permissionRequired('financials.edit'), async (c) => {
+jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -371,7 +451,7 @@ jobFinancialRoutes.post('/add_expense/:id', permissionRequired('financials.edit'
   }
 });
 
-jobFinancialRoutes.get('/edit_expense/:id', permissionRequired('financials.edit'), (c) => {
+jobFinancialRoutes.get('/edit_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const expenseId = parsePositiveInt(c.req.param('id'));
@@ -389,6 +469,10 @@ jobFinancialRoutes.get('/edit_expense/:id', permissionRequired('financials.edit'
   const job = loadJobOr404(db, expense.job_id, tenantId);
   if (!job) {
     return c.text('Job not found', 404);
+  }
+
+  if (job.archived_at || expense.archived_at) {
+    return c.redirect(`/job/${expense.job_id}`);
   }
 
   return renderApp(
@@ -409,7 +493,7 @@ jobFinancialRoutes.get('/edit_expense/:id', permissionRequired('financials.edit'
   );
 });
 
-jobFinancialRoutes.post('/edit_expense/:id', permissionRequired('financials.edit'), async (c) => {
+jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -429,6 +513,10 @@ jobFinancialRoutes.post('/edit_expense/:id', permissionRequired('financials.edit
   const job = loadJobOr404(db, existingExpense.job_id, tenantId);
   if (!job) {
     return c.text('Job not found', 404);
+  }
+
+  if (job.archived_at || existingExpense.archived_at) {
+    return c.redirect(`/job/${existingExpense.job_id}`);
   }
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
@@ -535,7 +623,7 @@ jobFinancialRoutes.post('/edit_expense/:id', permissionRequired('financials.edit
   }
 });
 
-jobFinancialRoutes.post('/delete_expense_receipt/:id', permissionRequired('financials.edit'), (c) => {
+jobFinancialRoutes.post('/delete_expense_receipt/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -554,6 +642,10 @@ jobFinancialRoutes.post('/delete_expense_receipt/:id', permissionRequired('finan
   const job = loadJobOr404(db, expense.job_id, tenantId);
   if (!job) {
     return c.text('Job not found', 404);
+  }
+
+  if (job.archived_at || expense.archived_at) {
+    return c.redirect(`/job/${expense.job_id}`);
   }
 
   if (!expense.receipt_filename) {
@@ -680,7 +772,7 @@ jobFinancialRoutes.get('/expense-receipts/:id', loginRequired, (c) => {
   }
 });
 
-jobFinancialRoutes.post('/delete_expense/:id', permissionRequired('financials.edit'), (c) => {
+jobFinancialRoutes.post('/archive_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -701,32 +793,91 @@ jobFinancialRoutes.post('/delete_expense/:id', permissionRequired('financials.ed
     return c.text('Job not found', 404);
   }
 
-  if (expense.receipt_filename) {
-    deleteUploadedFile(expense.receipt_filename, receiptRootDir);
-
-    if (currentUser) {
-      logActivity(db, {
-        tenantId,
-        actorUserId: currentUser.id,
-        eventType: 'expense.receipt_deleted',
-        entityType: 'expense',
-        entityId: expense.id,
-        description: `${currentUser.name} deleted a receipt attached to expense ${expense.category || `#${expense.id}`}.`,
-        metadata: {
-          job_id: job.id,
-          job_name: job.job_name,
-          category: expense.category,
-          vendor: expense.vendor,
-          amount: Number(expense.amount || 0),
-          date: expense.date,
-          receipt_filename: expense.receipt_filename,
-        },
-        ipAddress: resolveRequestIp(c),
-      });
-    }
+  if (job.archived_at) {
+    return c.redirect(`/job/${expense.job_id}`);
   }
 
-  expenses.deleteById(db, expenseId, tenantId);
+  if (expense.archived_at) {
+    return c.redirect(`/job/${expense.job_id}`);
+  }
+
+  expenses.archive(db, expenseId, tenantId, currentUser!.id);
+
+  if (currentUser) {
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'expense.archived',
+      entityType: 'expense',
+      entityId: expense.id,
+      description: `${currentUser.name} archived expense ${expense.category || `#${expense.id}`} on job ${job.job_name}.`,
+      metadata: {
+        job_id: job.id,
+        job_name: job.job_name,
+        category: expense.category,
+        vendor: expense.vendor,
+        amount: Number(expense.amount || 0),
+        date: expense.date,
+        receipt_filename: expense.receipt_filename,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+  }
+
+  return c.redirect(`/job/${expense.job_id}`);
+});
+
+jobFinancialRoutes.post('/restore_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const expenseId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!expenseId) {
+    return c.text('Expense entry not found', 404);
+  }
+
+  const expense = expenses.findById(db, expenseId, tenantId);
+  if (!expense) {
+    return c.text('Expense entry not found', 404);
+  }
+
+  const job = loadJobOr404(db, expense.job_id, tenantId);
+  if (!job) {
+    return c.text('Job not found', 404);
+  }
+
+  if (job.archived_at) {
+    return c.redirect(`/job/${expense.job_id}`);
+  }
+
+  if (!expense.archived_at) {
+    return c.redirect(`/job/${expense.job_id}`);
+  }
+
+  expenses.restore(db, expenseId, tenantId);
+
+  if (currentUser) {
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'expense.restored',
+      entityType: 'expense',
+      entityId: expense.id,
+      description: `${currentUser.name} restored expense ${expense.category || `#${expense.id}`} on job ${job.job_name}.`,
+      metadata: {
+        job_id: job.id,
+        job_name: job.job_name,
+        category: expense.category,
+        vendor: expense.vendor,
+        amount: Number(expense.amount || 0),
+        date: expense.date,
+        receipt_filename: expense.receipt_filename,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+  }
 
   return c.redirect(`/job/${expense.job_id}`);
 });
