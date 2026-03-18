@@ -6,7 +6,7 @@ import { getDb } from '../db/connection.js';
 import * as jobs from '../db/queries/jobs.js';
 import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
-import { loginRequired, roleRequired } from '../middleware/auth.js';
+import { loginRequired, permissionRequired } from '../middleware/auth.js';
 import {
   saveUploadedFile,
   deleteUploadedFile,
@@ -151,7 +151,7 @@ function buildExpenseFormData(source: Record<string, unknown>) {
 
 export const jobFinancialRoutes = new Hono<AppEnv>();
 
-jobFinancialRoutes.get('/add_income/:id', roleRequired('Admin', 'Manager'), (c) => {
+jobFinancialRoutes.get('/add_income/:id', permissionRequired('financials.edit'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
@@ -178,7 +178,7 @@ jobFinancialRoutes.get('/add_income/:id', roleRequired('Admin', 'Manager'), (c) 
   );
 });
 
-jobFinancialRoutes.post('/add_income/:id', roleRequired('Admin', 'Manager'), async (c) => {
+jobFinancialRoutes.post('/add_income/:id', permissionRequired('financials.edit'), async (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
@@ -227,7 +227,7 @@ jobFinancialRoutes.post('/add_income/:id', roleRequired('Admin', 'Manager'), asy
   }
 });
 
-jobFinancialRoutes.post('/delete_income/:id', roleRequired('Admin', 'Manager'), (c) => {
+jobFinancialRoutes.post('/delete_income/:id', permissionRequired('financials.edit'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const incomeId = parsePositiveInt(c.req.param('id'));
@@ -255,7 +255,7 @@ jobFinancialRoutes.post('/delete_income/:id', roleRequired('Admin', 'Manager'), 
   return c.redirect(`/job/${row.job_id}`);
 });
 
-jobFinancialRoutes.get('/add_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
+jobFinancialRoutes.get('/add_expense/:id', permissionRequired('financials.edit'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
@@ -282,7 +282,7 @@ jobFinancialRoutes.get('/add_expense/:id', roleRequired('Admin', 'Manager'), (c)
   );
 });
 
-jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), async (c) => {
+jobFinancialRoutes.post('/add_expense/:id', permissionRequired('financials.edit'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -371,7 +371,7 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
   }
 });
 
-jobFinancialRoutes.get('/edit_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
+jobFinancialRoutes.get('/edit_expense/:id', permissionRequired('financials.edit'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const expenseId = parsePositiveInt(c.req.param('id'));
@@ -409,7 +409,7 @@ jobFinancialRoutes.get('/edit_expense/:id', roleRequired('Admin', 'Manager'), (c
   );
 });
 
-jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), async (c) => {
+jobFinancialRoutes.post('/edit_expense/:id', permissionRequired('financials.edit'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -535,7 +535,7 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
   }
 });
 
-jobFinancialRoutes.post('/delete_expense_receipt/:id', roleRequired('Admin', 'Manager'), (c) => {
+jobFinancialRoutes.post('/delete_expense_receipt/:id', permissionRequired('financials.edit'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -680,7 +680,7 @@ jobFinancialRoutes.get('/expense-receipts/:id', loginRequired, (c) => {
   }
 });
 
-jobFinancialRoutes.post('/delete_expense/:id', roleRequired('Admin', 'Manager'), (c) => {
+jobFinancialRoutes.post('/delete_expense/:id', permissionRequired('financials.edit'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;

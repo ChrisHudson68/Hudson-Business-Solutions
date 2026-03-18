@@ -49,6 +49,8 @@ interface JobDetailPageProps {
   profit: number;
   retainageHeld: number;
   csrfToken: string;
+  canEditJobs?: boolean;
+  canEditFinancials?: boolean;
   canArchiveJobs?: boolean;
 }
 
@@ -71,6 +73,8 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
   profit,
   retainageHeld,
   csrfToken,
+  canEditJobs,
+  canEditFinancials,
   canArchiveJobs,
 }) => {
   return (
@@ -84,7 +88,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href="/jobs">Back</a>
-          <a class="btn" href={`/edit_job/${job.id}`}>Edit</a>
+          {canEditJobs ? <a class="btn" href={`/edit_job/${job.id}`}>Edit</a> : null}
           {canArchiveJobs ? (
             job.archived_at ? (
               <form method="post" action={`/restore_job/${job.id}`} class="inline-form">
@@ -181,11 +185,13 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
           <div class="actions actions-mobile-stack" style="margin-top:12px;">
             {job.archived_at ? (
               <span class="muted">Restore this job to add new income or expenses.</span>
-            ) : (
+            ) : canEditFinancials ? (
               <>
                 <a class="btn btn-primary" href={`/add_income/${job.id}`}>Add Income</a>
                 <a class="btn" href={`/add_expense/${job.id}`}>Add Expense</a>
               </>
+            ) : (
+              <span class="muted">You have view access to job financials, but not permission to change them.</span>
             )}
           </div>
           <p class="muted" style="margin-top:10px;">
@@ -217,7 +223,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                       <td class="right">
                         {job.archived_at ? (
                           <span class="muted">Locked</span>
-                        ) : (
+                        ) : canEditFinancials ? (
                           <form
                             method="post"
                             action={`/delete_income/${row.id}`}
@@ -227,6 +233,8 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                             <input type="hidden" name="csrf_token" value={csrfToken} />
                             <button class="btn" type="submit">Delete</button>
                           </form>
+                        ) : (
+                          <span class="muted">View only</span>
                         )}
                       </td>
                     </tr>
@@ -280,7 +288,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                       <td class="right">
                         {job.archived_at ? (
                           <span class="muted">Locked</span>
-                        ) : (
+                        ) : canEditFinancials ? (
                           <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
                             <a class="btn" href={`/edit_expense/${row.id}`}>Edit</a>
                             <form
@@ -293,6 +301,8 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                               <button class="btn" type="submit">Delete</button>
                             </form>
                           </div>
+                        ) : (
+                          <span class="muted">View only</span>
                         )}
                       </td>
                     </tr>

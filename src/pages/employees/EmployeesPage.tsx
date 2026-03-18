@@ -14,6 +14,8 @@ interface EmployeesPageProps {
   employees: EmployeeRow[];
   csrfToken: string;
   showArchived?: boolean;
+  canCreateEmployees?: boolean;
+  canEditEmployees?: boolean;
   canArchiveEmployees?: boolean;
 }
 
@@ -25,6 +27,8 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
   employees,
   csrfToken,
   showArchived,
+  canCreateEmployees,
+  canEditEmployees,
   canArchiveEmployees,
 }) => {
   return (
@@ -38,7 +42,7 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
           <a class="btn" href={showArchived ? '/employees' : '/employees?show_archived=1'}>
             {showArchived ? 'Hide Archived' : 'Show Archived'}
           </a>
-          <a class="btn btn-primary" href="/add_employee">Add Employee</a>
+          {canCreateEmployees ? <a class="btn btn-primary" href="/add_employee">Add Employee</a> : null}
         </div>
       </div>
 
@@ -81,7 +85,7 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
                     </td>
                     <td class="right">
                       <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
-                        <a class="btn" href={`/edit_employee/${employee.id}`}>Edit</a>
+                        {canEditEmployees ? <a class="btn" href={`/edit_employee/${employee.id}`}>Edit</a> : null}
 
                         {canArchiveEmployees ? (
                           employee.archived_at ? (

@@ -3,7 +3,7 @@ import type { AppEnv } from '../app-env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../db/connection.js';
-import { loginRequired, permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
+import { loginRequired, permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { generateInvoicePdf } from '../services/invoice-pdf.js';
 import {
   DOCUMENT_ATTACHMENT_EXTENSIONS,
@@ -251,7 +251,7 @@ function renderInvoiceDetail(
 
 export const invoiceRoutes = new Hono<AppEnv>();
 
-invoiceRoutes.get('/invoices', loginRequired, (c) => {
+invoiceRoutes.get('/invoices', permissionRequired('invoices.view'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -353,7 +353,7 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
   );
 });
 
-invoiceRoutes.get('/add_invoice', roleRequired('Admin', 'Manager'), (c) => {
+invoiceRoutes.get('/add_invoice', permissionRequired('invoices.create'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -397,7 +397,7 @@ invoiceRoutes.get('/add_invoice', roleRequired('Admin', 'Manager'), (c) => {
   );
 });
 
-invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) => {
+invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -557,7 +557,7 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
   }
 });
 
-invoiceRoutes.get('/edit_invoice/:id', roleRequired('Admin', 'Manager'), (c) => {
+invoiceRoutes.get('/edit_invoice/:id', permissionRequired('invoices.edit'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -604,7 +604,7 @@ invoiceRoutes.get('/edit_invoice/:id', roleRequired('Admin', 'Manager'), (c) => 
   );
 });
 
-invoiceRoutes.post('/edit_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
+invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -813,7 +813,7 @@ invoiceRoutes.post('/edit_invoice/:id', roleRequired('Admin', 'Manager'), async 
   }
 });
 
-invoiceRoutes.post('/delete_invoice_attachment/:id', roleRequired('Admin', 'Manager'), (c) => {
+invoiceRoutes.post('/delete_invoice_attachment/:id', permissionRequired('invoices.edit'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -876,7 +876,7 @@ invoiceRoutes.post('/delete_invoice_attachment/:id', roleRequired('Admin', 'Mana
   return c.redirect(`/edit_invoice/${invoiceId}`);
 });
 
-invoiceRoutes.get('/invoice/:id', loginRequired, (c) => {
+invoiceRoutes.get('/invoice/:id', permissionRequired('invoices.view'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 

@@ -36,6 +36,8 @@ interface JobsListPageProps {
   deleteError?: string;
   csrfToken: string;
   showArchived?: boolean;
+  canCreateJobs?: boolean;
+  canEditJobs?: boolean;
   canArchiveJobs?: boolean;
 }
 
@@ -59,6 +61,8 @@ export const JobsListPage: FC<JobsListPageProps> = ({
   deleteError,
   csrfToken,
   showArchived,
+  canCreateJobs,
+  canEditJobs,
   canArchiveJobs,
 }) => {
   return (
@@ -72,7 +76,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
           <a class="btn" href={showArchived ? '/jobs' : '/jobs?show_archived=1'}>
             {showArchived ? 'Hide Archived' : 'Show Archived'}
           </a>
-          <a class="btn btn-primary" href="/add_job">Add Job</a>
+          {canCreateJobs ? <a class="btn btn-primary" href="/add_job">Add Job</a> : null}
         </div>
       </div>
 
@@ -170,7 +174,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                     <td class="right">
                       <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
                         <a class="btn" href={`/job/${job.id}`}>View</a>
-                        <a class="btn" href={`/edit_job/${job.id}`}>Edit</a>
+                        {canEditJobs ? <a class="btn" href={`/edit_job/${job.id}`}>Edit</a> : null}
 
                         {canArchiveJobs ? (
                           job.archived_at ? (

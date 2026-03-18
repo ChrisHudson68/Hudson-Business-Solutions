@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
-import { permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
+import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { EmployeesPage } from '../pages/employees/EmployeesPage.js';
 import { AddEmployeePage } from '../pages/employees/AddEmployeePage.js';
@@ -131,7 +131,7 @@ function getEmployeeById(db: any, employeeId: number, tenantId: number) {
 
 export const employeeRoutes = new Hono<AppEnv>();
 
-employeeRoutes.get('/employees', roleRequired('Admin', 'Manager'), (c) => {
+employeeRoutes.get('/employees', permissionRequired('employees.view'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
   const tenantId = tenant.id;
@@ -164,11 +164,14 @@ employeeRoutes.get('/employees', roleRequired('Admin', 'Manager'), (c) => {
       employees={employees}
       csrfToken={c.get('csrfToken')}
       showArchived={showArchived}
+      canCreateEmployees={userHasPermission(c.get('user'), 'employees.create')}
+      canEditEmployees={userHasPermission(c.get('user'), 'employees.edit')}
+      canArchiveEmployees={userHasPermission(c.get('user'), 'employees.archive')}
     />
   );
 });
 
-employeeRoutes.get('/add_employee', roleRequired('Admin', 'Manager'), (c) => {
+employeeRoutes.get('/add_employee', permissionRequired('employees.create'), (c) => {
   return renderApp(
     c,
     'Add Employee',
@@ -184,7 +187,7 @@ employeeRoutes.get('/add_employee', roleRequired('Admin', 'Manager'), (c) => {
   );
 });
 
-employeeRoutes.post('/add_employee', roleRequired('Admin', 'Manager'), async (c) => {
+employeeRoutes.post('/add_employee', permissionRequired('employees.create'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -243,7 +246,7 @@ employeeRoutes.post('/add_employee', roleRequired('Admin', 'Manager'), async (c)
   }
 });
 
-employeeRoutes.get('/edit_employee/:id', roleRequired('Admin', 'Manager'), (c) => {
+employeeRoutes.get('/edit_employee/:id', permissionRequired('employees.edit'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
   const tenantId = tenant.id;
@@ -271,7 +274,7 @@ employeeRoutes.get('/edit_employee/:id', roleRequired('Admin', 'Manager'), (c) =
   );
 });
 
-employeeRoutes.post('/edit_employee/:id', roleRequired('Admin', 'Manager'), async (c) => {
+employeeRoutes.post('/edit_employee/:id', permissionRequired('employees.edit'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');

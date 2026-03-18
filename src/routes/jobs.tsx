@@ -5,7 +5,7 @@ import * as jobs from '../db/queries/jobs.js';
 import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
 import * as timeEntries from '../db/queries/time-entries.js';
-import { loginRequired, permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
+import { loginRequired, permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { JobsListPage } from '../pages/jobs/JobsListPage.js';
@@ -249,7 +249,7 @@ export const jobRoutes = new Hono<AppEnv>();
 
 jobRoutes.get('/', loginRequired, (c) => c.redirect('/dashboard'));
 
-jobRoutes.get('/jobs', loginRequired, (c) => {
+jobRoutes.get('/jobs', permissionRequired('jobs.view'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();
@@ -273,11 +273,14 @@ jobRoutes.get('/jobs', loginRequired, (c) => {
       totalUnpaidInvoiceBalance={summary.totalUnpaidInvoiceBalance}
       csrfToken={c.get('csrfToken')}
       showArchived={showArchived}
+      canCreateJobs={userHasPermission(c.get('user'), 'jobs.create')}
+      canEditJobs={userHasPermission(c.get('user'), 'jobs.edit')}
+      canArchiveJobs={userHasPermission(c.get('user'), 'jobs.archive')}
     />,
   );
 });
 
-jobRoutes.get('/job/:id', loginRequired, (c) => {
+jobRoutes.get('/job/:id', permissionRequired('jobs.view'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
@@ -320,12 +323,14 @@ jobRoutes.get('/job/:id', loginRequired, (c) => {
       profit={profit}
       retainageHeld={retainageHeld}
       csrfToken={c.get('csrfToken')}
+      canEditJobs={userHasPermission(c.get('user'), 'jobs.edit')}
+      canEditFinancials={userHasPermission(c.get('user'), 'financials.edit')}
       canArchiveJobs={userHasPermission(c.get('user'), 'jobs.archive')}
     />,
   );
 });
 
-jobRoutes.get('/add_job', roleRequired('Admin', 'Manager'), (c) => {
+jobRoutes.get('/add_job', permissionRequired('jobs.create'), (c) => {
   return renderApp(
     c,
     'Add Job',
@@ -344,7 +349,7 @@ jobRoutes.get('/add_job', roleRequired('Admin', 'Manager'), (c) => {
   );
 });
 
-jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
+jobRoutes.post('/add_job', permissionRequired('jobs.create'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -410,7 +415,7 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
   }
 });
 
-jobRoutes.get('/edit_job/:id', roleRequired('Admin', 'Manager'), (c) => {
+jobRoutes.get('/edit_job/:id', permissionRequired('jobs.edit'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
@@ -432,7 +437,7 @@ jobRoutes.get('/edit_job/:id', roleRequired('Admin', 'Manager'), (c) => {
   );
 });
 
-jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
+jobRoutes.post('/edit_job/:id', permissionRequired('jobs.edit'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
