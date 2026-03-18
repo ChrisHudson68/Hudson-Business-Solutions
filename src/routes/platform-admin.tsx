@@ -61,8 +61,6 @@ function shouldUseSecureCookies(hostHeader: string | undefined): boolean {
 }
 
 function setPlatformAdminCookie(c: any, value: string) {
-  const env = getEnv();
-
   setCookie(c, PLATFORM_ADMIN_COOKIE_NAME, value, {
     path: '/',
     httpOnly: true,
@@ -131,6 +129,22 @@ function addDays(days: number): string {
   return toSqlDate(d);
 }
 
+function normalizeQueryText(value: string | undefined | null): string {
+  return String(value || '').trim();
+}
+
+function normalizeRoleFilter(value: string | undefined | null): string {
+  const role = String(value || '').trim();
+  if (role === 'Admin' || role === 'Manager' || role === 'Employee') return role;
+  return '';
+}
+
+function normalizeStatusFilter(value: string | undefined | null): string {
+  const status = String(value || '').trim().toLowerCase();
+  if (status === 'eligible' || status === 'blocked' || status === 'disabled') return status;
+  return '';
+}
+
 function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string } | undefined {
   const updated = String(c.req.query('updated') || '').trim().toLowerCase();
   const error = String(c.req.query('error') || '').trim().toLowerCase();
@@ -167,7 +181,10 @@ function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string
     return { tone: 'bad', message: 'That user is inactive and cannot be impersonated.' };
   }
   if (error === 'admin-user-blocked') {
-    return { tone: 'bad', message: 'Platform admin impersonation of tenant Admin users is blocked in Phase 3A for safety.' };
+    return { tone: 'bad', message: 'Platform admin impersonation of tenant Admin users is blocked in Phase 3B for safety.' };
+  }
+  if (error === 'reason-too-long') {
+    return { tone: 'bad', message: 'Support reason must be 200 characters or less.' };
   }
 
   return undefined;
@@ -387,6 +404,15 @@ platformAdminRoutes.get('/admin/activity', platformAdminRequired, (c) => {
 
 platformAdminRoutes.get('/admin/tenants', platformAdminRequired, (c) => {
   const db = getDb();
+  const search = normalizeQueryText(c.req.query('q'));
+
+  const whereParts = ['1 = 1'];
+  const params: Array<string | number> = [];
+
+  if (search) {
+    whereParts.push('(t.name LIKE ? OR t.subdomain LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
+  }
 
   const tenants = db.prepare(`
     SELECT
@@ -399,13 +425,60 @@ platformAdminRoutes.get('/admin/tenants', platformAdminRequired, (c) => {
       t.billing_plan,
       t.billing_trial_ends_at,
       COUNT(DISTINCT u.id) as user_count,
-      COUNT(DISTINCT j.id) as job_count
+      COUNT(DISTINCT j.id) as job_count,
+      (
+        SELECT COUNT(*)
+        FROM users ux
+        WHERE ux.tenant_id = t.id
+          AND ux.active = 1
+          AND LOWER(ux.role) <> 'admin'
+      ) as impersonatable_user_count,
+      (
+        SELECT ux.id
+        FROM users ux
+        WHERE ux.tenant_id = t.id
+          AND ux.active = 1
+          AND LOWER(ux.role) <> 'admin'
+        ORDER BY CASE LOWER(ux.role)
+          WHEN 'manager' THEN 1
+          WHEN 'employee' THEN 2
+          ELSE 9
+        END, ux.name COLLATE NOCASE ASC
+        LIMIT 1
+      ) as first_impersonatable_user_id,
+      (
+        SELECT ux.name
+        FROM users ux
+        WHERE ux.tenant_id = t.id
+          AND ux.active = 1
+          AND LOWER(ux.role) <> 'admin'
+        ORDER BY CASE LOWER(ux.role)
+          WHEN 'manager' THEN 1
+          WHEN 'employee' THEN 2
+          ELSE 9
+        END, ux.name COLLATE NOCASE ASC
+        LIMIT 1
+      ) as first_impersonatable_user_name,
+      (
+        SELECT ux.role
+        FROM users ux
+        WHERE ux.tenant_id = t.id
+          AND ux.active = 1
+          AND LOWER(ux.role) <> 'admin'
+        ORDER BY CASE LOWER(ux.role)
+          WHEN 'manager' THEN 1
+          WHEN 'employee' THEN 2
+          ELSE 9
+        END, ux.name COLLATE NOCASE ASC
+        LIMIT 1
+      ) as first_impersonatable_user_role
     FROM tenants t
     LEFT JOIN users u ON u.tenant_id = t.id
     LEFT JOIN jobs j ON j.tenant_id = t.id
+    WHERE ${whereParts.join(' AND ')}
     GROUP BY t.id
     ORDER BY t.name COLLATE NOCASE ASC
-  `).all() as Array<{
+  `).all(...params) as Array<{
     id: number;
     name: string;
     subdomain: string;
@@ -416,12 +489,16 @@ platformAdminRoutes.get('/admin/tenants', platformAdminRequired, (c) => {
     billing_trial_ends_at: string | null;
     user_count: number;
     job_count: number;
+    impersonatable_user_count: number;
+    first_impersonatable_user_id: number | null;
+    first_impersonatable_user_name: string | null;
+    first_impersonatable_user_role: string | null;
   }>;
 
   return renderAdminLayout(
     c,
     'Tenant Directory',
-    <AdminTenantsPage tenants={tenants} />,
+    <AdminTenantsPage tenants={tenants} csrfToken={c.get('csrfToken')} search={search} />,
   );
 });
 
@@ -476,35 +553,68 @@ platformAdminRoutes.get('/admin/tenants/:id', platformAdminRequired, (c) => {
     return c.text('Tenant not found', 404);
   }
 
+  const userSearch = normalizeQueryText(c.req.query('q'));
+  const roleFilter = normalizeRoleFilter(c.req.query('role'));
+  const statusFilter = normalizeStatusFilter(c.req.query('status'));
+
+  const userWhereParts = ['tenant_id = ?'];
+  const userParams: Array<string | number> = [tenant.id];
+
+  if (userSearch) {
+    userWhereParts.push('(name LIKE ? OR email LIKE ?)');
+    userParams.push(`%${userSearch}%`, `%${userSearch}%`);
+  }
+
+  if (roleFilter) {
+    userWhereParts.push('role = ?');
+    userParams.push(roleFilter);
+  }
+
+  if (statusFilter === 'eligible') {
+    userWhereParts.push('active = 1 AND LOWER(role) <> ?');
+    userParams.push('admin');
+  } else if (statusFilter === 'blocked') {
+    userWhereParts.push('active = 1 AND LOWER(role) = ?');
+    userParams.push('admin');
+  } else if (statusFilter === 'disabled') {
+    userWhereParts.push('active <> 1');
+  }
+
   const users = db.prepare(`
     SELECT id, name, email, role, active
     FROM users
-    WHERE tenant_id = ?
-    ORDER BY role ASC, name ASC
-  `).all(tenant.id) as Array<{
+    WHERE ${userWhereParts.join(' AND ')}
+    ORDER BY CASE LOWER(role)
+      WHEN 'admin' THEN 1
+      WHEN 'manager' THEN 2
+      WHEN 'employee' THEN 3
+      ELSE 9
+    END, name COLLATE NOCASE ASC
+  `).all(...userParams).map((user: any) => ({
+    ...user,
+    can_impersonate: Number(user.active) === 1 && String(user.role).trim().toLowerCase() !== 'admin',
+  })) as Array<{
     id: number;
     name: string;
     email: string;
     role: string;
     active: number;
+    can_impersonate: boolean;
   }>;
 
   return renderAdminLayout(
     c,
     `Tenant Detail: ${tenant.name}`,
-    <div class="grid" style="gap:14px;">
-      <div style="display:flex; justify-content:flex-end;">
-        <a class="btn" href={`/admin/activity?tenant_id=${tenant.id}`}>View Tenant Activity</a>
-      </div>
-
-      <AdminTenantDetailPage
-        tenant={tenant}
-        users={users}
-        workspaceLoginUrl={buildTenantLoginUrl(tenant.subdomain)}
-        csrfToken={c.get('csrfToken')}
-        notice={resolveNotice(c)}
-      />
-    </div>,
+    <AdminTenantDetailPage
+      tenant={tenant}
+      users={users}
+      workspaceLoginUrl={buildTenantLoginUrl(tenant.subdomain)}
+      csrfToken={c.get('csrfToken')}
+      userSearch={userSearch}
+      roleFilter={roleFilter}
+      statusFilter={statusFilter}
+      notice={resolveNotice(c)}
+    />,
   );
 });
 
@@ -653,8 +763,15 @@ platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired
 
   const body = await c.req.parseBody();
   const userId = parsePositiveInt(String(body['user_id'] ?? ''));
+  const supportReason = normalizeQueryText(String(body['support_reason'] ?? '')).slice(0, 200);
+  const originalReason = normalizeQueryText(String(body['support_reason'] ?? ''));
+
   if (!userId) {
     return c.redirect(redirectTenantDetail(tenantId, 'error=user-not-found'));
+  }
+
+  if (originalReason.length > 200) {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=reason-too-long'));
   }
 
   const user = db.prepare(`
@@ -695,12 +812,16 @@ platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired
     eventType: 'auth.impersonation_requested',
     entityType: 'user',
     entityId: user.id,
-    description: `Platform admin ${platformAdmin?.email || env.platformAdminEmail || 'platform-admin'} requested impersonation for ${user.name}.`,
+    description: supportReason
+      ? `Platform admin ${platformAdmin?.email || env.platformAdminEmail || 'platform-admin'} requested impersonation for ${user.name}. Reason: ${supportReason}`
+      : `Platform admin ${platformAdmin?.email || env.platformAdminEmail || 'platform-admin'} requested impersonation for ${user.name}.`,
     metadata: {
       platform_admin_email: platformAdmin?.email || env.platformAdminEmail || 'platform-admin',
       impersonated_user_id: user.id,
       impersonated_user_email: user.email,
       impersonated_user_role: user.role,
+      support_reason: supportReason || null,
+      phase: '3B',
     },
     ipAddress: resolveRequestIp(c),
   });

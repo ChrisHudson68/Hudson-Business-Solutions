@@ -33,9 +33,13 @@ interface AdminTenantDetailPageProps {
     email: string;
     role: string;
     active: number;
+    can_impersonate: boolean;
   }>;
   workspaceLoginUrl: string;
   csrfToken: string;
+  userSearch: string;
+  roleFilter: string;
+  statusFilter: string;
   notice?: {
     tone: 'good' | 'warn' | 'bad';
     message: string;
@@ -52,13 +56,25 @@ function badgeClass(status: string, exempt: number): string {
 }
 
 function noticeStyle(tone: 'good' | 'warn' | 'bad'): string {
-  if (tone === 'good') {
-    return 'margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;';
-  }
-  if (tone === 'warn') {
-    return 'margin-bottom:14px; border-color:#FDE68A; background:#FFFBEB; color:#92400E;';
-  }
+  if (tone === 'good') return 'margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;';
+  if (tone === 'warn') return 'margin-bottom:14px; border-color:#FDE68A; background:#FFFBEB; color:#92400E;';
   return 'margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;';
+}
+
+function userRoleBadge(role: string): string {
+  const value = String(role || '').trim().toLowerCase();
+  if (value === 'admin') return 'badge';
+  if (value === 'manager') return 'badge badge-good';
+  return 'badge badge-warn';
+}
+
+function supportStatusLabel(user: { active: number; can_impersonate: boolean; role: string }): { label: string; className: string } {
+  if (user.active !== 1) return { label: 'Disabled', className: 'badge badge-bad' };
+  if (!user.can_impersonate && String(user.role).trim().toLowerCase() === 'admin') {
+    return { label: 'Admin Blocked', className: 'badge badge-bad' };
+  }
+  if (!user.can_impersonate) return { label: 'Unavailable', className: 'badge' };
+  return { label: 'Eligible', className: 'badge badge-good' };
 }
 
 export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
@@ -66,9 +82,14 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
   users,
   workspaceLoginUrl,
   csrfToken,
+  userSearch,
+  roleFilter,
+  statusFilter,
   notice,
 }) => {
   const isExempt = Number(tenant.billing_exempt) === 1;
+  const eligibleUsers = users.filter((user) => user.can_impersonate).length;
+  const blockedUsers = users.filter((user) => !user.can_impersonate).length;
 
   return (
     <div>
@@ -80,6 +101,7 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <a class="btn" href="/admin/tenants">Back to Tenants</a>
+          <a class="btn" href={`/admin/activity?tenant_id=${tenant.id}`}>Tenant Activity</a>
           <a class="btn btn-primary" href={workspaceLoginUrl}>Open Workspace</a>
         </div>
       </div>
@@ -146,7 +168,6 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card">
           <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Billing Controls</div>
-
           <div style="display:grid; gap:12px;">
             <div class="muted" style="line-height:1.6;">
               These are platform-owner controls for operational support. They write directly to the tenant billing record in your app database.
@@ -166,19 +187,16 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
                   <input type="hidden" name="status" value="trialing" />
                   <button class="btn" type="submit">Set Trialing</button>
                 </form>
-
                 <form method="post" action={`/admin/tenants/${tenant.id}/billing/set-status`} style="margin:0;">
                   <input type="hidden" name="csrf_token" value={csrfToken} />
                   <input type="hidden" name="status" value="active" />
                   <button class="btn" type="submit">Set Active</button>
                 </form>
-
                 <form method="post" action={`/admin/tenants/${tenant.id}/billing/set-status`} style="margin:0;">
                   <input type="hidden" name="csrf_token" value={csrfToken} />
                   <input type="hidden" name="status" value="past_due" />
                   <button class="btn" type="submit">Set Past Due</button>
                 </form>
-
                 <form method="post" action={`/admin/tenants/${tenant.id}/billing/set-status`} style="margin:0;">
                   <input type="hidden" name="csrf_token" value={csrfToken} />
                   <input type="hidden" name="status" value="canceled" />
@@ -191,7 +209,6 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
                   <input type="hidden" name="csrf_token" value={csrfToken} />
                   <button class="btn" type="submit">Extend Trial +14 Days</button>
                 </form>
-
                 <form method="post" action={`/admin/tenants/${tenant.id}/billing/extend-grace`} style="margin:0;">
                   <input type="hidden" name="csrf_token" value={csrfToken} />
                   <button class="btn" type="submit">Extend Grace +7 Days</button>
@@ -202,15 +219,17 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
         </div>
 
         <div class="card">
-          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Default Rates</div>
+          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Support Summary</div>
           <div class="list">
+            <div class="list-item"><strong>Eligible Users:</strong> {eligibleUsers}</div>
+            <div class="list-item"><strong>Blocked / Unavailable:</strong> {blockedUsers}</div>
             <div class="list-item"><strong>Default Tax Rate:</strong> {tenant.default_tax_rate ?? '—'}</div>
             <div class="list-item"><strong>Default Labor Rate:</strong> {tenant.default_labor_rate ?? '—'}</div>
           </div>
 
           <div style="font-weight:900; font-size:18px; margin:20px 0 12px;">Support Guidance</div>
           <div class="muted" style="line-height:1.7;">
-            Use internal / exempt for your own workspaces and non-billed support tenants. Use trial and grace extensions sparingly and only when you are intentionally overriding normal Stripe-driven behavior.
+            Phase 3B adds search, quick support selection, and optional reason logging. Tenant Admin users remain blocked for safety in this phase.
           </div>
         </div>
       </div>
@@ -220,10 +239,44 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
           <div>
             <div style="font-weight:900; font-size:18px;">Tenant Users</div>
             <div class="muted" style="margin-top:6px; line-height:1.6;">
-              Start impersonation from here. This creates a temporary support session inside the tenant workspace without exposing passwords.
+              Search and filter users before starting a support session. Optional reason text is recorded in the audit trail.
             </div>
           </div>
         </div>
+
+        <form method="get" action={`/admin/tenants/${tenant.id}`} style="display:grid; gap:12px; margin-bottom:14px;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+            <div style="flex:2 1 280px; min-width:220px;">
+              <label style="display:block; font-weight:800; margin-bottom:6px;">Search users</label>
+              <input type="text" name="q" value={userSearch} placeholder="Name or email" style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px;" />
+            </div>
+
+            <div style="flex:1 1 180px; min-width:160px;">
+              <label style="display:block; font-weight:800; margin-bottom:6px;">Role</label>
+              <select name="role" style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;">
+                <option value="" selected={!roleFilter}>All Roles</option>
+                <option value="Admin" selected={roleFilter === 'Admin'}>Admin</option>
+                <option value="Manager" selected={roleFilter === 'Manager'}>Manager</option>
+                <option value="Employee" selected={roleFilter === 'Employee'}>Employee</option>
+              </select>
+            </div>
+
+            <div style="flex:1 1 180px; min-width:160px;">
+              <label style="display:block; font-weight:800; margin-bottom:6px;">Status</label>
+              <select name="status" style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;">
+                <option value="" selected={!statusFilter}>All Statuses</option>
+                <option value="eligible" selected={statusFilter === 'eligible'}>Eligible</option>
+                <option value="blocked" selected={statusFilter === 'blocked'}>Blocked</option>
+                <option value="disabled" selected={statusFilter === 'disabled'}>Disabled</option>
+              </select>
+            </div>
+
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button class="btn btn-primary" type="submit">Apply</button>
+              {(userSearch || roleFilter || statusFilter) ? <a class="btn" href={`/admin/tenants/${tenant.id}`}>Clear</a> : null}
+            </div>
+          </div>
+        </form>
 
         <div class="table-wrap">
           <table>
@@ -231,38 +284,53 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
               <tr>
                 <th>User</th>
                 <th>Role</th>
-                <th>Status</th>
-                <th></th>
+                <th>Login Status</th>
+                <th>Support Access</th>
+                <th style="min-width:340px;">Support Session</th>
               </tr>
             </thead>
             <tbody>
-              {users.length ? users.map((user) => (
+              {users.length ? users.map((user) => {
+                const supportStatus = supportStatusLabel(user);
+
+                return (
+                  <tr>
+                    <td>
+                      <div style="font-weight:900;">{user.name}</div>
+                      <div class="muted" style="margin-top:4px;">{user.email}</div>
+                    </td>
+                    <td><span class={userRoleBadge(user.role)}>{user.role}</span></td>
+                    <td>
+                      <span class={user.active === 1 ? 'badge badge-good' : 'badge badge-bad'}>
+                        {user.active === 1 ? 'Active' : 'Disabled'}
+                      </span>
+                    </td>
+                    <td><span class={supportStatus.className}>{supportStatus.label}</span></td>
+                    <td>
+                      {user.can_impersonate ? (
+                        <form method="post" action={`/admin/tenants/${tenant.id}/impersonate`} style="margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                          <input type="hidden" name="csrf_token" value={csrfToken} />
+                          <input type="hidden" name="user_id" value={user.id} />
+                          <input
+                            type="text"
+                            name="support_reason"
+                            placeholder="Optional reason"
+                            maxlength={200}
+                            style="flex:1 1 220px; min-height:38px; padding:8px 10px; border:1px solid var(--border); border-radius:12px;"
+                          />
+                          <button class="btn" type="submit">Impersonate</button>
+                        </form>
+                      ) : (
+                        <span class="muted">
+                          {user.active !== 1 ? 'User is inactive.' : 'Tenant Admin impersonation stays blocked in Phase 3B.'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              }) : (
                 <tr>
-                  <td>
-                    <div style="font-weight:900;">{user.name}</div>
-                    <div class="muted" style="margin-top:4px;">{user.email}</div>
-                  </td>
-                  <td>{user.role}</td>
-                  <td>
-                    <span class={user.active === 1 ? 'badge badge-good' : 'badge badge-bad'}>
-                      {user.active === 1 ? 'Active' : 'Disabled'}
-                    </span>
-                  </td>
-                  <td>
-                    {user.active === 1 ? (
-                      <form method="post" action={`/admin/tenants/${tenant.id}/impersonate`} style="margin:0; display:inline;">
-                        <input type="hidden" name="csrf_token" value={csrfToken} />
-                        <input type="hidden" name="user_id" value={user.id} />
-                        <button class="btn" type="submit">Impersonate</button>
-                      </form>
-                    ) : (
-                      <span class="muted">Unavailable</span>
-                    )}
-                  </td>
-                </tr>
-              )) : (
-                <tr>
-                  <td colSpan={4} class="muted">No tenant users found.</td>
+                  <td colSpan={5} class="muted">No tenant users found for the current filters.</td>
                 </tr>
               )}
             </tbody>
