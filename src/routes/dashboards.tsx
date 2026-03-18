@@ -13,6 +13,7 @@ import { DashboardPage } from '../pages/dashboard/DashboardPage.js';
 import { ProfitDashboardPage } from '../pages/dashboard/ProfitDashboardPage.js';
 import { JobCostDashboardPage } from '../pages/dashboard/JobCostDashboardPage.js';
 import { ReportsPage } from '../pages/dashboard/ReportsPage.js';
+import { buildAdvancedReports, parseReportFilter } from '../services/reporting.js';
 
 function renderApp(c: any, subtitle: string, content: any) {
   return c.html(
@@ -69,31 +70,6 @@ function invoiceDerivedStatus(
   }
 
   return 'Unpaid';
-}
-
-function startDateForRange(range: '1w' | '1m' | '1y'): string {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-
-  if (range === '1w') d.setUTCDate(d.getUTCDate() - 6);
-  else if (range === '1m') d.setUTCDate(d.getUTCDate() - 29);
-  else d.setUTCMonth(d.getUTCMonth() - 11, 1);
-
-  return d.toISOString().slice(0, 10);
-}
-
-function formatBucketLabel(dateStr: string, range: '1w' | '1m' | '1y'): string {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  if (range === '1y') {
-    return d.toLocaleDateString('en-US', { month: 'short' });
-  }
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function getRange(c: any): '1w' | '1m' | '1y' {
-  const range = String(c.req.query('range') || '1m').trim().toLowerCase();
-  if (range === '1w' || range === '1m' || range === '1y') return range;
-  return '1m';
 }
 
 export const dashboardRoutes = new Hono<AppEnv>();
@@ -414,140 +390,25 @@ dashboardRoutes.get('/reports', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();
-  const range = getRange(c);
-  const startDate = startDateForRange(range);
 
-  const allJobs = jobs.listByTenant(db, tenantId);
+  const filter = parseReportFilter({
+    range: c.req.query('range'),
+    start: c.req.query('start'),
+    end: c.req.query('end'),
+  });
 
-  const incomeRows = db.prepare(
-    `SELECT date, amount, job_id
-     FROM income
-     WHERE tenant_id = ? AND date >= ?
-     ORDER BY date ASC`,
-  ).all(tenantId, startDate) as Array<{ date: string; amount: number; job_id: number | null }>;
-
-  const expenseRows = db.prepare(
-    `SELECT date, amount, category, job_id
-     FROM expenses
-     WHERE tenant_id = ? AND date >= ?
-     ORDER BY date ASC`,
-  ).all(tenantId, startDate) as Array<{ date: string; amount: number; category: string | null; job_id: number | null }>;
-
-  const jobMap = new Map<number, {
-    id: number;
-    job_name: string | null;
-    client: string | null;
-    status: string;
-    income: number;
-    expenses: number;
-  }>();
-
-  for (const job of allJobs) {
-    jobMap.set(job.id, {
-      id: job.id,
-      job_name: job.job_name,
-      client: job.client_name,
-      status: job.status || 'Active',
-      income: 0,
-      expenses: 0,
-    });
-  }
-
-  const trendMap = new Map<string, { income: number; expenses: number }>();
-  const categoryMap = new Map<string, number>();
-
-  function bucketKey(dateStr: string): string {
-    if (range === '1y') return String(dateStr || '').slice(0, 7) + '-01';
-    return String(dateStr || '').slice(0, 10);
-  }
-
-  for (const row of incomeRows) {
-    const key = bucketKey(row.date);
-    const existing = trendMap.get(key) || { income: 0, expenses: 0 };
-    existing.income += Number(row.amount || 0);
-    trendMap.set(key, existing);
-
-    if (row.job_id && jobMap.has(row.job_id)) {
-      jobMap.get(row.job_id)!.income += Number(row.amount || 0);
-    }
-  }
-
-  for (const row of expenseRows) {
-    const key = bucketKey(row.date);
-    const existing = trendMap.get(key) || { income: 0, expenses: 0 };
-    existing.expenses += Number(row.amount || 0);
-    trendMap.set(key, existing);
-
-    const category = String(row.category || 'Other').trim() || 'Other';
-    categoryMap.set(category, (categoryMap.get(category) || 0) + Number(row.amount || 0));
-
-    if (row.job_id && jobMap.has(row.job_id)) {
-      jobMap.get(row.job_id)!.expenses += Number(row.amount || 0);
-    }
-  }
-
-  for (const job of allJobs) {
-    const laborCost = Number(timeEntries.sumLaborByTenant(db, tenantId, job.id) || 0);
-    const existing = jobMap.get(job.id);
-    if (existing) {
-      existing.expenses += laborCost;
-    }
-  }
-
-  const trend = [...trendMap.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([date, values]) => ({
-      label: formatBucketLabel(date, range),
-      income: Math.round(values.income * 100) / 100,
-      expenses: Math.round(values.expenses * 100) / 100,
-      profit: Math.round((values.income - values.expenses) * 100) / 100,
-    }));
-
-  const totalIncome = trend.reduce((sum, point) => sum + point.income, 0);
-  const totalExpenses = trend.reduce((sum, point) => sum + point.expenses, 0);
-  const totalProfit = totalIncome - totalExpenses;
-  const margin = totalIncome > 0 ? (totalProfit / totalIncome) * 100 : 0;
-
-  const expenseCategories = [...categoryMap.entries()]
-    .map(([label, value]) => ({
-      label,
-      value: Math.round(value * 100) / 100,
-    }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 7);
-
-  const rows = [...jobMap.values()]
-    .map((job) => {
-      const profit = job.income - job.expenses;
-      const rowMargin = job.income > 0 ? (profit / job.income) * 100 : 0;
-
-      return {
-        id: job.id,
-        job_name: job.job_name,
-        client: job.client,
-        status: job.status,
-        income: Math.round(job.income * 100) / 100,
-        expenses: Math.round(job.expenses * 100) / 100,
-        profit: Math.round(profit * 100) / 100,
-        margin: rowMargin,
-      };
-    })
-    .sort((a, b) => b.profit - a.profit);
+  const reportData = buildAdvancedReports(db, tenantId, filter);
 
   return renderApp(
     c,
     'Reports',
     <ReportsPage
-      range={range}
-      totals={{
-        income: totalIncome,
-        expenses: totalExpenses,
-        profit: totalProfit,
-        margin,
-      }}
-      trend={trend}
-      expenseCategories={expenseCategories}
-      rows={rows}
+      filter={reportData.filter}
+      cash={reportData.cash}
+      aging={reportData.aging}
+      trend={reportData.trend}
+      expenseCategories={reportData.expenseCategories}
+      rows={reportData.rows}
     />,
   );
 });
