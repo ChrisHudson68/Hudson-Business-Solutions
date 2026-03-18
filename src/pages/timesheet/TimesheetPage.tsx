@@ -63,6 +63,9 @@ interface TimesheetPageProps {
   activeClockEntry?: ActiveClockEntry | null;
   isEmployeeUser: boolean;
   canUseSelfClock: boolean;
+  canRequestEdits: boolean;
+  canManageTimeEntries: boolean;
+  canApproveEditRequests: boolean;
   csrfToken: string;
   error?: string;
   success?: string;
@@ -177,6 +180,9 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
   activeClockEntry,
   isEmployeeUser,
   canUseSelfClock,
+  canRequestEdits,
+  canManageTimeEntries,
+  canApproveEditRequests,
   csrfToken,
   error,
   success,
@@ -353,7 +359,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                     <td class="muted">{t.note || ''}</td>
                     <td class="right">
                       {isEmployeeUser ? (
-                        t.clock_in_at && t.clock_out_at ? (
+                        canRequestEdits && t.clock_in_at && t.clock_out_at ? (
                           <details style="display:inline-block; text-align:left; width:100%;">
                             <summary class="btn edit-request-summary">Request Edit</summary>
                             <div class="card details-card" style="min-width:420px;">
@@ -421,13 +427,15 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                             </div>
                           </details>
                         ) : (
-                          <span class="muted">No action</span>
+                          <span class="muted">View only</span>
                         )
-                      ) : (
+                      ) : canManageTimeEntries ? (
                         <form method="post" action={`/delete_time/${t.id}`} style="display:inline;">
                           <input type="hidden" name="csrf_token" value={csrfToken} />
                           <button class="btn" type="submit">Delete</button>
                         </form>
+                      ) : (
+                        <span class="muted">View only</span>
                       )}
                     </td>
                   </tr>
@@ -444,7 +452,12 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
 
       {!isEmployeeUser ? (
         <div class="card" style="margin-top:14px;">
-          <b>Add Manual Time Entries</b>
+          <b>{canManageTimeEntries ? 'Add Manual Time Entries' : 'Manual Time Entries'}</b>
+          {!canManageTimeEntries ? (
+            <div class="muted" style="margin-top:8px;">
+              You currently have view-only access for weekly timesheet entry management.
+            </div>
+          ) : null}
           <form method="post" action="/timesheet" style="margin-top:10px;">
             <input type="hidden" name="csrf_token" value={csrfToken} />
             <input type="hidden" name="employee_id" value={String(employeeId || '')} />
@@ -464,10 +477,10 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                   {dates.map((d) => (
                     <tr>
                       <td>
-                        <input type="date" name="row_date" value={d} readonly style="min-width:130px;" />
+                        <input type="date" name="row_date" value={d} readonly style="min-width:130px;" disabled={!canManageTimeEntries} />
                       </td>
                       <td>
-                        <select name="row_job_id" style="min-width:160px;">
+                        <select name="row_job_id" style="min-width:160px;" disabled={!canManageTimeEntries}>
                           <option value="">--</option>
                           {jobs.map((j) => (
                             <option value={String(j.id)}>{j.job_name}</option>
@@ -483,10 +496,11 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                           max="24"
                           value="0"
                           style="width:80px;"
+                          disabled={!canManageTimeEntries}
                         />
                       </td>
                       <td>
-                        <input name="row_note" placeholder="Optional" maxLength={500} />
+                        <input name="row_note" placeholder="Optional" maxLength={500} disabled={!canManageTimeEntries} />
                       </td>
                     </tr>
                   ))}
@@ -495,7 +509,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
             </div>
 
             <div class="actions actions-mobile-stack" style="margin-top:16px;">
-              <button class="btn btn-primary" type="submit" disabled={employees.length === 0 || jobs.length === 0}>
+              <button class="btn btn-primary" type="submit" disabled={!canManageTimeEntries || employees.length === 0 || jobs.length === 0}>
                 Save Entries
               </button>
             </div>
@@ -506,6 +520,11 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
       {!isEmployeeUser ? (
         <div class="card" style="margin-top:14px;">
           <b>Pending Edit Requests</b>
+          {!canApproveEditRequests ? (
+            <div class="muted" style="margin-top:8px;">
+              You can review pending requests here, but approval actions require additional permission.
+            </div>
+          ) : null}
           <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
             <table class="table">
               <thead>
@@ -547,14 +566,18 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                       <td data-utc-display={request.created_at}>{request.created_at}</td>
                       <td class="right">
                         <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
-                          <form method="post" action={`/timeclock/edit-request/${request.id}/approve`}>
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn btn-primary" type="submit">Approve</button>
-                          </form>
-                          <form method="post" action={`/timeclock/edit-request/${request.id}/reject`}>
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Reject</button>
-                          </form>
+                          {canApproveEditRequests ? (<>
+                            <form method="post" action={`/timeclock/edit-request/${request.id}/approve`}>
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn btn-primary" type="submit">Approve</button>
+                            </form>
+                            <form method="post" action={`/timeclock/edit-request/${request.id}/reject`}>
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit">Reject</button>
+                            </form>
+                          </>) : (
+                            <span class="muted">View only</span>
+                          )}
                         </div>
                       </td>
                     </tr>

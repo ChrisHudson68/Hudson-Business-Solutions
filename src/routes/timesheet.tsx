@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
-import { loginRequired, roleRequired } from '../middleware/auth.js';
+import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { TimesheetPage } from '../pages/timesheet/TimesheetPage.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
@@ -324,6 +324,9 @@ function renderTimesheetPage(
     activeClockEntry?: { id: number; job_id: number | null; job_name: string; clock_in_at: string } | null;
     isEmployeeUser: boolean;
     canUseSelfClock: boolean;
+    canRequestEdits: boolean;
+    canManageTimeEntries: boolean;
+    canApproveEditRequests: boolean;
     error?: string;
     success?: string;
   },
@@ -344,6 +347,9 @@ function renderTimesheetPage(
       activeClockEntry={options.activeClockEntry}
       isEmployeeUser={options.isEmployeeUser}
       canUseSelfClock={options.canUseSelfClock}
+      canRequestEdits={options.canRequestEdits}
+      canManageTimeEntries={options.canManageTimeEntries}
+      canApproveEditRequests={options.canApproveEditRequests}
       csrfToken={c.get('csrfToken')}
       error={options.error}
       success={options.success}
@@ -382,7 +388,7 @@ function ensureJobExists(db: any, jobId: number, tenantId: number) {
 
 export const timesheetRoutes = new Hono<AppEnv>();
 
-timesheetRoutes.get('/timesheet', loginRequired, (c) => {
+timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -393,8 +399,11 @@ timesheetRoutes.get('/timesheet', loginRequired, (c) => {
   const jobs = loadJobs(db, tenantId);
 
   const isEmployeeUser = currentUser.role === 'Employee';
+  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
+  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
+  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
   const link = loadEmployeeForUser(db, currentUser.id, tenantId);
-  const canUseSelfClock = !!(link?.employee_id && link?.employee_name);
+  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
 
   const today = new Date().toISOString().slice(0, 10);
   const fallbackStart = weekStart(today);
@@ -436,7 +445,7 @@ timesheetRoutes.get('/timesheet', loginRequired, (c) => {
 
   const dates = weekDates(start);
   const existing = loadExistingEntries(db, tenantId, employeeId, start);
-  const pendingRequests = isEmployeeUser ? [] : loadPendingRequests(db, tenantId);
+  const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenantId) : [];
   const activeClockEntry = canUseSelfClock
     ? loadActiveClockEntry(db, tenantId, link?.employee_id ?? null)
     : null;
@@ -454,6 +463,9 @@ timesheetRoutes.get('/timesheet', loginRequired, (c) => {
       activeClockEntry: null,
       isEmployeeUser,
       canUseSelfClock: false,
+      canRequestEdits: false,
+      canManageTimeEntries,
+      canApproveEditRequests,
       error: 'Your user account is not linked to an employee record yet. Ask an Admin to link your user to an employee profile.',
     });
   }
@@ -470,10 +482,13 @@ timesheetRoutes.get('/timesheet', loginRequired, (c) => {
     activeClockEntry,
     isEmployeeUser,
     canUseSelfClock,
+    canRequestEdits,
+    canManageTimeEntries,
+    canApproveEditRequests,
   });
 });
 
-timesheetRoutes.post('/timesheet', roleRequired('Admin', 'Manager'), async (c) => {
+timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -485,7 +500,10 @@ timesheetRoutes.post('/timesheet', roleRequired('Admin', 'Manager'), async (c) =
   const employees = loadEmployees(db, tenantId);
   const jobs = loadJobs(db, tenantId);
   const link = loadEmployeeForUser(db, currentUser.id, tenantId);
-  const canUseSelfClock = !!(link?.employee_id && link?.employee_name);
+  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
+  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
+  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
+  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
 
   let employeeId: number | null = null;
   let start = weekStart(new Date().toISOString().slice(0, 10));
@@ -566,6 +584,9 @@ timesheetRoutes.post('/timesheet', roleRequired('Admin', 'Manager'), async (c) =
       activeClockEntry,
       isEmployeeUser: false,
       canUseSelfClock,
+      canRequestEdits,
+      canManageTimeEntries,
+      canApproveEditRequests,
       success: insertedCount > 0 ? 'Time entries saved successfully.' : 'No new time entries were added.',
     });
   } catch (error) {
@@ -594,6 +615,9 @@ timesheetRoutes.post('/timesheet', roleRequired('Admin', 'Manager'), async (c) =
         activeClockEntry,
         isEmployeeUser: false,
         canUseSelfClock,
+        canRequestEdits,
+        canManageTimeEntries,
+        canApproveEditRequests,
         error: message,
       },
       400,
@@ -601,7 +625,7 @@ timesheetRoutes.post('/timesheet', roleRequired('Admin', 'Manager'), async (c) =
   }
 });
 
-timesheetRoutes.post('/timeclock/punch-in', loginRequired, async (c) => {
+timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -613,7 +637,10 @@ timesheetRoutes.post('/timeclock/punch-in', loginRequired, async (c) => {
   const today = toIsoDate(new Date());
   const start = weekStart(today);
   const dates = weekDates(start);
-  const canUseSelfClock = !!(link?.employee_id && link?.employee_name);
+  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
+  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
+  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
+  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
 
   try {
     const employeeId = link?.employee_id ?? null;
@@ -650,7 +677,7 @@ timesheetRoutes.post('/timeclock/punch-in', loginRequired, async (c) => {
       ? loadExistingEntries(db, tenant.id, employeeId, start)
       : loadExistingEntries(db, tenant.id, employees.length > 0 ? employees[0].id : null, start);
 
-    const pendingRequests = currentUser.role === 'Employee' ? [] : loadPendingRequests(db, tenant.id);
+    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
 
     return renderTimesheetPage(c, {
       employees,
@@ -666,6 +693,9 @@ timesheetRoutes.post('/timeclock/punch-in', loginRequired, async (c) => {
       activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
       isEmployeeUser: currentUser.role === 'Employee',
       canUseSelfClock,
+      canRequestEdits,
+      canManageTimeEntries,
+      canApproveEditRequests,
       success: 'You are now clocked in.',
     });
   } catch (error) {
@@ -680,7 +710,7 @@ timesheetRoutes.post('/timeclock/punch-in', loginRequired, async (c) => {
         : (employees.length > 0 ? employees[0].id : null);
 
     const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
-    const pendingRequests = currentUser.role === 'Employee' ? [] : loadPendingRequests(db, tenant.id);
+    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
 
     return renderTimesheetPage(c, {
       employees,
@@ -694,12 +724,15 @@ timesheetRoutes.post('/timeclock/punch-in', loginRequired, async (c) => {
       activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
       isEmployeeUser: currentUser.role === 'Employee',
       canUseSelfClock,
+      canRequestEdits,
+      canManageTimeEntries,
+      canApproveEditRequests,
       error: error instanceof Error ? error.message : 'Unable to punch in.',
     }, 400);
   }
 });
 
-timesheetRoutes.post('/timeclock/punch-out', loginRequired, async (c) => {
+timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -712,7 +745,10 @@ timesheetRoutes.post('/timeclock/punch-out', loginRequired, async (c) => {
   const start = weekStart(today);
   const dates = weekDates(start);
   const employeeId = link?.employee_id ?? null;
-  const canUseSelfClock = !!(link?.employee_id && link?.employee_name);
+  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
+  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
+  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
+  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
 
   try {
     if (!employeeId) {
@@ -762,7 +798,7 @@ timesheetRoutes.post('/timeclock/punch-out', loginRequired, async (c) => {
       ? loadExistingEntries(db, tenant.id, employeeId, start)
       : loadExistingEntries(db, tenant.id, employees.length > 0 ? employees[0].id : null, start);
 
-    const pendingRequests = currentUser.role === 'Employee' ? [] : loadPendingRequests(db, tenant.id);
+    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
 
     return renderTimesheetPage(c, {
       employees,
@@ -778,6 +814,9 @@ timesheetRoutes.post('/timeclock/punch-out', loginRequired, async (c) => {
       activeClockEntry: null,
       isEmployeeUser: currentUser.role === 'Employee',
       canUseSelfClock,
+      canRequestEdits,
+      canManageTimeEntries,
+      canApproveEditRequests,
       success: 'You have been clocked out successfully.',
     });
   } catch (error) {
@@ -791,7 +830,7 @@ timesheetRoutes.post('/timeclock/punch-out', loginRequired, async (c) => {
         : (employees.length > 0 ? employees[0].id : null);
 
     const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
-    const pendingRequests = currentUser.role === 'Employee' ? [] : loadPendingRequests(db, tenant.id);
+    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
 
     return renderTimesheetPage(c, {
       employees,
@@ -805,12 +844,15 @@ timesheetRoutes.post('/timeclock/punch-out', loginRequired, async (c) => {
       activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
       isEmployeeUser: currentUser.role === 'Employee',
       canUseSelfClock,
+      canRequestEdits,
+      canManageTimeEntries,
+      canApproveEditRequests,
       error: error instanceof Error ? error.message : 'Unable to punch out.',
     }, 400);
   }
 });
 
-timesheetRoutes.post('/timeclock/request-edit/:id', loginRequired, async (c) => {
+timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edit_requests'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -823,7 +865,10 @@ timesheetRoutes.post('/timeclock/request-edit/:id', loginRequired, async (c) => 
   const start = weekStart(today);
   const dates = weekDates(start);
   const employeeId = link?.employee_id ?? null;
-  const canUseSelfClock = !!(link?.employee_id && link?.employee_name);
+  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
+  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
+  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
+  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
 
   try {
     if (!employeeId) {
@@ -938,7 +983,7 @@ timesheetRoutes.post('/timeclock/request-edit/:id', loginRequired, async (c) => 
       ? loadExistingEntries(db, tenant.id, employeeId, start)
       : loadExistingEntries(db, tenant.id, employees.length > 0 ? employees[0].id : null, start);
 
-    const pendingRequests = currentUser.role === 'Employee' ? [] : loadPendingRequests(db, tenant.id);
+    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
 
     return renderTimesheetPage(c, {
       employees,
@@ -954,6 +999,9 @@ timesheetRoutes.post('/timeclock/request-edit/:id', loginRequired, async (c) => 
       activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
       isEmployeeUser: currentUser.role === 'Employee',
       canUseSelfClock,
+      canRequestEdits,
+      canManageTimeEntries,
+      canApproveEditRequests,
       success: 'Your edit request has been submitted for approval.',
     });
   } catch (error) {
@@ -967,7 +1015,7 @@ timesheetRoutes.post('/timeclock/request-edit/:id', loginRequired, async (c) => 
         : (employees.length > 0 ? employees[0].id : null);
 
     const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
-    const pendingRequests = currentUser.role === 'Employee' ? [] : loadPendingRequests(db, tenant.id);
+    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
 
     return renderTimesheetPage(c, {
       employees,
@@ -981,12 +1029,15 @@ timesheetRoutes.post('/timeclock/request-edit/:id', loginRequired, async (c) => 
       activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
       isEmployeeUser: currentUser.role === 'Employee',
       canUseSelfClock,
+      canRequestEdits,
+      canManageTimeEntries,
+      canApproveEditRequests,
       error: error instanceof Error ? error.message : 'Unable to submit edit request.',
     }, 400);
   }
 });
 
-timesheetRoutes.post('/timeclock/edit-request/:id/approve', roleRequired('Admin', 'Manager'), async (c) => {
+timesheetRoutes.post('/timeclock/edit-request/:id/approve', permissionRequired('time.approve'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -1094,7 +1145,7 @@ timesheetRoutes.post('/timeclock/edit-request/:id/approve', roleRequired('Admin'
   return c.redirect('/timesheet');
 });
 
-timesheetRoutes.post('/timeclock/edit-request/:id/reject', roleRequired('Admin', 'Manager'), async (c) => {
+timesheetRoutes.post('/timeclock/edit-request/:id/reject', permissionRequired('time.approve'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -1148,7 +1199,7 @@ timesheetRoutes.post('/timeclock/edit-request/:id/reject', roleRequired('Admin',
   return c.redirect('/timesheet');
 });
 
-timesheetRoutes.post('/delete_time/:id', roleRequired('Admin', 'Manager'), async (c) => {
+timesheetRoutes.post('/delete_time/:id', permissionRequired('time.approve'), async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
   const tenantId = tenant.id;

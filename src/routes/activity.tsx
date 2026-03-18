@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
-import { roleRequired } from '../middleware/auth.js';
+import { permissionRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { ActivityPage } from '../pages/activity/ActivityPage.js';
 
@@ -38,7 +38,7 @@ function titleizeEventType(value: string): string {
 
 const activityRoutes = new Hono<AppEnv>();
 
-activityRoutes.get('/activity', roleRequired('Admin', 'Manager'), (c) => {
+activityRoutes.get('/activity', permissionRequired('activity.view'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 

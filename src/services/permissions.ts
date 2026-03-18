@@ -62,6 +62,7 @@ const ROLE_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
     'jobs.view',
     'time.view',
     'time.clock',
+    'time.edit_requests',
     'invoices.view',
     'reports.view',
   ],
