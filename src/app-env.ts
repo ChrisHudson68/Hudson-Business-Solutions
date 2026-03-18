@@ -14,7 +14,16 @@ export type AppEnv = {
         }
       | null;
     subdomain: string | null;
-    user: { id: number; name: string; email: string; role: string; tenant_id: number } | null;
+    user:
+      | {
+          id: number;
+          name: string;
+          email: string;
+          role: string;
+          tenant_id: number;
+          permissions: string[];
+        }
+      | null;
     platformAdmin: { email: string } | null;
     csrfToken: string;
   };

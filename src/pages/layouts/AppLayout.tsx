@@ -1,5 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { getBillingBanner } from '../../services/billing-banner.js';
+import { describeRole, hasPermission } from '../../services/permissions.js';
 
 interface AppLayoutProps {
   currentTenant:
@@ -22,12 +23,7 @@ interface AppLayoutProps {
         name: string;
         email: string;
         role: string;
-        impersonation?: {
-          platformAdminEmail: string;
-          impersonatedUserId: number;
-          impersonatedTenantId: number;
-          startedAt: number;
-        } | null;
+        permissions?: string[];
       }
     | null;
   appName: string;
@@ -537,6 +533,26 @@ const appCss = `
       flex:0 0 auto;
     }
 
+    .permission-chip-list{
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-top:6px;
+    }
+
+    .permission-chip{
+      display:inline-flex;
+      align-items:center;
+      min-height:24px;
+      padding:0 10px;
+      border-radius:999px;
+      background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+      font-size:11px;
+      font-weight:800;
+      color:rgba(255,255,255,.92);
+    }
+
     @media (max-width:760px){
       .billing-banner{
         flex-direction:column;
@@ -544,44 +560,6 @@ const appCss = `
       }
 
       .billing-banner .btn{
-        width:100%;
-      }
-    }
-
-    .impersonation-banner{
-      margin-bottom:14px;
-      border-radius:16px;
-      border:1px solid #FCD34D;
-      background:#FFFBEB;
-      box-shadow:var(--shadow);
-      padding:14px 16px;
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:14px;
-      color:#92400E;
-    }
-
-    .impersonation-banner strong{
-      display:block;
-      font-size:14px;
-      margin-bottom:4px;
-    }
-
-    .impersonation-banner p{
-      margin:0;
-      color:inherit;
-      line-height:1.45;
-      font-size:13px;
-    }
-
-    @media (max-width:760px){
-      .impersonation-banner{
-        flex-direction:column;
-        align-items:flex-start;
-      }
-
-      .impersonation-banner .btn{
         width:100%;
       }
     }
@@ -603,28 +581,66 @@ function isActive(path: string, patterns: string[]): boolean {
   return false;
 }
 
-function canManageWorkspace(currentUser: AppLayoutProps['currentUser']): boolean {
-  const role = String(currentUser?.role || '');
-  return role === 'Admin' || role === 'Manager';
-}
-
 function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
-  const managerAccess = canManageWorkspace(currentUser);
+  const permissions = currentUser?.permissions ?? [];
 
   return [
-    { label: 'Dashboard', href: '/', patterns: ['/'] },
-    { label: 'Jobs', href: '/jobs', patterns: ['/jobs', '/add_job', '/job/', '/edit_job/'] },
-    { label: 'Reports', href: '/reports', patterns: ['/reports', '/profit', '/job_costs'] },
-    { label: 'Employees', href: '/employees', patterns: ['/employees', '/add_employee', '/edit_employee/'] },
-    { label: 'Timesheets', href: '/timesheet', patterns: ['/timesheet'] },
-    { label: 'Invoices', href: '/invoices', patterns: ['/invoices', '/add_invoice', '/invoice/'] },
-    ...(managerAccess
-      ? [{ label: 'Activity', href: '/activity', patterns: ['/activity'] }]
-      : []),
-    { label: 'Users', href: '/users', patterns: ['/users', '/add_user', '/edit_user/'] },
-    { label: 'Billing', href: '/billing', patterns: ['/billing'] },
-    { label: 'Settings', href: '/settings', patterns: ['/settings'] },
-  ];
+    { label: 'Dashboard', href: '/', patterns: ['/'], visible: true },
+    {
+      label: 'Jobs',
+      href: '/jobs',
+      patterns: ['/jobs', '/add_job', '/job/', '/edit_job/'],
+      visible: hasPermission(permissions, 'jobs.view'),
+    },
+    {
+      label: 'Reports',
+      href: '/reports',
+      patterns: ['/reports', '/profit', '/job_costs'],
+      visible: hasPermission(permissions, 'reports.view'),
+    },
+    {
+      label: 'Employees',
+      href: '/employees',
+      patterns: ['/employees', '/add_employee', '/edit_employee/'],
+      visible: hasPermission(permissions, 'employees.view'),
+    },
+    {
+      label: 'Timesheets',
+      href: '/timesheet',
+      patterns: ['/timesheet'],
+      visible: hasPermission(permissions, 'time.view'),
+    },
+    {
+      label: 'Invoices',
+      href: '/invoices',
+      patterns: ['/invoices', '/add_invoice', '/invoice/'],
+      visible: hasPermission(permissions, 'invoices.view'),
+    },
+    {
+      label: 'Activity',
+      href: '/activity',
+      patterns: ['/activity'],
+      visible: hasPermission(permissions, 'activity.view'),
+    },
+    {
+      label: 'Users',
+      href: '/users',
+      patterns: ['/users', '/add_user', '/edit_user/'],
+      visible: hasPermission(permissions, 'users.view'),
+    },
+    {
+      label: 'Billing',
+      href: '/billing',
+      patterns: ['/billing'],
+      visible: hasPermission(permissions, 'billing.view'),
+    },
+    {
+      label: 'Settings',
+      href: '/settings',
+      patterns: ['/settings'],
+      visible: hasPermission(permissions, 'settings.view'),
+    },
+  ].filter((item) => item.visible);
 }
 
 function billingBadgeClass(tenant: AppLayoutProps['currentTenant']): string {
@@ -651,12 +667,21 @@ function billingBannerClass(tone: 'info' | 'warn' | 'bad'): string {
   return 'billing-banner billing-banner-info';
 }
 
-function formatImpersonationStartedAt(startedAt: number): string {
-  try {
-    return new Date(startedAt * 1000).toLocaleString();
-  } catch {
-    return 'Unknown';
+function buildPermissionSummary(currentUser: AppLayoutProps['currentUser']): string[] {
+  const permissions = currentUser?.permissions ?? [];
+  const chips: string[] = [];
+
+  if (hasPermission(permissions, 'settings.manage')) chips.push('Settings Control');
+  if (hasPermission(permissions, 'users.edit')) chips.push('User Management');
+  if (hasPermission(permissions, 'financials.edit')) chips.push('Financial Editing');
+  if (hasPermission(permissions, 'time.approve')) chips.push('Time Approval');
+  if (hasPermission(permissions, 'billing.manage')) chips.push('Billing Control');
+
+  if (chips.length === 0 && hasPermission(permissions, 'time.clock')) {
+    chips.push('Time Clock Access');
   }
+
+  return chips.slice(0, 4);
 }
 
 export const AppLayout: FC<AppLayoutProps> = ({
@@ -673,7 +698,7 @@ export const AppLayout: FC<AppLayoutProps> = ({
   const displayAppName = appName || 'Hudson Business Solutions';
   const billingBanner = getBillingBanner(currentTenant);
   const navItems = buildNavItems(currentUser);
-  const impersonation = currentUser?.impersonation || null;
+  const permissionSummary = buildPermissionSummary(currentUser);
 
   return (
     <html lang="en">
@@ -714,6 +739,19 @@ export const AppLayout: FC<AppLayoutProps> = ({
               <div style="margin-top:8px;">
                 <span class={billingBadgeClass(currentTenant)}>{billingBadgeLabel(currentTenant)}</span>
               </div>
+              {currentUser ? (
+                <>
+                  <div style="margin-top:10px;"><b>Role:</b> {currentUser.role}</div>
+                  <div style="margin-top:4px; opacity:.9;">{describeRole(currentUser.role)}</div>
+                  {permissionSummary.length ? (
+                    <div class="permission-chip-list">
+                      {permissionSummary.map((item) => (
+                        <span class="permission-chip">{item}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </aside>
 
@@ -733,19 +771,6 @@ export const AppLayout: FC<AppLayoutProps> = ({
 
             <div class="content">
               <div class="container">
-                {impersonation ? (
-                  <div class="impersonation-banner">
-                    <div>
-                      <strong>Impersonation active</strong>
-                      <p>
-                        You are viewing this workspace as <b>{currentUser?.name}</b> ({currentUser?.role}).
-                        Started by platform admin {impersonation.platformAdminEmail} on {formatImpersonationStartedAt(impersonation.startedAt)}.
-                      </p>
-                    </div>
-                    <a class="btn" href="/impersonation/stop">Return to Platform Admin</a>
-                  </div>
-                ) : null}
-
                 {billingBanner && path !== '/billing' ? (
                   <div class={billingBannerClass(billingBanner.tone)}>
                     <div>

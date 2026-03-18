@@ -1,49 +1,39 @@
 import { createMiddleware } from 'hono/factory';
 import { getCookie, deleteCookie } from 'hono/cookie';
-import { getSessionUser, SESSION_COOKIE_NAME } from '../services/session.js';
+import { getSessionUserId, SESSION_COOKIE_NAME } from '../services/session.js';
 import { getDb } from '../db/connection.js';
 import { getEnv } from '../config/env.js';
 import type { TenantVariables } from './tenant.js';
+import {
+  getRolePermissions,
+  hasAllPermissions,
+  hasAnyPermission,
+  normalizeUserRole,
+} from '../services/permissions.js';
+
+export type AuthenticatedUser = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  tenant_id: number;
+  permissions: string[];
+};
 
 export type AuthVariables = {
-  user: {
-    id: number;
-    name: string;
-    email: string;
-    role: string;
-    tenant_id: number;
-    impersonation: {
-      platformAdminEmail: string;
-      impersonatedUserId: number;
-      impersonatedTenantId: number;
-      startedAt: number;
-    } | null;
-  } | null;
+  user: AuthenticatedUser | null;
 };
 
 function resolveUser(
   cookieValue: string | undefined,
   secretKey: string,
   tenantId: number | undefined,
-): {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
-  tenant_id: number;
-  impersonation: {
-    platformAdminEmail: string;
-    impersonatedUserId: number;
-    impersonatedTenantId: number;
-    startedAt: number;
-  } | null;
-} | null {
+): AuthenticatedUser | null {
   if (!cookieValue) return null;
 
-  const session = getSessionUser(cookieValue, secretKey);
-  if (!session) return null;
+  const userId = getSessionUserId(cookieValue, secretKey);
+  if (userId === null) return null;
 
-  const userId = session.userId;
   const db = getDb();
   const row = db
     .prepare('SELECT id, name, email, role, active, tenant_id FROM users WHERE id = ?')
@@ -55,18 +45,15 @@ function resolveUser(
   if (row.active !== 1) return null;
   if (tenantId !== undefined && row.tenant_id !== tenantId) return null;
 
-  if (session.impersonation) {
-    if (session.impersonation.impersonatedUserId !== row.id) return null;
-    if (session.impersonation.impersonatedTenantId !== row.tenant_id) return null;
-  }
+  const normalizedRole = normalizeUserRole(row.role);
 
   return {
     id: row.id,
     name: row.name,
     email: row.email,
-    role: row.role,
+    role: normalizedRole,
     tenant_id: row.tenant_id,
-    impersonation: session.impersonation,
+    permissions: getRolePermissions(normalizedRole),
   };
 }
 
@@ -81,14 +68,12 @@ function clearSessionCookie(c: any) {
   });
 }
 
-export const loginRequired = createMiddleware<{
-  Variables: AuthVariables & TenantVariables;
-}>(async (c, next) => {
+function resolveRequestUser(c: any): AuthenticatedUser | null {
   const env = getEnv();
   const cookie = getCookie(c, SESSION_COOKIE_NAME);
 
   if (!cookie) {
-    return c.redirect('/login');
+    return null;
   }
 
   const tenant = c.get('tenant');
@@ -97,36 +82,75 @@ export const loginRequired = createMiddleware<{
 
   if (!user) {
     clearSessionCookie(c);
-    return c.redirect('/login');
+    return null;
   }
 
   c.set('user', user);
+  return user;
+}
+
+export const loginRequired = createMiddleware<{
+  Variables: AuthVariables & TenantVariables;
+}>(async (c, next) => {
+  const user = resolveRequestUser(c);
+
+  if (!user) {
+    return c.redirect('/login');
+  }
+
   await next();
 });
 
 export function roleRequired(...roles: string[]) {
   return createMiddleware<{ Variables: AuthVariables & TenantVariables }>(async (c, next) => {
-    const env = getEnv();
-    const cookie = getCookie(c, SESSION_COOKIE_NAME);
-
-    if (!cookie) {
-      return c.redirect('/login');
-    }
-
-    const tenant = c.get('tenant');
-    const tenantId = tenant?.id;
-    const user = resolveUser(cookie, env.secretKey, tenantId);
+    const user = resolveRequestUser(c);
 
     if (!user) {
-      clearSessionCookie(c);
       return c.redirect('/login');
     }
 
-    if (!roles.includes(user.role)) {
+    const normalizedAllowedRoles = roles.map((role) => normalizeUserRole(role));
+
+    if (!normalizedAllowedRoles.includes(normalizeUserRole(user.role))) {
+      return c.text('Forbidden (insufficient role access)', 403);
+    }
+
+    await next();
+  });
+}
+
+export function permissionRequired(...permissions: string[]) {
+  return createMiddleware<{ Variables: AuthVariables & TenantVariables }>(async (c, next) => {
+    const user = resolveRequestUser(c);
+
+    if (!user) {
+      return c.redirect('/login');
+    }
+
+    if (!hasAllPermissions(user.permissions, permissions)) {
       return c.text('Forbidden (insufficient permissions)', 403);
     }
 
-    c.set('user', user);
     await next();
   });
+}
+
+export function anyPermissionRequired(...permissions: string[]) {
+  return createMiddleware<{ Variables: AuthVariables & TenantVariables }>(async (c, next) => {
+    const user = resolveRequestUser(c);
+
+    if (!user) {
+      return c.redirect('/login');
+    }
+
+    if (!hasAnyPermission(user.permissions, permissions)) {
+      return c.text('Forbidden (insufficient permissions)', 403);
+    }
+
+    await next();
+  });
+}
+
+export function userHasPermission(user: AuthenticatedUser | null | undefined, permission: string): boolean {
+  return !!user && user.permissions.includes(permission);
 }
