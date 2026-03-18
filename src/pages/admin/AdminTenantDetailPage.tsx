@@ -21,6 +21,11 @@ interface AdminTenantDetailPageProps {
     billing_subscription_id: string | null;
     billing_subscription_status: string | null;
     billing_updated_at: string | null;
+    billing_state?: string | null;
+    billing_grace_until?: string | null;
+    billing_override_reason?: string | null;
+    billing_overridden_by_user_id?: number | null;
+    billing_overridden_at?: string | null;
     created_at: string | null;
     user_count: number;
     job_count: number;
@@ -46,12 +51,27 @@ interface AdminTenantDetailPageProps {
   };
 }
 
-function badgeClass(status: string, exempt: number): string {
+function legacyBadgeClass(status: string, exempt: number): string {
   if (Number(exempt) === 1 || status === 'internal') return 'badge badge-good';
   if (status === 'active') return 'badge badge-good';
   if (status === 'trialing') return 'badge badge-warn';
   if (status === 'past_due') return 'badge badge-bad';
   if (status === 'canceled') return 'badge badge-bad';
+  return 'badge';
+}
+
+function billingStateBadgeClass(state: string): string {
+  const value = String(state || '').trim().toLowerCase();
+
+  if (value === 'internal' || value === 'billing_exempt' || value === 'active') {
+    return 'badge badge-good';
+  }
+  if (value === 'trialing' || value === 'grace_period') {
+    return 'badge badge-warn';
+  }
+  if (value === 'past_due' || value === 'suspended' || value === 'canceled') {
+    return 'badge badge-bad';
+  }
   return 'badge';
 }
 
@@ -68,13 +88,21 @@ function userRoleBadge(role: string): string {
   return 'badge badge-warn';
 }
 
-function supportStatusLabel(user: { active: number; can_impersonate: boolean; role: string }): { label: string; className: string } {
+function supportStatusLabel(user: { active: number; can_impersonate: boolean; role: string }): {
+  label: string;
+  className: string;
+} {
   if (user.active !== 1) return { label: 'Disabled', className: 'badge badge-bad' };
   if (!user.can_impersonate && String(user.role).trim().toLowerCase() === 'admin') {
     return { label: 'Admin Blocked', className: 'badge badge-bad' };
   }
   if (!user.can_impersonate) return { label: 'Unavailable', className: 'badge' };
   return { label: 'Eligible', className: 'badge badge-good' };
+}
+
+function formatDateForInput(value?: string | null): string {
+  if (!value) return '';
+  return String(value).slice(0, 10);
 }
 
 export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
@@ -90,6 +118,12 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
   const isExempt = Number(tenant.billing_exempt) === 1;
   const eligibleUsers = users.filter((user) => user.can_impersonate).length;
   const blockedUsers = users.filter((user) => !user.can_impersonate).length;
+
+  const effectiveLegacyStatus = tenant.billing_exempt ? 'internal' : tenant.billing_status;
+  const effectiveBillingState = String(tenant.billing_state || '').trim() || '—';
+  const billingMismatch =
+    effectiveBillingState !== '—' &&
+    String(effectiveLegacyStatus).trim().toLowerCase() !== effectiveBillingState.trim().toLowerCase();
 
   return (
     <div>
@@ -148,15 +182,32 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
           <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Billing Details</div>
           <div class="list">
             <div class="list-item">
-              <strong>Status:</strong>{' '}
-              <span class={badgeClass(tenant.billing_status, tenant.billing_exempt)}>
-                {tenant.billing_exempt ? 'internal' : tenant.billing_status}
+              <strong>Legacy Billing Status:</strong>{' '}
+              <span class={legacyBadgeClass(tenant.billing_status, tenant.billing_exempt)}>
+                {effectiveLegacyStatus}
               </span>
             </div>
+
+            <div class="list-item">
+              <strong>Advanced Billing State:</strong>{' '}
+              <span class={billingStateBadgeClass(effectiveBillingState)}>
+                {effectiveBillingState}
+              </span>
+            </div>
+
+            {billingMismatch ? (
+              <div class="list-item" style="color:#92400E;">
+                <strong>State Mismatch:</strong> Legacy status and advanced billing state currently differ.
+              </div>
+            ) : null}
+
             <div class="list-item"><strong>Billing Exempt:</strong> {tenant.billing_exempt ? 'Yes' : 'No'}</div>
             <div class="list-item"><strong>Plan:</strong> {tenant.billing_plan || '—'}</div>
             <div class="list-item"><strong>Trial Ends:</strong> {tenant.billing_trial_ends_at || '—'}</div>
-            <div class="list-item"><strong>Grace Ends:</strong> {tenant.billing_grace_ends_at || '—'}</div>
+            <div class="list-item"><strong>Legacy Grace Ends:</strong> {tenant.billing_grace_ends_at || '—'}</div>
+            <div class="list-item"><strong>Advanced Grace Until:</strong> {tenant.billing_grace_until || '—'}</div>
+            <div class="list-item"><strong>Override Reason:</strong> {tenant.billing_override_reason || '—'}</div>
+            <div class="list-item"><strong>Overridden At:</strong> {tenant.billing_overridden_at || '—'}</div>
             <div class="list-item"><strong>Stripe Customer ID:</strong> {tenant.billing_customer_id || '—'}</div>
             <div class="list-item"><strong>Stripe Subscription ID:</strong> {tenant.billing_subscription_id || '—'}</div>
             <div class="list-item"><strong>Subscription Status:</strong> {tenant.billing_subscription_status || '—'}</div>
@@ -170,7 +221,7 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
           <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Billing Controls</div>
           <div style="display:grid; gap:12px;">
             <div class="muted" style="line-height:1.6;">
-              These are platform-owner controls for operational support. They write directly to the tenant billing record in your app database.
+              These are platform-owner controls for operational support. Legacy billing actions update the original app billing model. Advanced billing state is the new operator-facing override layer for future enforcement.
             </div>
 
             <div style="display:grid; gap:10px;">
@@ -219,18 +270,70 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
         </div>
 
         <div class="card">
-          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Support Summary</div>
-          <div class="list">
-            <div class="list-item"><strong>Eligible Users:</strong> {eligibleUsers}</div>
-            <div class="list-item"><strong>Blocked / Unavailable:</strong> {blockedUsers}</div>
-            <div class="list-item"><strong>Default Tax Rate:</strong> {tenant.default_tax_rate ?? '—'}</div>
-            <div class="list-item"><strong>Default Labor Rate:</strong> {tenant.default_labor_rate ?? '—'}</div>
-          </div>
+          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Advanced Billing State Control</div>
 
-          <div style="font-weight:900; font-size:18px; margin:20px 0 12px;">Support Guidance</div>
-          <div class="muted" style="line-height:1.7;">
-            Phase 3B adds search, quick support selection, and optional reason logging. Tenant Admin users remain blocked for safety in this phase.
+          <form method="post" action={`/admin/tenants/${tenant.id}/billing/override`} style="display:grid; gap:12px;">
+            <input type="hidden" name="csrf_token" value={csrfToken} />
+
+            <div>
+              <label style="display:block; font-weight:800; margin-bottom:6px;">Billing State</label>
+              <select
+                name="billing_state"
+                style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;"
+              >
+                <option value="trialing" selected={effectiveBillingState === 'trialing'}>Trialing</option>
+                <option value="active" selected={effectiveBillingState === 'active'}>Active</option>
+                <option value="past_due" selected={effectiveBillingState === 'past_due'}>Past Due</option>
+                <option value="grace_period" selected={effectiveBillingState === 'grace_period'}>Grace Period</option>
+                <option value="suspended" selected={effectiveBillingState === 'suspended'}>Suspended</option>
+                <option value="canceled" selected={effectiveBillingState === 'canceled'}>Canceled</option>
+                <option value="internal" selected={effectiveBillingState === 'internal'}>Internal</option>
+                <option value="billing_exempt" selected={effectiveBillingState === 'billing_exempt'}>Billing Exempt</option>
+              </select>
+            </div>
+
+            <div>
+              <label style="display:block; font-weight:800; margin-bottom:6px;">Grace Until (optional)</label>
+              <input
+                type="date"
+                name="grace_until"
+                value={formatDateForInput(tenant.billing_grace_until)}
+                style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px;"
+              />
+            </div>
+
+            <div>
+              <label style="display:block; font-weight:800; margin-bottom:6px;">Override Reason (optional)</label>
+              <textarea
+                name="reason"
+                maxlength={300}
+                style="width:100%; min-height:90px; padding:10px 12px; border:1px solid var(--border); border-radius:12px;"
+              >
+                {tenant.billing_override_reason || ''}
+              </textarea>
+            </div>
+
+            <button class="btn btn-primary" type="submit">Apply Billing Override</button>
+          </form>
+
+          <div class="muted" style="margin-top:12px; line-height:1.6;">
+            This does not contact Stripe. It stores an operator-side billing state that Phase 5B can use for warnings, grace logic, and suspension enforcement.
           </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Support Summary</div>
+        <div class="list">
+          <div class="list-item"><strong>Eligible Users:</strong> {eligibleUsers}</div>
+          <div class="list-item"><strong>Blocked / Unavailable:</strong> {blockedUsers}</div>
+          <div class="list-item"><strong>Default Tax Rate:</strong> {tenant.default_tax_rate ?? '—'}</div>
+          <div class="list-item"><strong>Default Labor Rate:</strong> {tenant.default_labor_rate ?? '—'}</div>
+        </div>
+
+        <div style="font-weight:900; font-size:18px; margin:20px 0 12px;">Support Guidance</div>
+        <div class="muted" style="line-height:1.7;">
+          Phase 3B adds search, quick support selection, and optional reason logging. Tenant Admin users remain blocked for safety in this phase.
         </div>
       </div>
 
@@ -248,12 +351,21 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
           <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
             <div style="flex:2 1 280px; min-width:220px;">
               <label style="display:block; font-weight:800; margin-bottom:6px;">Search users</label>
-              <input type="text" name="q" value={userSearch} placeholder="Name or email" style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px;" />
+              <input
+                type="text"
+                name="q"
+                value={userSearch}
+                placeholder="Name or email"
+                style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px;"
+              />
             </div>
 
             <div style="flex:1 1 180px; min-width:160px;">
               <label style="display:block; font-weight:800; margin-bottom:6px;">Role</label>
-              <select name="role" style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;">
+              <select
+                name="role"
+                style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;"
+              >
                 <option value="" selected={!roleFilter}>All Roles</option>
                 <option value="Admin" selected={roleFilter === 'Admin'}>Admin</option>
                 <option value="Manager" selected={roleFilter === 'Manager'}>Manager</option>
@@ -263,7 +375,10 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
 
             <div style="flex:1 1 180px; min-width:160px;">
               <label style="display:block; font-weight:800; margin-bottom:6px;">Status</label>
-              <select name="status" style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;">
+              <select
+                name="status"
+                style="width:100%; min-height:40px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff;"
+              >
                 <option value="" selected={!statusFilter}>All Statuses</option>
                 <option value="eligible" selected={statusFilter === 'eligible'}>Eligible</option>
                 <option value="blocked" selected={statusFilter === 'blocked'}>Blocked</option>
@@ -273,7 +388,9 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
 
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
               <button class="btn btn-primary" type="submit">Apply</button>
-              {(userSearch || roleFilter || statusFilter) ? <a class="btn" href={`/admin/tenants/${tenant.id}`}>Clear</a> : null}
+              {(userSearch || roleFilter || statusFilter) ? (
+                <a class="btn" href={`/admin/tenants/${tenant.id}`}>Clear</a>
+              ) : null}
             </div>
           </div>
         </form>
@@ -308,7 +425,11 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
                     <td><span class={supportStatus.className}>{supportStatus.label}</span></td>
                     <td>
                       {user.can_impersonate ? (
-                        <form method="post" action={`/admin/tenants/${tenant.id}/impersonate`} style="margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <form
+                          method="post"
+                          action={`/admin/tenants/${tenant.id}/impersonate`}
+                          style="margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;"
+                        >
                           <input type="hidden" name="csrf_token" value={csrfToken} />
                           <input type="hidden" name="user_id" value={user.id} />
                           <input

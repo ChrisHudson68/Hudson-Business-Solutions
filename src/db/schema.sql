@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS tenants (
     billing_subscription_id TEXT,
     billing_subscription_status TEXT,
     billing_updated_at TEXT,
+    billing_state TEXT NOT NULL DEFAULT 'trialing',
+    billing_grace_until TEXT,
+    billing_override_reason TEXT,
+    billing_overridden_by_user_id INTEGER,
+    billing_overridden_at TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -304,3 +309,6 @@ ON tenants(billing_status);
 
 CREATE INDEX IF NOT EXISTS idx_tenants_billing_exempt
 ON tenants(billing_exempt);
+
+CREATE INDEX IF NOT EXISTS idx_tenants_billing_state
+ON tenants(billing_state);

@@ -5,7 +5,8 @@ export function findBySubdomain(db: DB, subdomain: string) {
   return db.prepare(
     `SELECT id, name, subdomain, logo_path,
             billing_exempt, billing_status, billing_plan,
-            billing_trial_ends_at, billing_grace_ends_at
+            billing_trial_ends_at, billing_grace_ends_at,
+            billing_state, billing_grace_until
      FROM tenants
      WHERE subdomain = ?`,
   ).get(subdomain) as
@@ -20,23 +21,46 @@ export function findBySubdomain(db: DB, subdomain: string) {
         | 'billing_plan'
         | 'billing_trial_ends_at'
         | 'billing_grace_ends_at'
-      >
+      > & {
+        billing_state?: string | null;
+        billing_grace_until?: string | null;
+      }
     | undefined;
 }
 
 export function findById(db: DB, tenantId: number) {
-  return db.prepare('SELECT * FROM tenants WHERE id = ?').get(tenantId) as Tenant | undefined;
+  return db.prepare('SELECT * FROM tenants WHERE id = ?').get(tenantId) as
+    | (Tenant & {
+        billing_state?: string | null;
+        billing_grace_until?: string | null;
+        billing_override_reason?: string | null;
+        billing_overridden_by_user_id?: number | null;
+        billing_overridden_at?: string | null;
+      })
+    | undefined;
 }
 
 export function findByBillingCustomerId(db: DB, customerId: string) {
   return db.prepare('SELECT * FROM tenants WHERE billing_customer_id = ?').get(customerId) as
-    | Tenant
+    | (Tenant & {
+        billing_state?: string | null;
+        billing_grace_until?: string | null;
+        billing_override_reason?: string | null;
+        billing_overridden_by_user_id?: number | null;
+        billing_overridden_at?: string | null;
+      })
     | undefined;
 }
 
 export function findByBillingSubscriptionId(db: DB, subscriptionId: string) {
   return db.prepare('SELECT * FROM tenants WHERE billing_subscription_id = ?').get(subscriptionId) as
-    | Tenant
+    | (Tenant & {
+        billing_state?: string | null;
+        billing_grace_until?: string | null;
+        billing_override_reason?: string | null;
+        billing_overridden_by_user_id?: number | null;
+        billing_overridden_at?: string | null;
+      })
     | undefined;
 }
 
@@ -59,8 +83,9 @@ export function create(
       billing_plan,
       billing_status,
       billing_trial_ends_at,
+      billing_state,
       billing_updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
   ).run(
     data.name,
     data.subdomain,
@@ -68,6 +93,7 @@ export function create(
     data.billing_plan || 'standard',
     data.billing_status || 'trialing',
     data.billing_trial_ends_at || null,
+    data.billing_status || 'trialing',
   );
   return result.lastInsertRowid as number;
 }
@@ -107,11 +133,13 @@ export function getBillingSummary(db: DB, tenantId: number) {
     `SELECT id, name, subdomain, billing_exempt, billing_status, billing_plan,
             billing_trial_ends_at, billing_grace_ends_at, billing_customer_id,
             billing_subscription_id, billing_subscription_status, billing_updated_at,
+            billing_state, billing_grace_until, billing_override_reason,
+            billing_overridden_by_user_id, billing_overridden_at,
             created_at
      FROM tenants
      WHERE id = ?`,
   ).get(tenantId) as
-    | Pick<
+    | (Pick<
         Tenant,
         | 'id'
         | 'name'
@@ -126,7 +154,13 @@ export function getBillingSummary(db: DB, tenantId: number) {
         | 'billing_subscription_status'
         | 'billing_updated_at'
         | 'created_at'
-      >
+      > & {
+        billing_state?: string | null;
+        billing_grace_until?: string | null;
+        billing_override_reason?: string | null;
+        billing_overridden_by_user_id?: number | null;
+        billing_overridden_at?: string | null;
+      })
     | undefined;
 }
 
@@ -143,6 +177,11 @@ export function updateBillingState(
     billing_subscription_id?: string | null;
     billing_subscription_status?: string | null;
     billing_updated_at?: string | null;
+    billing_state?: string | null;
+    billing_grace_until?: string | null;
+    billing_override_reason?: string | null;
+    billing_overridden_by_user_id?: number | null;
+    billing_overridden_at?: string | null;
   },
 ) {
   const fields: string[] = [];

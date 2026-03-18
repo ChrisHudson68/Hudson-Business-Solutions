@@ -747,6 +747,33 @@ platformAdminRoutes.post('/admin/tenants/:id/billing/extend-grace', platformAdmi
   return c.redirect(redirectTenantDetail(tenantId, 'updated=grace'));
 });
 
+platformAdminRoutes.post('/admin/tenants/:id/billing/override', platformAdminRequired, async (c) => {
+  const db = getDb();
+  const tenantId = parseTenantId(c);
+
+  if (!tenantId) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const body = await c.req.parseBody();
+
+  const billingState = String(body['billing_state'] ?? '').trim();
+  const graceUntil = String(body['grace_until'] ?? '').trim() || null;
+  const reason = String(body['reason'] ?? '').trim() || null;
+
+  const adminUser = c.get('platformAdminUser');
+
+  tenantQueries.updateBillingState(db, tenantId, {
+    billing_state: billingState || null,
+    billing_grace_until: graceUntil,
+    billing_override_reason: reason,
+    billing_overridden_by_user_id: adminUser?.id ?? null,
+    billing_overridden_at: new Date().toISOString(),
+  });
+
+  return c.redirect(`/admin/tenants/${tenantId}`);
+});
+
 platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired, async (c) => {
   const db = getDb();
   const tenantId = parseTenantId(c);
