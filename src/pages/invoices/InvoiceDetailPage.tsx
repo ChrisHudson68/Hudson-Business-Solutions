@@ -84,6 +84,7 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
           <p class="muted">{inv.job_name}</p>
         </div>
         <div class="actions actions-mobile-stack">
+          {!inv.archived_at ? <a class="btn" href={`/edit_invoice/${inv.id}`}>Edit Invoice</a> : null}
           <a class="btn" href={`/invoice/${inv.id}/pdf`}>Download PDF</a>
 
           {inv.archived_at ? (
@@ -194,7 +195,7 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card">
           <b>Notes</b>
-          <p class="muted" style="margin-top:10px;">{inv.notes || '\u2014'}</p>
+          <p class="muted" style="margin-top:10px;">{inv.notes || '—'}</p>
         </div>
 
         <div class="card">
@@ -211,9 +212,17 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
                 >
                   View Attachment
                 </a>
+                {!inv.archived_at ? (
+                  <a class="btn" href={`/edit_invoice/${inv.id}`}>Manage Attachment</a>
+                ) : null}
               </div>
             ) : (
-              <div class="muted">No attachment uploaded.</div>
+              <div class="actions actions-mobile-stack">
+                <span class="muted">No attachment uploaded.</span>
+                {!inv.archived_at ? (
+                  <a class="btn" href={`/edit_invoice/${inv.id}`}>Add Attachment</a>
+                ) : null}
+              </div>
             )}
           </div>
         </div>

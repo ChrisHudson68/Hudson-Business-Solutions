@@ -20,6 +20,7 @@ import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { InvoicesPage } from '../pages/invoices/InvoicesPage.js';
 import { InvoiceDetailPage } from '../pages/invoices/InvoiceDetailPage.js';
 import { AddInvoicePage } from '../pages/invoices/AddInvoicePage.js';
+import { EditInvoicePage } from '../pages/invoices/EditInvoicePage.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import {
   ValidationError,
@@ -549,6 +550,325 @@ invoiceRoutes.post('/add_invoice', roleRequired('Admin', 'Manager'), async (c) =
       400,
     );
   }
+});
+
+invoiceRoutes.get('/edit_invoice/:id', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
+
+  let invoiceId: number;
+  try {
+    invoiceId = parseRouteId(c.req.param('id'), 'Invoice');
+  } catch {
+    return c.text('Invoice not found', 404);
+  }
+
+  const tenantId = tenant.id;
+  const db = getDb();
+
+  const invoice = db.prepare(
+    `
+      SELECT id, job_id, invoice_number, date_issued, due_date, amount, notes, attachment_filename, archived_at
+      FROM invoices
+      WHERE id = ? AND tenant_id = ?
+      LIMIT 1
+    `
+  ).get(invoiceId, tenantId) as any;
+
+  if (!invoice) {
+    return c.text('Invoice not found', 404);
+  }
+
+  const jobs = db.prepare(
+    `
+      SELECT id, job_name, client_name
+      FROM jobs
+      WHERE tenant_id = ? AND archived_at IS NULL
+      ORDER BY job_name ASC
+    `
+  ).all(tenantId) as any[];
+
+  return renderApp(
+    c,
+    'Edit Invoice',
+    <EditInvoicePage
+      invoice={invoice}
+      jobs={jobs}
+      csrfToken={c.get('csrfToken')}
+    />,
+  );
+});
+
+invoiceRoutes.post('/edit_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  let invoiceId: number;
+  try {
+    invoiceId = parseRouteId(c.req.param('id'), 'Invoice');
+  } catch {
+    return c.text('Invoice not found', 404);
+  }
+
+  const tenantId = tenant.id;
+  const db = getDb();
+  const env = getEnv();
+
+  const existingInvoice = db.prepare(
+    `
+      SELECT id, job_id, invoice_number, date_issued, due_date, amount, notes, attachment_filename, archived_at
+      FROM invoices
+      WHERE id = ? AND tenant_id = ?
+      LIMIT 1
+    `
+  ).get(invoiceId, tenantId) as any;
+
+  if (!existingInvoice) {
+    return c.text('Invoice not found', 404);
+  }
+
+  const jobs = db.prepare(
+    `
+      SELECT id, job_name, client_name
+      FROM jobs
+      WHERE tenant_id = ? AND archived_at IS NULL
+      ORDER BY job_name ASC
+    `
+  ).all(tenantId) as any[];
+
+  if (existingInvoice.archived_at) {
+    return renderApp(
+      c,
+      'Edit Invoice',
+      <EditInvoicePage
+        invoice={existingInvoice}
+        jobs={jobs}
+        csrfToken={c.get('csrfToken')}
+        error="Archived invoices cannot be edited. Restore the invoice first."
+      />,
+      400,
+    );
+  }
+
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const formValues = {
+    job_id: String(body['job_id'] ?? existingInvoice.job_id),
+    invoice_number: String(body['invoice_number'] ?? existingInvoice.invoice_number ?? ''),
+    amount: String(body['amount'] ?? existingInvoice.amount ?? ''),
+    date_issued: String(body['date_issued'] ?? existingInvoice.date_issued ?? ''),
+    due_date: String(body['due_date'] ?? existingInvoice.due_date ?? ''),
+    notes: String(body['notes'] ?? existingInvoice.notes ?? ''),
+  };
+
+  let newStoredAttachment: string | null = null;
+
+  try {
+    const jobId = parsePositiveInt(body['job_id'], 'Job');
+    const invoiceNumber = normalizeInvoiceNumber(
+      String(body['invoice_number'] ?? '').trim(),
+      'INV',
+    );
+    const dateIssued = parseIsoDate(body['date_issued'], 'Date issued');
+    const dueDate = parseIsoDate(body['due_date'], 'Due date');
+    ensureDateOrder(dateIssued, dueDate, 'date issued', 'Due date');
+    const amount = parseMoney(body['amount'], 'Amount');
+    const notes = optionalTrimmedString(body['notes'], 2000);
+
+    const job = db
+      .prepare('SELECT id, job_name FROM jobs WHERE id = ? AND tenant_id = ? AND archived_at IS NULL')
+      .get(jobId, tenantId) as { id: number; job_name: string } | undefined;
+
+    if (!job) {
+      throw new ValidationError('Selected job was not found for this company.');
+    }
+
+    const duplicate = db.prepare(
+      `
+        SELECT id
+        FROM invoices
+        WHERE tenant_id = ? AND UPPER(invoice_number) = UPPER(?) AND id != ?
+        LIMIT 1
+      `
+    ).get(tenantId, invoiceNumber, invoiceId) as { id: number } | undefined;
+
+    if (duplicate) {
+      throw new ValidationError('Invoice number already exists. Please choose a different one.');
+    }
+
+    let nextAttachmentFilename = existingInvoice.attachment_filename || null;
+    let oldAttachmentToDelete: string | null = null;
+
+    const attachment = body['attachment'];
+    if (attachment && attachment instanceof File && attachment.size > 0) {
+      const tenantAttachmentDir = buildTenantScopedUploadDir(invoiceAttachmentRootDir, tenantId);
+      const savedFilename = await saveUploadedFile(attachment, tenantAttachmentDir, {
+        allowedExtensions: DOCUMENT_ATTACHMENT_EXTENSIONS,
+        allowedMimeTypes: DOCUMENT_ATTACHMENT_MIME_TYPES,
+        maxBytes: env.maxReceiptUploadBytes,
+      });
+
+      newStoredAttachment = buildTenantScopedStoredPath(tenantId, savedFilename);
+      nextAttachmentFilename = newStoredAttachment;
+      oldAttachmentToDelete = existingInvoice.attachment_filename || null;
+    }
+
+    db.prepare(
+      `
+        UPDATE invoices
+        SET
+          job_id = ?,
+          invoice_number = ?,
+          date_issued = ?,
+          due_date = ?,
+          amount = ?,
+          notes = ?,
+          attachment_filename = ?
+        WHERE id = ? AND tenant_id = ?
+      `
+    ).run(
+      jobId,
+      invoiceNumber,
+      dateIssued,
+      dueDate,
+      amount,
+      notes,
+      nextAttachmentFilename,
+      invoiceId,
+      tenantId,
+    );
+
+    if (oldAttachmentToDelete) {
+      deleteUploadedFile(oldAttachmentToDelete, invoiceAttachmentRootDir);
+    }
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'invoice.updated',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      description: `${currentUser.name} updated invoice ${invoiceNumber}.`,
+      metadata: {
+        previous_job_id: existingInvoice.job_id,
+        new_job_id: jobId,
+        previous_invoice_number: existingInvoice.invoice_number,
+        new_invoice_number: invoiceNumber,
+        previous_date_issued: existingInvoice.date_issued,
+        new_date_issued: dateIssued,
+        previous_due_date: existingInvoice.due_date,
+        new_due_date: dueDate,
+        previous_amount: Number(existingInvoice.amount || 0),
+        new_amount: amount,
+        previous_notes: existingInvoice.notes,
+        new_notes: notes,
+        attachment_filename: nextAttachmentFilename,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    if (newStoredAttachment) {
+      logActivity(db, {
+        tenantId,
+        actorUserId: currentUser.id,
+        eventType: 'invoice.attachment_replaced',
+        entityType: 'invoice',
+        entityId: invoiceId,
+        description: `${currentUser.name} replaced the attachment for invoice ${invoiceNumber}.`,
+        metadata: {
+          invoice_number: invoiceNumber,
+          previous_attachment_filename: existingInvoice.attachment_filename,
+          attachment_filename: newStoredAttachment,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
+
+    return c.redirect(`/invoice/${invoiceId}`);
+  } catch (error) {
+    if (newStoredAttachment) {
+      deleteUploadedFile(newStoredAttachment, invoiceAttachmentRootDir);
+    }
+
+    const message =
+      error instanceof ValidationError ? error.message : 'Unable to update invoice right now.';
+
+    return renderApp(
+      c,
+      'Edit Invoice',
+      <EditInvoicePage
+        invoice={existingInvoice}
+        jobs={jobs}
+        csrfToken={c.get('csrfToken')}
+        error={message}
+        formValues={formValues}
+      />,
+      400,
+    );
+  }
+});
+
+invoiceRoutes.post('/delete_invoice_attachment/:id', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  let invoiceId: number;
+  try {
+    invoiceId = parseRouteId(c.req.param('id'), 'Invoice');
+  } catch {
+    return c.text('Invoice not found', 404);
+  }
+
+  const tenantId = tenant.id;
+  const db = getDb();
+
+  const invoice = db.prepare(
+    `
+      SELECT id, invoice_number, attachment_filename, archived_at
+      FROM invoices
+      WHERE id = ? AND tenant_id = ?
+      LIMIT 1
+    `
+  ).get(invoiceId, tenantId) as any;
+
+  if (!invoice) {
+    return c.text('Invoice not found', 404);
+  }
+
+  if (invoice.archived_at) {
+    return c.redirect(`/invoice/${invoiceId}`);
+  }
+
+  if (!invoice.attachment_filename) {
+    return c.redirect(`/edit_invoice/${invoiceId}`);
+  }
+
+  deleteUploadedFile(invoice.attachment_filename, invoiceAttachmentRootDir);
+
+  db.prepare(
+    `
+      UPDATE invoices
+      SET attachment_filename = NULL
+      WHERE id = ? AND tenant_id = ?
+    `
+  ).run(invoiceId, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser.id,
+    eventType: 'invoice.attachment_deleted',
+    entityType: 'invoice',
+    entityId: invoiceId,
+    description: `${currentUser.name} removed the attachment from invoice ${invoice.invoice_number || `#${invoiceId}`}.`,
+    metadata: {
+      invoice_number: invoice.invoice_number,
+      attachment_filename: invoice.attachment_filename,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(`/edit_invoice/${invoiceId}`);
 });
 
 invoiceRoutes.get('/invoice/:id', loginRequired, (c) => {
