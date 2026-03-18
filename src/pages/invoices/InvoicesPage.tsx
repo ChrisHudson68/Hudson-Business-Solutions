@@ -23,6 +23,8 @@ interface InvoicesPageProps {
   totalOverdue: number;
   csrfToken: string;
   showArchived?: boolean;
+  canArchiveInvoices?: boolean;
+  canCreateInvoices?: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -35,6 +37,8 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
   totalOverdue,
   csrfToken,
   showArchived,
+  canArchiveInvoices,
+  canCreateInvoices,
 }) => {
   return (
     <div>
@@ -47,7 +51,7 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
           <a class="btn" href={showArchived ? '/invoices' : '/invoices?show_archived=1'}>
             {showArchived ? 'Hide Archived' : 'Show Archived'}
           </a>
-          <a class="btn btn-primary" href="/add_invoice">Create Invoice</a>
+          {canCreateInvoices ? <a class="btn btn-primary" href="/add_invoice">Create Invoice</a> : null}
         </div>
       </div>
 
@@ -122,18 +126,22 @@ export const InvoicesPage: FC<InvoicesPageProps> = ({
                       <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
                         <a class="btn" href={`/invoice/${inv.id}`}>View</a>
 
-                        {inv.archived_at ? (
-                          <form method="post" action={`/restore_invoice/${inv.id}`} class="inline-form">
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Restore</button>
-                          </form>
+                        {canArchiveInvoices ? (
+                          inv.archived_at ? (
+                            <form method="post" action={`/restore_invoice/${inv.id}`} class="inline-form">
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit">Restore</button>
+                            </form>
+                          ) : (
+                            <form method="post" action={`/archive_invoice/${inv.id}`} class="inline-form">
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit" disabled={inv.payment_count > 0}>
+                                {inv.payment_count > 0 ? 'Has Payments' : 'Archive'}
+                              </button>
+                            </form>
+                          )
                         ) : (
-                          <form method="post" action={`/archive_invoice/${inv.id}`} class="inline-form">
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit" disabled={inv.payment_count > 0}>
-                              {inv.payment_count > 0 ? 'Has Payments' : 'Archive'}
-                            </button>
-                          </form>
+                          <span class="muted">View only</span>
                         )}
                       </div>
                     </td>

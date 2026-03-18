@@ -15,6 +15,7 @@ interface EditEmployeePageProps {
   error?: string;
   success?: string;
   csrfToken: string;
+  canArchiveEmployees?: boolean;
 }
 
 export const EditEmployeePage: FC<EditEmployeePageProps> = ({
@@ -22,6 +23,7 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
   error,
   success,
   csrfToken,
+  canArchiveEmployees,
 }) => {
   return (
     <div>
@@ -33,17 +35,19 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
         <div class="actions actions-mobile-stack">
           <a class="btn" href="/employees">Back</a>
 
-          {employee.archived_at ? (
-            <form method="post" action={`/restore_employee/${employee.id}`} class="inline-form">
-              <input type="hidden" name="csrf_token" value={csrfToken} />
-              <button class="btn" type="submit">Restore</button>
-            </form>
-          ) : (
-            <form method="post" action={`/archive_employee/${employee.id}`} class="inline-form">
-              <input type="hidden" name="csrf_token" value={csrfToken} />
-              <button class="btn" type="submit">Archive</button>
-            </form>
-          )}
+          {canArchiveEmployees ? (
+            employee.archived_at ? (
+              <form method="post" action={`/restore_employee/${employee.id}`} class="inline-form">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit">Restore</button>
+              </form>
+            ) : (
+              <form method="post" action={`/archive_employee/${employee.id}`} class="inline-form">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit">Archive</button>
+              </form>
+            )
+          ) : null}
         </div>
       </div>
 

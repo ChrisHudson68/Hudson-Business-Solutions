@@ -5,7 +5,7 @@ import * as jobs from '../db/queries/jobs.js';
 import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
 import * as timeEntries from '../db/queries/time-entries.js';
-import { loginRequired, roleRequired } from '../middleware/auth.js';
+import { loginRequired, permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { JobsListPage } from '../pages/jobs/JobsListPage.js';
@@ -320,6 +320,7 @@ jobRoutes.get('/job/:id', loginRequired, (c) => {
       profit={profit}
       retainageHeld={retainageHeld}
       csrfToken={c.get('csrfToken')}
+      canArchiveJobs={userHasPermission(c.get('user'), 'jobs.archive')}
     />,
   );
 });
@@ -529,7 +530,7 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
   }
 });
 
-jobRoutes.post('/archive_job/:id', roleRequired('Admin'), (c) => {
+jobRoutes.post('/archive_job/:id', permissionRequired('jobs.archive'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
@@ -571,7 +572,7 @@ jobRoutes.post('/archive_job/:id', roleRequired('Admin'), (c) => {
   return c.redirect('/jobs');
 });
 
-jobRoutes.post('/restore_job/:id', roleRequired('Admin'), (c) => {
+jobRoutes.post('/restore_job/:id', permissionRequired('jobs.archive'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;

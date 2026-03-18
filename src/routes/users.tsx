@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
 import * as userQueries from '../db/queries/users.js';
-import { roleRequired } from '../middleware/auth.js';
+import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { hashPassword } from '../services/password.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
@@ -154,7 +154,7 @@ function renderEditUserError(
 
 export const userRoutes = new Hono<AppEnv>();
 
-userRoutes.get('/users', roleRequired('Admin'), (c) => {
+userRoutes.get('/users', permissionRequired('users.view'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -176,10 +176,20 @@ userRoutes.get('/users', roleRequired('Admin'), (c) => {
     employee_name: string | null;
   }>;
 
-  return renderAppLayout(c, 'Users', <UsersPage users={users} />);
+  const currentUser = c.get('user');
+
+  return renderAppLayout(
+    c,
+    'Users',
+    <UsersPage
+      users={users}
+      canCreateUsers={userHasPermission(currentUser, 'users.create')}
+      canEditUsers={userHasPermission(currentUser, 'users.edit')}
+    />,
+  );
 });
 
-userRoutes.get('/add_user', roleRequired('Admin'), (c) => {
+userRoutes.get('/add_user', permissionRequired('users.create'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -197,7 +207,7 @@ userRoutes.get('/add_user', roleRequired('Admin'), (c) => {
   );
 });
 
-userRoutes.post('/add_user', roleRequired('Admin'), async (c) => {
+userRoutes.post('/add_user', permissionRequired('users.create'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -271,7 +281,7 @@ userRoutes.post('/add_user', roleRequired('Admin'), async (c) => {
   }
 });
 
-userRoutes.get('/edit_user/:id', roleRequired('Admin'), (c) => {
+userRoutes.get('/edit_user/:id', permissionRequired('users.edit'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -301,7 +311,7 @@ userRoutes.get('/edit_user/:id', roleRequired('Admin'), (c) => {
   );
 });
 
-userRoutes.post('/edit_user/:id', roleRequired('Admin'), async (c) => {
+userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -362,6 +372,10 @@ userRoutes.post('/edit_user/:id', roleRequired('Admin'), async (c) => {
 
     if (editingSelf && role !== 'Admin') {
       throw new ValidationError('You cannot remove your own Admin role.');
+    }
+
+    if (existingUser.active === 1 && active === 0 && !userHasPermission(currentUser, 'users.deactivate')) {
+      throw new ValidationError('You do not have permission to deactivate users.');
     }
 
     const activeAdminCount = countActiveAdmins(db, tenant.id);
@@ -452,7 +466,7 @@ userRoutes.post('/edit_user/:id', roleRequired('Admin'), async (c) => {
   }
 });
 
-userRoutes.post('/reset_password/:id', roleRequired('Admin'), async (c) => {
+userRoutes.post('/reset_password/:id', permissionRequired('users.edit'), async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 

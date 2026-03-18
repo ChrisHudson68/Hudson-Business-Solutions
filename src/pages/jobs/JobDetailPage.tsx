@@ -49,6 +49,7 @@ interface JobDetailPageProps {
   profit: number;
   retainageHeld: number;
   csrfToken: string;
+  canArchiveJobs?: boolean;
 }
 
 function formatMoney(value: number): string {
@@ -70,6 +71,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
   profit,
   retainageHeld,
   csrfToken,
+  canArchiveJobs,
 }) => {
   return (
     <div>
@@ -83,17 +85,19 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         <div class="actions actions-mobile-stack">
           <a class="btn" href="/jobs">Back</a>
           <a class="btn" href={`/edit_job/${job.id}`}>Edit</a>
-          {job.archived_at ? (
-            <form method="post" action={`/restore_job/${job.id}`} class="inline-form">
-              <input type="hidden" name="csrf_token" value={csrfToken} />
-              <button class="btn" type="submit">Restore</button>
-            </form>
-          ) : (
-            <form method="post" action={`/archive_job/${job.id}`} class="inline-form">
-              <input type="hidden" name="csrf_token" value={csrfToken} />
-              <button class="btn" type="submit">Archive</button>
-            </form>
-          )}
+          {canArchiveJobs ? (
+            job.archived_at ? (
+              <form method="post" action={`/restore_job/${job.id}`} class="inline-form">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit">Restore</button>
+              </form>
+            ) : (
+              <form method="post" action={`/archive_job/${job.id}`} class="inline-form">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit">Archive</button>
+              </form>
+            )
+          ) : null}
         </div>
       </div>
 

@@ -36,6 +36,7 @@ interface JobsListPageProps {
   deleteError?: string;
   csrfToken: string;
   showArchived?: boolean;
+  canArchiveJobs?: boolean;
 }
 
 function formatMoney(value: number): string {
@@ -58,6 +59,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
   deleteError,
   csrfToken,
   showArchived,
+  canArchiveJobs,
 }) => {
   return (
     <div>
@@ -170,16 +172,20 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                         <a class="btn" href={`/job/${job.id}`}>View</a>
                         <a class="btn" href={`/edit_job/${job.id}`}>Edit</a>
 
-                        {job.archived_at ? (
-                          <form method="post" action={`/restore_job/${job.id}`} class="inline-form">
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Restore</button>
-                          </form>
+                        {canArchiveJobs ? (
+                          job.archived_at ? (
+                            <form method="post" action={`/restore_job/${job.id}`} class="inline-form">
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit">Restore</button>
+                            </form>
+                          ) : (
+                            <form method="post" action={`/archive_job/${job.id}`} class="inline-form">
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit">Archive</button>
+                            </form>
+                          )
                         ) : (
-                          <form method="post" action={`/archive_job/${job.id}`} class="inline-form">
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Archive</button>
-                          </form>
+                          <span class="muted">View only</span>
                         )}
                       </div>
                     </td>

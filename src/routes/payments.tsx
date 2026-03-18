@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
-import { roleRequired } from '../middleware/auth.js';
+import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { ValidationError, optionalTrimmedString, parseIsoDate, parseMoney, parsePositiveInt } from '../lib/validation.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
@@ -152,6 +152,9 @@ function renderInvoiceDetail(
       error={options?.error}
       success={options?.success}
       paymentForm={options?.paymentForm}
+      canArchiveInvoices={userHasPermission(c.get('user'), 'invoices.archive')}
+      canManagePayments={userHasPermission(c.get('user'), 'payments.manage')}
+      canEditInvoices={userHasPermission(c.get('user'), 'invoices.edit')}
     />,
     statusCode,
   );
@@ -159,7 +162,7 @@ function renderInvoiceDetail(
 
 export const paymentRoutes = new Hono<AppEnv>();
 
-paymentRoutes.post('/add_payment/:invoiceId', roleRequired('Admin', 'Manager'), async (c) => {
+paymentRoutes.post('/add_payment/:invoiceId', permissionRequired('payments.manage'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -281,7 +284,7 @@ paymentRoutes.post('/add_payment/:invoiceId', roleRequired('Admin', 'Manager'), 
   }
 });
 
-paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', roleRequired('Admin', 'Manager'), async (c) => {
+paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', permissionRequired('payments.manage'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');

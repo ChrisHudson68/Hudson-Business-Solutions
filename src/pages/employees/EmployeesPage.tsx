@@ -14,6 +14,7 @@ interface EmployeesPageProps {
   employees: EmployeeRow[];
   csrfToken: string;
   showArchived?: boolean;
+  canArchiveEmployees?: boolean;
 }
 
 function formatMoney(value: number): string {
@@ -24,6 +25,7 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
   employees,
   csrfToken,
   showArchived,
+  canArchiveEmployees,
 }) => {
   return (
     <div>
@@ -81,16 +83,20 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
                       <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
                         <a class="btn" href={`/edit_employee/${employee.id}`}>Edit</a>
 
-                        {employee.archived_at ? (
-                          <form method="post" action={`/restore_employee/${employee.id}`} class="inline-form">
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Restore</button>
-                          </form>
+                        {canArchiveEmployees ? (
+                          employee.archived_at ? (
+                            <form method="post" action={`/restore_employee/${employee.id}`} class="inline-form">
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit">Restore</button>
+                            </form>
+                          ) : (
+                            <form method="post" action={`/archive_employee/${employee.id}`} class="inline-form">
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit">Archive</button>
+                            </form>
+                          )
                         ) : (
-                          <form method="post" action={`/archive_employee/${employee.id}`} class="inline-form">
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Archive</button>
-                          </form>
+                          <span class="muted">View only</span>
                         )}
                       </div>
                     </td>

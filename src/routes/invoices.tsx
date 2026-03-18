@@ -3,7 +3,7 @@ import type { AppEnv } from '../app-env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../db/connection.js';
-import { loginRequired, roleRequired } from '../middleware/auth.js';
+import { loginRequired, permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
 import { generateInvoicePdf } from '../services/invoice-pdf.js';
 import {
   DOCUMENT_ATTACHMENT_EXTENSIONS,
@@ -241,6 +241,9 @@ function renderInvoiceDetail(
       error={options?.error}
       success={options?.success}
       paymentForm={options?.paymentForm}
+      canArchiveInvoices={userHasPermission(c.get('user'), 'invoices.archive')}
+      canManagePayments={userHasPermission(c.get('user'), 'payments.manage')}
+      canEditInvoices={userHasPermission(c.get('user'), 'invoices.edit')}
     />,
     statusCode,
   );
@@ -344,6 +347,8 @@ invoiceRoutes.get('/invoices', loginRequired, (c) => {
       totalOverdue={totalOverdue}
       csrfToken={c.get('csrfToken')}
       showArchived={showArchived}
+      canArchiveInvoices={userHasPermission(c.get('user'), 'invoices.archive')}
+      canCreateInvoices={userHasPermission(c.get('user'), 'invoices.create')}
     />,
   );
 });
@@ -1060,7 +1065,7 @@ invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
   });
 });
 
-invoiceRoutes.post('/archive_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
+invoiceRoutes.post('/archive_invoice/:id', permissionRequired('invoices.archive'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -1146,7 +1151,7 @@ invoiceRoutes.post('/archive_invoice/:id', roleRequired('Admin', 'Manager'), asy
   return c.redirect('/invoices');
 });
 
-invoiceRoutes.post('/restore_invoice/:id', roleRequired('Admin', 'Manager'), async (c) => {
+invoiceRoutes.post('/restore_invoice/:id', permissionRequired('invoices.archive'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');

@@ -50,6 +50,9 @@ interface InvoiceDetailPageProps {
     method?: string;
     reference?: string;
   };
+  canArchiveInvoices?: boolean;
+  canManagePayments?: boolean;
+  canEditInvoices?: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -68,6 +71,9 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
   error,
   success,
   paymentForm,
+  canArchiveInvoices,
+  canManagePayments,
+  canEditInvoices,
 }) => {
   const paymentValues = {
     date: paymentForm?.date ?? '',
@@ -84,22 +90,24 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
           <p class="muted">{inv.job_name}</p>
         </div>
         <div class="actions actions-mobile-stack">
-          {!inv.archived_at ? <a class="btn" href={`/edit_invoice/${inv.id}`}>Edit Invoice</a> : null}
+          {!inv.archived_at && canEditInvoices ? <a class="btn" href={`/edit_invoice/${inv.id}`}>Edit Invoice</a> : null}
           <a class="btn" href={`/invoice/${inv.id}/pdf`}>Download PDF</a>
 
-          {inv.archived_at ? (
-            <form method="post" action={`/restore_invoice/${inv.id}`} style="display:inline;">
-              <input type="hidden" name="csrf_token" value={csrfToken} />
-              <button class="btn" type="submit">Restore</button>
-            </form>
-          ) : (
-            <form method="post" action={`/archive_invoice/${inv.id}`} style="display:inline;">
-              <input type="hidden" name="csrf_token" value={csrfToken} />
-              <button class="btn" type="submit" disabled={paymentCount > 0}>
-                {paymentCount > 0 ? 'Has Payments' : 'Archive Invoice'}
-              </button>
-            </form>
-          )}
+          {canArchiveInvoices ? (
+            inv.archived_at ? (
+              <form method="post" action={`/restore_invoice/${inv.id}`} style="display:inline;">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit">Restore</button>
+              </form>
+            ) : (
+              <form method="post" action={`/archive_invoice/${inv.id}`} style="display:inline;">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit" disabled={paymentCount > 0}>
+                  {paymentCount > 0 ? 'Has Payments' : 'Archive Invoice'}
+                </button>
+              </form>
+            )
+          ) : null}
 
           <a class="btn" href="/invoices">Back</a>
         </div>
@@ -212,14 +220,14 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
                 >
                   View Attachment
                 </a>
-                {!inv.archived_at ? (
+                {!inv.archived_at && canEditInvoices ? (
                   <a class="btn" href={`/edit_invoice/${inv.id}`}>Manage Attachment</a>
                 ) : null}
               </div>
             ) : (
               <div class="actions actions-mobile-stack">
                 <span class="muted">No attachment uploaded.</span>
-                {!inv.archived_at ? (
+                {!inv.archived_at && canEditInvoices ? (
                   <a class="btn" href={`/edit_invoice/${inv.id}`}>Add Attachment</a>
                 ) : null}
               </div>
@@ -234,6 +242,10 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
           {inv.archived_at ? (
             <div class="muted" style="margin-top:10px;">
               Payments cannot be added while this invoice is archived.
+            </div>
+          ) : !canManagePayments ? (
+            <div class="muted" style="margin-top:10px;">
+              You have view access to this invoice, but not permission to manage payments.
             </div>
           ) : (
             <form method="post" action={`/add_payment/${inv.id}`} style="margin-top:10px;">
@@ -292,16 +304,18 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
                       <td class="right">
                         {inv.archived_at ? (
                           <span class="muted">Locked</span>
-                        ) : (
+                        ) : canManagePayments ? (
                           <form
                             method="post"
-                            action={`/delete_payment/${payment.id}`}
+                            action={`/delete_payment/${payment.id}/${inv.id}`}
                             class="inline-form"
                             onsubmit="return confirm('Delete this payment?');"
                           >
                             <input type="hidden" name="csrf_token" value={csrfToken} />
                             <button class="btn" type="submit">Delete</button>
                           </form>
+                        ) : (
+                          <span class="muted">View only</span>
                         )}
                       </td>
                     </tr>

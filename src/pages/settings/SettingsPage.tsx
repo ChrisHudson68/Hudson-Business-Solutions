@@ -18,9 +18,12 @@ interface SettingsPageProps {
   csrfToken: string;
   error?: string;
   success?: string;
+  canManageSettings?: boolean;
 }
 
-export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, success }) => {
+export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, success, canManageSettings }) => {
+  const readOnly = !canManageSettings;
+
   return (
     <div>
       <div class="page-head">
@@ -29,6 +32,15 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
           <p>Manage your workspace branding, invoice defaults, and company details.</p>
         </div>
       </div>
+
+      {readOnly ? (
+        <div
+          class="card"
+          style="margin-bottom:14px; border-color:#BFDBFE; background:#EFF6FF; color:#1D4ED8;"
+        >
+          You can view workspace settings, but only users with settings management permission can make changes.
+        </div>
+      ) : null}
 
       {error ? (
         <div
@@ -56,7 +68,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
             <h3 style="margin-top:0;">Branding</h3>
 
             <label>Company Name</label>
-            <input name="name" value={tenant.name || ''} required />
+            <input name="name" value={tenant.name || ''} required disabled={readOnly} />
 
             <label>Subdomain</label>
             <input value={tenant.subdomain || ''} disabled />
@@ -65,7 +77,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
             </div>
 
             <label>Logo</label>
-            <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp" />
+            <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp" disabled={readOnly} />
 
             {tenant.logo_path ? (
               <div style="margin-top:12px;">
@@ -82,13 +94,13 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
             <h3 style="margin-top:0;">Company Contact</h3>
 
             <label>Company Email</label>
-            <input name="company_email" value={tenant.company_email || ''} />
+            <input name="company_email" value={tenant.company_email || ''} disabled={readOnly} />
 
             <label>Company Phone</label>
-            <input name="company_phone" value={tenant.company_phone || ''} />
+            <input name="company_phone" value={tenant.company_phone || ''} disabled={readOnly} />
 
             <label>Company Address</label>
-            <textarea name="company_address" rows={5}>
+            <textarea name="company_address" rows={5} disabled={readOnly}>
               {tenant.company_address || ''}
             </textarea>
           </div>
@@ -103,6 +115,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
               name="invoice_prefix"
               value={tenant.invoice_prefix || ''}
               placeholder="Example: INV"
+              disabled={readOnly}
             />
 
             <label>Default Tax Rate (%)</label>
@@ -111,6 +124,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
               step="0.01"
               name="default_tax_rate"
               value={String(tenant.default_tax_rate || 0)}
+              disabled={readOnly}
             />
           </div>
 
@@ -123,6 +137,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
               step="0.01"
               name="default_labor_rate"
               value={String(tenant.default_labor_rate || 0)}
+              disabled={readOnly}
             />
 
             <div class="muted small" style="margin-top:10px;">
@@ -131,9 +146,11 @@ export const SettingsPage: FC<SettingsPageProps> = ({ tenant, csrfToken, error, 
           </div>
         </div>
 
-        <div class="actions actions-mobile-stack" style="margin-top:16px;">
-          <button class="btn btn-primary" type="submit">Save Settings</button>
-        </div>
+        {!readOnly ? (
+          <div class="actions actions-mobile-stack" style="margin-top:16px;">
+            <button class="btn btn-primary" type="submit">Save Settings</button>
+          </div>
+        ) : null}
       </form>
     </div>
   );

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
 import * as tenantQueries from '../db/queries/tenants.js';
-import { loginRequired, roleRequired } from '../middleware/auth.js';
+import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { BillingPage } from '../pages/billing/BillingPage.js';
 import { getEnv } from '../config/env.js';
@@ -150,7 +150,7 @@ function sanitizeStripeMessage(message: string): string {
 
 export const billingRoutes = new Hono<AppEnv>();
 
-billingRoutes.get('/billing', loginRequired, (c) => {
+billingRoutes.get('/billing', permissionRequired('billing.view'), (c) => {
   const tenant = c.get('tenant');
   const user = c.get('user');
   if (!tenant || !user) return c.redirect('/login');
@@ -177,12 +177,13 @@ billingRoutes.get('/billing', loginRequired, (c) => {
       stripePortalEnabled={isStripePortalEnabled()}
       stripePlanLabel={getStripePlanLabel()}
       notice={notice}
+      canManageBilling={userHasPermission(user, 'billing.manage')}
     />,
     notice?.tone === 'bad' ? 402 : 200,
   );
 });
 
-billingRoutes.post('/billing/checkout', roleRequired('Admin'), async (c) => {
+billingRoutes.post('/billing/checkout', permissionRequired('billing.manage'), async (c) => {
   const tenant = c.get('tenant');
   const user = c.get('user');
   if (!tenant || !user) return c.redirect('/login');
@@ -273,7 +274,7 @@ billingRoutes.post('/billing/checkout', roleRequired('Admin'), async (c) => {
   }
 });
 
-billingRoutes.post('/billing/portal', roleRequired('Admin'), async (c) => {
+billingRoutes.post('/billing/portal', permissionRequired('billing.manage'), async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 

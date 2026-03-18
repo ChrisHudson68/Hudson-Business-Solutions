@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
-import { roleRequired } from '../middleware/auth.js';
+import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import {
   saveUploadedFile,
   LOGO_EXTENSIONS,
@@ -108,7 +108,7 @@ function buildTenantFormValues(source: any) {
 
 export const settingsRoutes = new Hono<AppEnv>();
 
-settingsRoutes.get('/settings', roleRequired('Admin', 'Manager'), (c) => {
+settingsRoutes.get('/settings', permissionRequired('settings.view'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -122,11 +122,15 @@ settingsRoutes.get('/settings', roleRequired('Admin', 'Manager'), (c) => {
   return renderApp(
     c,
     'Company Settings',
-    <SettingsPage tenant={buildTenantFormValues(tenantRow)} csrfToken={c.get('csrfToken')} />,
+    <SettingsPage
+      tenant={buildTenantFormValues(tenantRow)}
+      csrfToken={c.get('csrfToken')}
+      canManageSettings={userHasPermission(c.get('user'), 'settings.manage')}
+    />,
   );
 });
 
-settingsRoutes.post('/settings', roleRequired('Admin', 'Manager'), async (c) => {
+settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -238,6 +242,7 @@ settingsRoutes.post('/settings', roleRequired('Admin', 'Manager'), async (c) => 
         tenant={buildTenantFormValues(updatedTenantRow)}
         csrfToken={c.get('csrfToken')}
         success="Company settings updated successfully."
+        canManageSettings={userHasPermission(c.get('user'), 'settings.manage')}
       />,
     );
   } catch (error) {
@@ -245,7 +250,12 @@ settingsRoutes.post('/settings', roleRequired('Admin', 'Manager'), async (c) => 
     return renderApp(
       c,
       'Company Settings',
-      <SettingsPage tenant={formTenant} csrfToken={c.get('csrfToken')} error={message} />,
+      <SettingsPage
+        tenant={formTenant}
+        csrfToken={c.get('csrfToken')}
+        error={message}
+        canManageSettings={userHasPermission(c.get('user'), 'settings.manage')}
+      />,
       400,
     );
   }

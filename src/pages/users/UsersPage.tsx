@@ -9,9 +9,11 @@ interface UsersPageProps {
     active: number;
     employee_name: string | null;
   }>;
+  canCreateUsers?: boolean;
+  canEditUsers?: boolean;
 }
 
-export const UsersPage: FC<UsersPageProps> = ({ users }) => {
+export const UsersPage: FC<UsersPageProps> = ({ users, canCreateUsers, canEditUsers }) => {
   return (
     <div>
       <div class="page-head">
@@ -20,7 +22,7 @@ export const UsersPage: FC<UsersPageProps> = ({ users }) => {
           <p class="muted">Manage tenant users, access roles, and employee links.</p>
         </div>
         <div class="actions actions-mobile-stack">
-          <a class="btn btn-primary" href="/add_user">Add User</a>
+          {canCreateUsers ? <a class="btn btn-primary" href="/add_user">Add User</a> : null}
         </div>
       </div>
 
@@ -56,7 +58,7 @@ export const UsersPage: FC<UsersPageProps> = ({ users }) => {
                     </td>
                     <td class="right">
                       <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
-                        <a class="btn" href={`/edit_user/${user.id}`}>Edit</a>
+                        {canEditUsers ? <a class="btn" href={`/edit_user/${user.id}`}>Edit</a> : <span class="muted">View only</span>}
                       </div>
                     </td>
                   </tr>

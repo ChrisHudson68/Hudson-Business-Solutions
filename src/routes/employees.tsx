@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
-import { roleRequired } from '../middleware/auth.js';
+import { permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { EmployeesPage } from '../pages/employees/EmployeesPage.js';
 import { AddEmployeePage } from '../pages/employees/AddEmployeePage.js';
@@ -263,7 +263,11 @@ employeeRoutes.get('/edit_employee/:id', roleRequired('Admin', 'Manager'), (c) =
   return renderApp(
     c,
     'Edit Employee',
-    <EditEmployeePage employee={emp} csrfToken={c.get('csrfToken')} />
+    <EditEmployeePage
+      employee={emp}
+      csrfToken={c.get('csrfToken')}
+      canArchiveEmployees={userHasPermission(c.get('user'), 'employees.archive')}
+    />
   );
 });
 
@@ -376,13 +380,14 @@ employeeRoutes.post('/edit_employee/:id', roleRequired('Admin', 'Manager'), asyn
         }}
         error={message}
         csrfToken={c.get('csrfToken')}
+        canArchiveEmployees={userHasPermission(c.get('user'), 'employees.archive')}
       />,
       400,
     );
   }
 });
 
-employeeRoutes.post('/archive_employee/:id', roleRequired('Admin'), (c) => {
+employeeRoutes.post('/archive_employee/:id', permissionRequired('employees.archive'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -431,7 +436,7 @@ employeeRoutes.post('/archive_employee/:id', roleRequired('Admin'), (c) => {
   return c.redirect('/employees');
 });
 
-employeeRoutes.post('/restore_employee/:id', roleRequired('Admin'), (c) => {
+employeeRoutes.post('/restore_employee/:id', permissionRequired('employees.archive'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');

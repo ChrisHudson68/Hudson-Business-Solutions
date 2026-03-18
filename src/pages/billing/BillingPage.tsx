@@ -23,6 +23,7 @@ interface BillingPageProps {
   tenant: BillingTenant;
   csrfToken: string;
   currentUserRole: string;
+  canManageBilling?: boolean;
   stripeEnabled: boolean;
   stripeModeLabel: string;
   stripePortalEnabled: boolean;
@@ -88,11 +89,11 @@ export const BillingPage: FC<BillingPageProps> = ({
   stripePortalEnabled,
   stripePlanLabel,
   notice,
+  canManageBilling,
 }) => {
   const trialDays = daysRemaining(tenant.billing_trial_ends_at);
   const graceDays = daysRemaining(tenant.billing_grace_ends_at);
   const planLabel = tenant.billing_plan || 'standard';
-  const isAdmin = currentUserRole === 'Admin';
   const hasCustomer = !!tenant.billing_customer_id;
 
   return (
@@ -185,7 +186,7 @@ export const BillingPage: FC<BillingPageProps> = ({
               at <b style="color:#0F172A;">{stripePlanLabel}</b>
             </div>
 
-            {!isAdmin ? (
+            {!canManageBilling ? (
               <div class="card" style="padding:12px; background:#F8FAFC;">
                 Only workspace admins can start checkout or open the billing portal.
               </div>
