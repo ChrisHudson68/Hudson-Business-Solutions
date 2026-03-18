@@ -33,6 +33,8 @@ export const PERMISSIONS = [
 export type PermissionKey = (typeof PERMISSIONS)[number];
 export type UserRole = 'Admin' | 'Manager' | 'Employee';
 
+export const ROLE_ORDER: readonly UserRole[] = ['Admin', 'Manager', 'Employee'] as const;
+
 const ROLE_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
   Admin: PERMISSIONS,
   Manager: [
@@ -143,4 +145,99 @@ export function getPermissionGroups(): Array<{
       permissions: ['users.view', 'users.create', 'users.edit', 'users.deactivate', 'billing.view', 'billing.manage', 'settings.view', 'settings.manage'],
     },
   ];
+}
+
+export function formatPermissionLabel(permission: PermissionKey): string {
+  const [group, action] = permission.split('.');
+  const groupLabel =
+    group === 'jobs'
+      ? 'Jobs'
+      : group === 'employees'
+        ? 'Employees'
+        : group === 'time'
+          ? 'Time'
+          : group === 'invoices'
+            ? 'Invoices'
+            : group === 'payments'
+              ? 'Payments'
+              : group === 'financials'
+                ? 'Financials'
+                : group === 'reports'
+                  ? 'Reports'
+                  : group === 'activity'
+                    ? 'Activity'
+                    : group === 'settings'
+                      ? 'Settings'
+                      : group === 'users'
+                        ? 'Users'
+                        : group === 'billing'
+                          ? 'Billing'
+                          : group;
+
+  const actionLabel =
+    action === 'view'
+      ? 'View'
+      : action === 'create'
+        ? 'Create'
+        : action === 'edit'
+          ? 'Edit'
+          : action === 'archive'
+            ? 'Archive'
+            : action === 'clock'
+              ? 'Clock In/Out'
+              : action === 'edit_requests'
+                ? 'Submit Edit Requests'
+                : action === 'approve'
+                  ? 'Approve & Manage'
+                  : action === 'manage'
+                    ? 'Manage'
+                    : action === 'deactivate'
+                      ? 'Deactivate'
+                      : action;
+
+  return `${groupLabel}: ${actionLabel}`;
+}
+
+export function getRoleHighlights(role: string | null | undefined): string[] {
+  const normalized = normalizeUserRole(role);
+  if (normalized === 'Admin') {
+    return [
+      'Full tenant administration',
+      'Billing and settings control',
+      'Archive and restore workflows',
+      'User lifecycle management',
+    ];
+  }
+  if (normalized === 'Manager') {
+    return [
+      'Daily operations management',
+      'Create and edit jobs, employees, and invoices',
+      'Approve time and manage financial entries',
+      'View settings and billing without full control',
+    ];
+  }
+  return [
+    'Self-service time clock access',
+    'Submit time edit requests',
+    'View assigned operational data',
+      'No billing, settings, or user admin access',
+  ];
+}
+
+export function getRolePresets(): Array<{
+  role: UserRole;
+  label: UserRole;
+  description: string;
+  permissionCount: number;
+  permissions: PermissionKey[];
+  highlights: string[];
+}> {
+  return ROLE_ORDER.map((role) => ({
+    role,
+    label: role,
+    description: describeRole(role),
+    permissionCount: getRolePermissions(role).length,
+    permissions: getRolePermissions(role),
+    highlights: getRoleHighlights(role),
+  }));
 }

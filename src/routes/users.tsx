@@ -9,6 +9,8 @@ import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { UsersPage } from '../pages/users/UsersPage.js';
 import { AddUserPage } from '../pages/users/AddUserPage.js';
 import { EditUserPage } from '../pages/users/EditUserPage.js';
+import { UserPermissionsPage } from '../pages/users/UserPermissionsPage.js';
+import { getPermissionGroups, getRolePresets, normalizeUserRole } from '../services/permissions.js';
 import {
   ValidationError,
   parsePositiveInt,
@@ -125,6 +127,7 @@ function renderAddUserError(
       error={error}
       formData={formData}
       employeeOptions={employeeOptions}
+      rolePresets={getRolePresets()}
       csrfToken={c.get('csrfToken')}
     />,
     400,
@@ -145,6 +148,7 @@ function renderEditUserError(
       user={user}
       formData={formData}
       employeeOptions={employeeOptions}
+      rolePresets={getRolePresets()}
       error={error}
       csrfToken={c.get('csrfToken')}
     />,
@@ -166,7 +170,7 @@ userRoutes.get('/users', permissionRequired('users.view'), (c) => {
       ON e.id = u.employee_id
      AND e.tenant_id = u.tenant_id
     WHERE u.tenant_id = ?
-    ORDER BY u.role ASC, u.name ASC
+    ORDER BY CASE u.role WHEN 'Admin' THEN 1 WHEN 'Manager' THEN 2 ELSE 3 END, u.name ASC
   `).all(tenant.id) as Array<{
     id: number;
     name: string;
@@ -182,9 +186,24 @@ userRoutes.get('/users', permissionRequired('users.view'), (c) => {
     c,
     'Users',
     <UsersPage
-      users={users}
+      users={users.map((user) => ({ ...user, role: normalizeUserRole(user.role) }))}
       canCreateUsers={userHasPermission(currentUser, 'users.create')}
       canEditUsers={userHasPermission(currentUser, 'users.edit')}
+      rolePresets={getRolePresets()}
+    />,
+  );
+});
+
+userRoutes.get('/users/permissions', permissionRequired('users.view'), (c) => {
+  const currentUser = c.get('user');
+
+  return renderAppLayout(
+    c,
+    'Role Permissions',
+    <UserPermissionsPage
+      rolePresets={getRolePresets()}
+      permissionGroups={getPermissionGroups()}
+      canCreateUsers={userHasPermission(currentUser, 'users.create')}
     />,
   );
 });
@@ -202,6 +221,7 @@ userRoutes.get('/add_user', permissionRequired('users.create'), (c) => {
     <AddUserPage
       formData={{ name: '', email: '', role: 'Employee', employee_id: '' }}
       employeeOptions={employeeOptions}
+      rolePresets={getRolePresets()}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -306,6 +326,7 @@ userRoutes.get('/edit_user/:id', permissionRequired('users.edit'), (c) => {
     <EditUserPage
       user={user}
       employeeOptions={employeeOptions}
+      rolePresets={getRolePresets()}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -418,6 +439,9 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
       before.email !== after.email ||
       before.employee_id !== after.employee_id;
 
+    const changedRole = before.role !== after.role;
+    const changedActivation = before.active !== after.active;
+
     if (changedGeneral) {
       logActivity(db, {
         tenantId: tenant.id,
@@ -426,12 +450,15 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
         entityType: 'user',
         entityId: userId,
         description: `${currentUser.name} updated user ${name}.`,
-        metadata: { before, after },
+        metadata: {
+          before,
+          after,
+        },
         ipAddress: resolveRequestIp(c),
       });
     }
 
-    if (before.role !== after.role) {
+    if (changedRole) {
       logActivity(db, {
         tenantId: tenant.id,
         actorUserId: currentUser.id,
@@ -439,20 +466,42 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
         entityType: 'user',
         entityId: userId,
         description: `${currentUser.name} changed ${name}'s role from ${before.role} to ${after.role}.`,
-        metadata: { before_role: before.role, after_role: after.role },
+        metadata: {
+          before_role: before.role,
+          after_role: after.role,
+        },
         ipAddress: resolveRequestIp(c),
       });
     }
 
-    if (before.active !== after.active) {
+    if (changedActivation) {
       logActivity(db, {
         tenantId: tenant.id,
         actorUserId: currentUser.id,
-        eventType: after.active === 1 ? 'user.reactivated' : 'user.deactivated',
+        eventType: after.active === 1 ? 'user.activated' : 'user.deactivated',
         entityType: 'user',
         entityId: userId,
-        description: `${currentUser.name} ${after.active === 1 ? 'reactivated' : 'deactivated'} user ${name}.`,
-        metadata: { before_active: before.active, after_active: after.active },
+        description:
+          after.active === 1
+            ? `${currentUser.name} activated user ${name}.`
+            : `${currentUser.name} deactivated user ${name}.`,
+        metadata: {
+          before_active: before.active,
+          after_active: after.active,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
+
+    if (newPasswordRaw.trim()) {
+      logActivity(db, {
+        tenantId: tenant.id,
+        actorUserId: currentUser.id,
+        eventType: 'user.password_reset',
+        entityType: 'user',
+        entityId: userId,
+        description: `${currentUser.name} reset the password for ${name}.`,
+        metadata: {},
         ipAddress: resolveRequestIp(c),
       });
     }
@@ -461,42 +510,6 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
   } catch (error) {
     const message =
       error instanceof ValidationError ? error.message : 'Unable to update user right now.';
-
     return renderEditUserError(c, message, existingUser, employeeOptions, formData);
   }
 });
-
-userRoutes.post('/reset_password/:id', permissionRequired('users.edit'), async (c) => {
-  const tenant = c.get('tenant');
-  if (!tenant) return c.redirect('/login');
-
-  let userId: number;
-  try {
-    userId = parsePositiveInt(c.req.param('id'), 'User');
-  } catch {
-    return c.text('User not found', 404);
-  }
-
-  const db = getDb();
-  const user = getTenantUserById(db, userId, tenant.id);
-  const employeeOptions = getEmployeeOptions(db, tenant.id);
-
-  if (!user) {
-    return c.text('User not found', 404);
-  }
-
-  const body = (await c.req.parseBody()) as Record<string, unknown>;
-
-  try {
-    const newPassword = validatePassword(body['new_password'], 'New password');
-    userQueries.updatePassword(db, userId, tenant.id, hashPassword(newPassword));
-    return c.redirect(`/edit_user/${userId}`);
-  } catch (error) {
-    const message =
-      error instanceof ValidationError ? error.message : 'Unable to reset password right now.';
-
-    return renderEditUserError(c, message, user, employeeOptions);
-  }
-});
-
-export default userRoutes;
