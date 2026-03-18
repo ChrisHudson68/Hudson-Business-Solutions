@@ -39,6 +39,17 @@ function activeRangeClass(current: ReportRange, value: ReportRange): string {
   return current === value ? 'btn btn-primary' : 'btn';
 }
 
+function reportActionHref(
+  basePath: string,
+  filter: ReportFilter,
+): string {
+  const params = new URLSearchParams();
+  params.set('range', filter.range);
+  params.set('start', filter.startDate);
+  params.set('end', filter.endDate);
+  return `${basePath}?${params.toString()}`;
+}
+
 function RankingTable({
   title,
   rows,
@@ -110,6 +121,9 @@ export const ReportsPage: FC<ReportsPageProps> = ({
   const expenseLabels = expenseCategories.map((item) => item.label);
   const expenseValues = expenseCategories.map((item) => item.value);
 
+  const csvHref = reportActionHref('/reports/export.csv', filter);
+  const printHref = reportActionHref('/reports/print', filter);
+
   return (
     <div>
       <div class="page-head">
@@ -119,16 +133,21 @@ export const ReportsPage: FC<ReportsPageProps> = ({
         </div>
 
         <div class="actions actions-mobile-stack">
-          <a class={activeRangeClass(filter.range, '1w')} href={rangeHref('1w', filter)}>1 Week</a>
-          <a class={activeRangeClass(filter.range, '1m')} href={rangeHref('1m', filter)}>1 Month</a>
-          <a class={activeRangeClass(filter.range, '1y')} href={rangeHref('1y', filter)}>1 Year</a>
+          <a class="btn" href={csvHref}>Export CSV</a>
+          <a class="btn" href={printHref} target="_blank" rel="noreferrer">Printable View</a>
         </div>
       </div>
 
       <div class="card" style="margin-bottom:14px;">
         <div class="card-head">
-          <b>Custom Date Range</b>
+          <b>Quick Ranges</b>
           <span class="badge">{filter.label}</span>
+        </div>
+
+        <div class="actions actions-mobile-stack" style="margin-bottom:14px;">
+          <a class={activeRangeClass(filter.range, '1w')} href={rangeHref('1w', filter)}>1 Week</a>
+          <a class={activeRangeClass(filter.range, '1m')} href={rangeHref('1m', filter)}>1 Month</a>
+          <a class={activeRangeClass(filter.range, '1y')} href={rangeHref('1y', filter)}>1 Year</a>
         </div>
 
         <form method="get" action="/reports">

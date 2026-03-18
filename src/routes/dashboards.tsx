@@ -13,7 +13,8 @@ import { DashboardPage } from '../pages/dashboard/DashboardPage.js';
 import { ProfitDashboardPage } from '../pages/dashboard/ProfitDashboardPage.js';
 import { JobCostDashboardPage } from '../pages/dashboard/JobCostDashboardPage.js';
 import { ReportsPage } from '../pages/dashboard/ReportsPage.js';
-import { buildAdvancedReports, parseReportFilter } from '../services/reporting.js';
+import { ReportsPrintPage } from '../pages/dashboard/ReportsPrintPage.js';
+import { buildAdvancedReports, buildReportsCsv, parseReportFilter } from '../services/reporting.js';
 
 function renderApp(c: any, subtitle: string, content: any) {
   return c.html(
@@ -70,6 +71,10 @@ function invoiceDerivedStatus(
   }
 
   return 'Unpaid';
+}
+
+function buildReportFilename(prefix: string, startDate: string, endDate: string): string {
+  return `${prefix}_${startDate}_to_${endDate}`;
 }
 
 export const dashboardRoutes = new Hono<AppEnv>();
@@ -403,6 +408,60 @@ dashboardRoutes.get('/reports', roleRequired('Admin', 'Manager'), (c) => {
     c,
     'Reports',
     <ReportsPage
+      filter={reportData.filter}
+      cash={reportData.cash}
+      aging={reportData.aging}
+      trend={reportData.trend}
+      expenseCategories={reportData.expenseCategories}
+      rows={reportData.rows}
+      topProfitJobs={reportData.topProfitJobs}
+      worstProfitJobs={reportData.worstProfitJobs}
+      topMarginJobs={reportData.topMarginJobs}
+      worstMarginJobs={reportData.worstMarginJobs}
+    />,
+  );
+});
+
+dashboardRoutes.get('/reports/export.csv', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const tenantId = tenant!.id;
+  const db = getDb();
+
+  const filter = parseReportFilter({
+    range: c.req.query('range'),
+    start: c.req.query('start'),
+    end: c.req.query('end'),
+  });
+
+  const reportData = buildAdvancedReports(db, tenantId, filter);
+  const csv = buildReportsCsv(reportData);
+  const filename = `${buildReportFilename('advanced_reports', filter.startDate, filter.endDate)}.csv`;
+
+  return new Response(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store',
+    },
+  });
+});
+
+dashboardRoutes.get('/reports/print', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const tenantId = tenant!.id;
+  const db = getDb();
+
+  const filter = parseReportFilter({
+    range: c.req.query('range'),
+    start: c.req.query('start'),
+    end: c.req.query('end'),
+  });
+
+  const reportData = buildAdvancedReports(db, tenantId, filter);
+
+  return c.html(
+    <ReportsPrintPage
+      tenantName={tenant?.name || 'Hudson Business Solutions'}
       filter={reportData.filter}
       cash={reportData.cash}
       aging={reportData.aging}

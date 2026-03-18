@@ -99,7 +99,7 @@ function startDateForRange(range: Exclude<ReportRange, 'custom'>): string {
 
 function formatFilterLabel(startDate: string, endDate: string): string {
   const start = new Date(`${startDate}T00:00:00Z`);
-  const end = new Date(`${endDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z}`);
 
   const startLabel = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const endLabel = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -133,6 +133,22 @@ function diffDays(fromDate: string, toDate: string): number {
 
 function cloneRow(row: ProfitabilityRow): ProfitabilityRow {
   return { ...row };
+}
+
+function csvEscape(value: unknown): string {
+  const str = String(value ?? '');
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function formatMoneyCsv(value: number): string {
+  return roundMoney(value).toFixed(2);
+}
+
+function formatPercentCsv(value: number): string {
+  return (Number(value || 0)).toFixed(2);
 }
 
 export function parseReportFilter(query: {
@@ -504,4 +520,100 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     topMarginJobs: [...eligibleMarginRows].sort((a, b) => b.margin - a.margin).slice(0, 5).map(cloneRow),
     worstMarginJobs: [...eligibleMarginRows].sort((a, b) => a.margin - b.margin).slice(0, 5).map(cloneRow),
   };
+}
+
+export function buildReportsCsv(data: AdvancedReportsData): string {
+  const lines: string[] = [];
+
+  lines.push(`Hudson Business Solutions Reports`);
+  lines.push(`Range,${csvEscape(data.filter.label)}`);
+  lines.push(`Start Date,${csvEscape(data.filter.startDate)}`);
+  lines.push(`End Date,${csvEscape(data.filter.endDate)}`);
+  lines.push('');
+
+  lines.push('Cash Summary');
+  lines.push('Metric,Value');
+  lines.push(`Recorded Income,${formatMoneyCsv(data.cash.recordedIncome)}`);
+  lines.push(`Invoiced Amount,${formatMoneyCsv(data.cash.invoicedAmount)}`);
+  lines.push(`Collected Payments,${formatMoneyCsv(data.cash.collectedPayments)}`);
+  lines.push(`Recorded Expenses,${formatMoneyCsv(data.cash.recordedExpenses)}`);
+  lines.push(`Labor Cost,${formatMoneyCsv(data.cash.laborCost)}`);
+  lines.push(`Cash Outflow,${formatMoneyCsv(data.cash.cashOutflow)}`);
+  lines.push(`Net Cash,${formatMoneyCsv(data.cash.netCash)}`);
+  lines.push(`Open Receivables,${formatMoneyCsv(data.cash.openReceivables)}`);
+  lines.push('');
+
+  lines.push('Invoice Aging');
+  lines.push('Bucket,Value');
+  lines.push(`Current,${formatMoneyCsv(data.aging.current)}`);
+  lines.push(`1-30 Days,${formatMoneyCsv(data.aging.days1to30)}`);
+  lines.push(`31-60 Days,${formatMoneyCsv(data.aging.days31to60)}`);
+  lines.push(`61-90 Days,${formatMoneyCsv(data.aging.days61to90)}`);
+  lines.push(`90+ Days,${formatMoneyCsv(data.aging.days90Plus)}`);
+  lines.push(`Total Open,${formatMoneyCsv(data.aging.totalOpen)}`);
+  lines.push(`Overdue Total,${formatMoneyCsv(data.aging.overdueTotal)}`);
+  lines.push(`Open Count,${data.aging.openCount}`);
+  lines.push('');
+
+  lines.push('Expense Categories');
+  lines.push('Category,Amount');
+  for (const item of data.expenseCategories) {
+    lines.push(`${csvEscape(item.label)},${formatMoneyCsv(item.value)}`);
+  }
+  lines.push('');
+
+  lines.push('Trend');
+  lines.push('Period,Income,Outflow,Net,Invoiced,Collected');
+  for (const point of data.trend) {
+    lines.push([
+      csvEscape(point.label),
+      formatMoneyCsv(point.inflow),
+      formatMoneyCsv(point.outflow),
+      formatMoneyCsv(point.net),
+      formatMoneyCsv(point.invoiced),
+      formatMoneyCsv(point.collected),
+    ].join(','));
+  }
+  lines.push('');
+
+  lines.push('Job Profitability Summary');
+  lines.push([
+    'Job',
+    'Client',
+    'Status',
+    'Archived',
+    'Contract',
+    'Income',
+    'Invoiced',
+    'Collected',
+    'Expenses',
+    'Labor',
+    'Total Cost',
+    'Profit',
+    'Margin %',
+    'Open A/R',
+    'Open Invoice Count',
+  ].join(','));
+
+  for (const row of data.rows) {
+    lines.push([
+      csvEscape(row.job_name || `Job #${row.id}`),
+      csvEscape(row.client || ''),
+      csvEscape(row.status || ''),
+      row.archived ? 'Yes' : 'No',
+      formatMoneyCsv(row.contract),
+      formatMoneyCsv(row.income),
+      formatMoneyCsv(row.invoiced),
+      formatMoneyCsv(row.collected),
+      formatMoneyCsv(row.expenses),
+      formatMoneyCsv(row.labor),
+      formatMoneyCsv(row.totalCost),
+      formatMoneyCsv(row.profit),
+      formatPercentCsv(row.margin),
+      formatMoneyCsv(row.openAr),
+      String(row.openInvoiceCount),
+    ].join(','));
+  }
+
+  return lines.join('\n');
 }
