@@ -187,6 +187,13 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
   error,
   success,
 }) => {
+  const hasAnyData =
+    existing.length > 0 ||
+    pendingRequests.length > 0 ||
+    employees.length > 0 ||
+    jobs.length > 0 ||
+    !!activeClockEntry;
+
   return (
     <div>
       <div class="page-head">
@@ -218,6 +225,43 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
           style="margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;"
         >
           {success}
+        </div>
+      ) : null}
+
+      {!hasAnyData ? (
+        <div class="card" style="text-align:center; padding:36px 20px; margin-bottom:14px;">
+          <div style="
+            width:64px;
+            height:64px;
+            margin:0 auto 16px;
+            border-radius:16px;
+            background:#EFF6FF;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:28px;
+            font-weight:900;
+            color:#1D4ED8;
+          ">
+            ⏱
+          </div>
+
+          <h2 style="margin:0 0 10px;">No timesheet activity yet</h2>
+
+          <p class="muted" style="max-width:560px; margin:0 auto 16px;">
+            Timesheets and time clock entries help you track labor, understand job costs,
+            approve edits, and measure how employee time affects profitability.
+          </p>
+
+          <p class="muted small" style="max-width:560px; margin:0 auto 18px;">
+            Start by adding employees and jobs. Once those are in place, you can record hours,
+            use the clock in / clock out workflow, and review weekly labor activity here.
+          </p>
+
+          <div class="actions actions-mobile-stack" style="justify-content:center;">
+            <a class="btn" href="/employees">Go to Employees</a>
+            <a class="btn btn-primary" href="/jobs">Go to Jobs</a>
+          </div>
         </div>
       ) : null}
 
