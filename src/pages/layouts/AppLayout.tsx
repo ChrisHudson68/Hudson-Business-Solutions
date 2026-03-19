@@ -553,6 +553,18 @@ const appCss = `
       color:rgba(255,255,255,.92);
     }
 
+    .list{
+      display:grid;
+      gap:10px;
+    }
+
+    .list-item{
+      padding:12px 14px;
+      border:1px solid var(--border);
+      border-radius:14px;
+      background:#fff;
+    }
+
     @media (max-width:760px){
       .billing-banner{
         flex-direction:column;
@@ -621,6 +633,12 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       href: '/activity',
       patterns: ['/activity'],
       visible: hasPermission(permissions, 'activity.view'),
+    },
+    {
+      label: 'Support',
+      href: '/support',
+      patterns: ['/support'],
+      visible: !!currentUser,
     },
     {
       label: 'Users',

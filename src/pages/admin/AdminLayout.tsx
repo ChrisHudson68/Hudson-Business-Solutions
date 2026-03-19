@@ -324,6 +324,47 @@ const adminCss = `
     background:#fff;
   }
 
+  label{
+    display:block;
+    font-size:12px;
+    font-weight:900;
+    margin:12px 0 6px;
+    color:#334155;
+  }
+
+  input, select, textarea{
+    width:100%;
+    padding:11px 12px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    font-size:14px;
+    outline:none;
+    background:#fff;
+  }
+
+  input:focus, select:focus, textarea:focus{
+    border-color:rgba(30,58,95,.35);
+    box-shadow:0 0 0 4px rgba(30,58,95,.10);
+  }
+
+  .row{
+    display:flex;
+    gap:12px;
+    align-items:flex-end;
+  }
+
+  .row > *{
+    flex:1;
+    min-width:0;
+  }
+
+  .actions{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+
   @media (max-width:980px){
     .grid-4{
       grid-template-columns:repeat(2, minmax(0,1fr));
@@ -344,6 +385,24 @@ const adminCss = `
     .grid-4{
       grid-template-columns:1fr;
     }
+
+    .row{
+      flex-direction:column;
+      align-items:stretch;
+    }
+
+    .topbar{
+      height:auto;
+      padding:12px 14px;
+      flex-direction:column;
+      align-items:flex-start;
+      gap:10px;
+    }
+
+    .top-actions{
+      width:100%;
+      flex-wrap:wrap;
+    }
   }
 `;
 
@@ -354,6 +413,7 @@ function isActive(path: string, patterns: string[]): boolean {
 const navItems = [
   { label: 'Overview', href: '/admin', patterns: ['/admin'] },
   { label: 'Tenants', href: '/admin/tenants', patterns: ['/admin/tenants'] },
+  { label: 'Support', href: '/admin/support', patterns: ['/admin/support'] },
   { label: 'Activity', href: '/admin/activity', patterns: ['/admin/activity'] },
 ];
 
@@ -416,6 +476,7 @@ export const AdminLayout: FC<AdminLayoutProps> = ({
 
               <div class="top-actions">
                 <a class="btn" href="/">Main Site</a>
+                <a class="btn" href="/admin/support">Support Queue</a>
                 <a class="btn btn-primary" href="/admin/activity">View Activity</a>
               </div>
             </div>
