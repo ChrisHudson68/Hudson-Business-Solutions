@@ -208,7 +208,7 @@ export function getEnv(): AppConfig {
     ),
     stripeBillingPortalEnabled: parseBooleanEnv(process.env.STRIPE_BILLING_PORTAL_ENABLED, true),
     stripeProPlanLabel:
-      String(process.env.STRIPE_PRO_PLAN_LABEL ?? '$79.00/month').trim() || '$79.00/month',
+      String(process.env.STRIPE_PRO_PLAN_LABEL ?? '$49.00/month').trim() || '$79.00/month',
     stripeGracePeriodDays: parseIntegerEnv(
       process.env.STRIPE_GRACE_PERIOD_DAYS,
       7,

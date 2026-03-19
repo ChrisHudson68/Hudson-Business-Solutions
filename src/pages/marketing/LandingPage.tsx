@@ -197,6 +197,125 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           line-height:1.75;
         }
 
+        .landing-pricing{
+          background:#FFFFFF;
+          border:1px solid #E5EAF2;
+          border-radius:20px;
+          box-shadow:0 10px 24px rgba(15,23,42,0.06);
+          padding:24px;
+        }
+
+        .landing-pricing-header{
+          text-align:center;
+          margin-bottom:20px;
+        }
+
+        .landing-pricing-title{
+          margin:0 0 10px;
+          font-weight:900;
+          font-size:28px;
+          color:#0F172A;
+          letter-spacing:-0.03em;
+        }
+
+        .landing-pricing-copy{
+          max-width:760px;
+          margin:0 auto;
+          color:#64748B;
+          line-height:1.8;
+          font-size:16px;
+        }
+
+        .landing-pricing-grid{
+          display:grid;
+          grid-template-columns:minmax(0, 1fr);
+          justify-content:center;
+        }
+
+        .landing-pricing-card{
+          max-width:520px;
+          margin:0 auto;
+          background:linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+          border:2px solid #1E3A5F;
+          border-radius:22px;
+          box-shadow:0 16px 34px rgba(15,23,42,0.08);
+          padding:24px;
+        }
+
+        .landing-pricing-plan{
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          padding:8px 12px;
+          border-radius:999px;
+          background:#EFF6FF;
+          border:1px solid #DBEAFE;
+          color:#1D4ED8;
+          font-size:12px;
+          font-weight:800;
+          text-transform:uppercase;
+          letter-spacing:.08em;
+          margin-bottom:14px;
+        }
+
+        .landing-pricing-price{
+          display:flex;
+          align-items:flex-end;
+          justify-content:center;
+          gap:6px;
+          margin-bottom:8px;
+        }
+
+        .landing-pricing-price-main{
+          font-size:56px;
+          line-height:1;
+          font-weight:900;
+          letter-spacing:-0.04em;
+          color:#0F172A;
+        }
+
+        .landing-pricing-price-sub{
+          font-size:15px;
+          color:#64748B;
+          font-weight:700;
+          margin-bottom:8px;
+        }
+
+        .landing-pricing-description{
+          text-align:center;
+          color:#475569;
+          line-height:1.8;
+          margin-bottom:18px;
+        }
+
+        .landing-pricing-features{
+          display:grid;
+          gap:10px;
+          margin-bottom:20px;
+        }
+
+        .landing-pricing-feature{
+          display:flex;
+          align-items:flex-start;
+          gap:10px;
+          color:#334155;
+          line-height:1.7;
+        }
+
+        .landing-pricing-check{
+          color:#15803D;
+          font-weight:900;
+          flex:0 0 auto;
+        }
+
+        .landing-pricing-note{
+          text-align:center;
+          color:#64748B;
+          font-size:13px;
+          line-height:1.6;
+          margin-top:14px;
+        }
+
         .landing-steps{
           background:#FFFFFF;
           border:1px solid #E5EAF2;
@@ -369,20 +488,27 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           }
 
           .landing-feature-card,
+          .landing-pricing,
           .landing-steps{
             padding:18px;
           }
 
-          .landing-section-title{
+          .landing-section-title,
+          .landing-pricing-title{
             font-size:24px;
             margin-bottom:14px;
+          }
+
+          .landing-pricing-price-main{
+            font-size:44px;
           }
 
           .landing-bottom-title{
             font-size:26px;
           }
 
-          .landing-bottom-copy{
+          .landing-bottom-copy,
+          .landing-pricing-copy{
             font-size:15px;
           }
         }
@@ -483,6 +609,66 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
             <div class="landing-feature-title">Invoices & Payments</div>
             <div class="landing-feature-copy">
               Create invoices, track collections, monitor overdue balances, and stay on top of receivables.
+            </div>
+          </div>
+        </section>
+
+        <section class="landing-pricing">
+          <div class="landing-pricing-header">
+            <h2 class="landing-pricing-title">Simple, Transparent Pricing</h2>
+            <p class="landing-pricing-copy">
+              Start with one professional plan designed for contractors who need job costing,
+              labor tracking, invoicing, reporting, and day-to-day financial visibility in one place.
+            </p>
+          </div>
+
+          <div class="landing-pricing-grid">
+            <div class="landing-pricing-card">
+              <div class="landing-pricing-plan">Professional Plan</div>
+
+              <div class="landing-pricing-price">
+                <div class="landing-pricing-price-main">$49</div>
+                <div class="landing-pricing-price-sub">/ month per company</div>
+              </div>
+
+              <div class="landing-pricing-description">
+                One flat monthly plan with the core tools needed to manage construction operations professionally.
+              </div>
+
+              <div class="landing-pricing-features">
+                <div class="landing-pricing-feature">
+                  <span class="landing-pricing-check">✔</span>
+                  <span>Unlimited users</span>
+                </div>
+                <div class="landing-pricing-feature">
+                  <span class="landing-pricing-check">✔</span>
+                  <span>Job costing and profitability tracking</span>
+                </div>
+                <div class="landing-pricing-feature">
+                  <span class="landing-pricing-check">✔</span>
+                  <span>Employee timesheets and labor visibility</span>
+                </div>
+                <div class="landing-pricing-feature">
+                  <span class="landing-pricing-check">✔</span>
+                  <span>Invoices, payments, and receivables tracking</span>
+                </div>
+                <div class="landing-pricing-feature">
+                  <span class="landing-pricing-check">✔</span>
+                  <span>Reports and operational insights</span>
+                </div>
+                <div class="landing-pricing-feature">
+                  <span class="landing-pricing-check">✔</span>
+                  <span>Secure cloud hosting and support access</span>
+                </div>
+              </div>
+
+              <div class="landing-actions" style="justify-content:center; margin-bottom:0;">
+                <a href="/signup" class="btn btn-primary">Create Workspace</a>
+              </div>
+
+              <div class="landing-pricing-note">
+                Pricing can be updated later as the platform grows, but this provides a clear and professional starting point for launch.
+              </div>
             </div>
           </div>
         </section>
