@@ -304,6 +304,323 @@ function buildAdvancedBillingLegacySync(
   return patch;
 }
 
+type TenantHealthRow = {
+  id: number;
+  name: string;
+  subdomain: string;
+  created_at: string | null;
+  billing_status: string;
+  billing_state: string | null;
+  billing_exempt: number;
+  onboarding_completed_steps: number;
+  onboarding_total_steps: number;
+  onboarding_status: 'complete' | 'in_progress' | 'not_started';
+  user_count: number;
+  active_user_count: number;
+  job_count: number;
+  employee_count: number;
+  invoice_count: number;
+  open_support_count: number;
+  critical_support_count: number;
+  recent_activity_count_7d: number;
+  recent_activity_count_30d: number;
+  last_activity_at: string | null;
+  risk_level: 'good' | 'warn' | 'bad';
+  risk_summary: string;
+};
+
+function hasValue(value: unknown): boolean {
+  return String(value ?? '').trim().length > 0;
+}
+
+function isCompanyConfigured(tenant: {
+  name: string;
+  company_email: string | null;
+  company_phone: string | null;
+  company_address: string | null;
+  invoice_prefix: string | null;
+}): boolean {
+  return (
+    hasValue(tenant.name)
+    && hasValue(tenant.company_email)
+    && hasValue(tenant.company_phone)
+    && hasValue(tenant.company_address)
+    && hasValue(tenant.invoice_prefix)
+  );
+}
+
+function determineTenantRisk(row: {
+  billing_status: string;
+  billing_state: string | null;
+  billing_exempt: number;
+  onboarding_completed_steps: number;
+  onboarding_total_steps: number;
+  open_support_count: number;
+  critical_support_count: number;
+  recent_activity_count_7d: number;
+  recent_activity_count_30d: number;
+  active_user_count: number;
+  job_count: number;
+}): { risk_level: 'good' | 'warn' | 'bad'; risk_summary: string } {
+  const reasons: string[] = [];
+  const billingStatus = String(row.billing_status || '').trim().toLowerCase();
+  const billingState = String(row.billing_state || '').trim().toLowerCase();
+  const onboardingIncomplete = row.onboarding_completed_steps < row.onboarding_total_steps;
+  const dormant = row.recent_activity_count_30d === 0;
+  const lowActivity = row.recent_activity_count_7d === 0;
+
+  if (billingStatus === 'past_due' || billingStatus === 'canceled' || billingState === 'past_due' || billingState === 'suspended' || billingState === 'canceled') {
+    reasons.push('billing needs attention');
+  }
+
+  if (row.critical_support_count > 0) {
+    reasons.push('critical support ticket open');
+  } else if (row.open_support_count > 0) {
+    reasons.push('open support follow-up');
+  }
+
+  if (!row.billing_exempt && dormant && onboardingIncomplete) {
+    reasons.push('no recent activity and onboarding incomplete');
+  } else if (lowActivity && row.job_count > 0) {
+    reasons.push('no activity in the last 7 days');
+  }
+
+  if (row.active_user_count === 0) {
+    reasons.push('no active users');
+  }
+
+  if (onboardingIncomplete && row.onboarding_completed_steps <= 1) {
+    reasons.push('very early onboarding');
+  } else if (onboardingIncomplete) {
+    reasons.push('onboarding still in progress');
+  }
+
+  const hasHardRisk = reasons.some((reason) =>
+    reason === 'billing needs attention'
+    || reason === 'critical support ticket open'
+    || reason === 'no recent activity and onboarding incomplete'
+    || reason === 'no active users',
+  );
+
+  if (hasHardRisk) {
+    return {
+      risk_level: 'bad',
+      risk_summary: reasons.slice(0, 2).join(' · ') || 'Needs review',
+    };
+  }
+
+  if (reasons.length > 0) {
+    return {
+      risk_level: 'warn',
+      risk_summary: reasons.slice(0, 2).join(' · '),
+    };
+  }
+
+  return {
+    risk_level: 'good',
+    risk_summary: 'Healthy billing, activity, and onboarding signals',
+  };
+}
+
+function getAdminDashboardData(db: any) {
+  const recentTenants = db.prepare(`
+    SELECT
+      id,
+      name,
+      subdomain,
+      created_at,
+      billing_status,
+      billing_exempt
+    FROM tenants
+    ORDER BY id DESC
+    LIMIT 8
+  `).all() as Array<{
+    id: number;
+    name: string;
+    subdomain: string;
+    created_at: string | null;
+    billing_status: string;
+    billing_exempt: number;
+  }>;
+
+  const baseRows = db.prepare(`
+    SELECT
+      t.id,
+      t.name,
+      t.subdomain,
+      t.created_at,
+      t.billing_status,
+      t.billing_state,
+      t.billing_exempt,
+      t.company_email,
+      t.company_phone,
+      t.company_address,
+      t.invoice_prefix,
+      (
+        SELECT COUNT(*)
+        FROM users u
+        WHERE u.tenant_id = t.id
+      ) as user_count,
+      (
+        SELECT COUNT(*)
+        FROM users u
+        WHERE u.tenant_id = t.id
+          AND u.active = 1
+      ) as active_user_count,
+      (
+        SELECT COUNT(*)
+        FROM jobs j
+        WHERE j.tenant_id = t.id
+          AND j.archived_at IS NULL
+      ) as job_count,
+      (
+        SELECT COUNT(*)
+        FROM employees e
+        WHERE e.tenant_id = t.id
+          AND e.archived_at IS NULL
+      ) as employee_count,
+      (
+        SELECT COUNT(*)
+        FROM invoices i
+        WHERE i.tenant_id = t.id
+          AND i.archived_at IS NULL
+      ) as invoice_count,
+      (
+        SELECT COUNT(*)
+        FROM support_tickets st
+        WHERE st.tenant_id = t.id
+          AND st.status <> 'closed'
+      ) as open_support_count,
+      (
+        SELECT COUNT(*)
+        FROM support_tickets st
+        WHERE st.tenant_id = t.id
+          AND st.status <> 'closed'
+          AND st.priority = 'critical'
+      ) as critical_support_count,
+      (
+        SELECT COUNT(*)
+        FROM activity_logs a
+        WHERE a.tenant_id = t.id
+          AND a.created_at >= datetime('now', '-7 days')
+      ) as recent_activity_count_7d,
+      (
+        SELECT COUNT(*)
+        FROM activity_logs a
+        WHERE a.tenant_id = t.id
+          AND a.created_at >= datetime('now', '-30 days')
+      ) as recent_activity_count_30d,
+      (
+        SELECT MAX(a.created_at)
+        FROM activity_logs a
+        WHERE a.tenant_id = t.id
+      ) as last_activity_at
+    FROM tenants t
+    ORDER BY t.name COLLATE NOCASE ASC
+  `).all() as Array<{
+    id: number;
+    name: string;
+    subdomain: string;
+    created_at: string | null;
+    billing_status: string;
+    billing_state: string | null;
+    billing_exempt: number;
+    company_email: string | null;
+    company_phone: string | null;
+    company_address: string | null;
+    invoice_prefix: string | null;
+    user_count: number;
+    active_user_count: number;
+    job_count: number;
+    employee_count: number;
+    invoice_count: number;
+    open_support_count: number;
+    critical_support_count: number;
+    recent_activity_count_7d: number;
+    recent_activity_count_30d: number;
+    last_activity_at: string | null;
+  }>;
+
+  const tenantHealth = baseRows.map((row) => {
+    const totalSteps = 4;
+    const completedSteps = [
+      isCompanyConfigured(row),
+      Number(row.job_count) > 0,
+      Number(row.employee_count) > 0,
+      Number(row.invoice_count) > 0,
+    ].filter(Boolean).length;
+
+    let onboardingStatus: 'complete' | 'in_progress' | 'not_started' = 'not_started';
+    if (completedSteps >= totalSteps) onboardingStatus = 'complete';
+    else if (completedSteps > 0) onboardingStatus = 'in_progress';
+
+    const risk = determineTenantRisk({
+      billing_status: row.billing_status,
+      billing_state: row.billing_state,
+      billing_exempt: Number(row.billing_exempt),
+      onboarding_completed_steps: completedSteps,
+      onboarding_total_steps: totalSteps,
+      open_support_count: Number(row.open_support_count),
+      critical_support_count: Number(row.critical_support_count),
+      recent_activity_count_7d: Number(row.recent_activity_count_7d),
+      recent_activity_count_30d: Number(row.recent_activity_count_30d),
+      active_user_count: Number(row.active_user_count),
+      job_count: Number(row.job_count),
+    });
+
+    return {
+      id: row.id,
+      name: row.name,
+      subdomain: row.subdomain,
+      created_at: row.created_at,
+      billing_status: row.billing_status,
+      billing_state: row.billing_state,
+      billing_exempt: Number(row.billing_exempt),
+      onboarding_completed_steps: completedSteps,
+      onboarding_total_steps: totalSteps,
+      onboarding_status: onboardingStatus,
+      user_count: Number(row.user_count),
+      active_user_count: Number(row.active_user_count),
+      job_count: Number(row.job_count),
+      employee_count: Number(row.employee_count),
+      invoice_count: Number(row.invoice_count),
+      open_support_count: Number(row.open_support_count),
+      critical_support_count: Number(row.critical_support_count),
+      recent_activity_count_7d: Number(row.recent_activity_count_7d),
+      recent_activity_count_30d: Number(row.recent_activity_count_30d),
+      last_activity_at: row.last_activity_at,
+      risk_level: risk.risk_level,
+      risk_summary: risk.risk_summary,
+    } satisfies TenantHealthRow;
+  }).sort((a, b) => {
+    const riskRank = { bad: 0, warn: 1, good: 2 };
+    const riskDiff = riskRank[a.risk_level] - riskRank[b.risk_level];
+    if (riskDiff !== 0) return riskDiff;
+    if (b.open_support_count !== a.open_support_count) return b.open_support_count - a.open_support_count;
+    if (a.onboarding_completed_steps !== b.onboarding_completed_steps) return a.onboarding_completed_steps - b.onboarding_completed_steps;
+    return a.name.localeCompare(b.name);
+  });
+
+  const metrics = {
+    totalTenants: tenantHealth.length,
+    activeTenants: tenantHealth.filter((tenant) => !tenant.billing_exempt && tenant.billing_status === 'active').length,
+    trialingTenants: tenantHealth.filter((tenant) => !tenant.billing_exempt && tenant.billing_status === 'trialing').length,
+    internalTenants: tenantHealth.filter((tenant) => tenant.billing_exempt || tenant.billing_status === 'internal').length,
+    pastDueTenants: tenantHealth.filter((tenant) => !tenant.billing_exempt && tenant.billing_status === 'past_due').length,
+    canceledTenants: tenantHealth.filter((tenant) => !tenant.billing_exempt && tenant.billing_status === 'canceled').length,
+    onboardingCompleteTenants: tenantHealth.filter((tenant) => tenant.onboarding_status === 'complete').length,
+    onboardingInProgressTenants: tenantHealth.filter((tenant) => tenant.onboarding_status === 'in_progress').length,
+    onboardingNotStartedTenants: tenantHealth.filter((tenant) => tenant.onboarding_status === 'not_started').length,
+    atRiskTenants: tenantHealth.filter((tenant) => tenant.risk_level === 'bad').length,
+    dormantTenants: tenantHealth.filter((tenant) => tenant.recent_activity_count_30d === 0).length,
+    openSupportTickets: tenantHealth.reduce((sum, tenant) => sum + tenant.open_support_count, 0),
+    criticalSupportTickets: tenantHealth.reduce((sum, tenant) => sum + tenant.critical_support_count, 0),
+    tenantsWithNoActivity7d: tenantHealth.filter((tenant) => tenant.recent_activity_count_7d === 0).length,
+  };
+
+  return { metrics, recentTenants, tenantHealth };
+}
+
 const platformAdminRoutes = new Hono<AppEnv>();
 
 platformAdminRoutes.get('/admin/login', (c) => {
@@ -371,49 +688,12 @@ platformAdminRoutes.get('/admin/logout', (c) => {
 
 platformAdminRoutes.get('/admin', platformAdminRequired, (c) => {
   const db = getDb();
-
-  const metrics = db.prepare(`
-    SELECT
-      COUNT(*) as totalTenants,
-      SUM(CASE WHEN billing_exempt = 0 AND billing_status = 'active' THEN 1 ELSE 0 END) as activeTenants,
-      SUM(CASE WHEN billing_exempt = 0 AND billing_status = 'trialing' THEN 1 ELSE 0 END) as trialingTenants,
-      SUM(CASE WHEN billing_exempt = 1 OR billing_status = 'internal' THEN 1 ELSE 0 END) as internalTenants,
-      SUM(CASE WHEN billing_exempt = 0 AND billing_status = 'past_due' THEN 1 ELSE 0 END) as pastDueTenants,
-      SUM(CASE WHEN billing_exempt = 0 AND billing_status = 'canceled' THEN 1 ELSE 0 END) as canceledTenants
-    FROM tenants
-  `).get() as {
-    totalTenants: number;
-    activeTenants: number;
-    trialingTenants: number;
-    internalTenants: number;
-    pastDueTenants: number;
-    canceledTenants: number;
-  };
-
-  const recentTenants = db.prepare(`
-    SELECT
-      id,
-      name,
-      subdomain,
-      created_at,
-      billing_status,
-      billing_exempt
-    FROM tenants
-    ORDER BY id DESC
-    LIMIT 8
-  `).all() as Array<{
-    id: number;
-    name: string;
-    subdomain: string;
-    created_at: string | null;
-    billing_status: string;
-    billing_exempt: number;
-  }>;
+  const { metrics, recentTenants, tenantHealth } = getAdminDashboardData(db);
 
   return renderAdminLayout(
     c,
-    'Platform Overview',
-    <AdminDashboardPage metrics={metrics} recentTenants={recentTenants} />,
+    'Tenant health and operational visibility',
+    <AdminDashboardPage metrics={metrics} recentTenants={recentTenants} tenantHealth={tenantHealth} />,
   );
 });
 
@@ -869,52 +1149,53 @@ platformAdminRoutes.post('/admin/tenants/:id/billing/override', platformAdminReq
   }
 
   const body = await c.req.parseBody();
-  const nextState = normalizeAdvancedBillingState(String(body['billing_state'] ?? ''));
+  const billingState = normalizeAdvancedBillingState(body['billing_state'] as string);
+  const reason = String(body['reason'] ?? '').trim();
   const graceUntilRaw = String(body['grace_until'] ?? '').trim();
-  const reasonRaw = String(body['reason'] ?? '').trim();
-  const adminUser = c.get('platformAdminUser');
-  const adminEmail = adminUser?.email || getEnv().platformAdminEmail || 'platform-admin';
+  const graceUntil = graceUntilRaw ? `${graceUntilRaw} 23:59:59` : null;
 
-  if (!nextState) {
+  if (!billingState) {
     return c.redirect(redirectTenantDetail(tenantId, 'error=invalid-advanced-state'));
   }
 
-  if (reasonRaw.length > 300) {
+  if (reason.length > 300) {
     return c.redirect(redirectTenantDetail(tenantId, 'error=reason-too-long'));
   }
 
-  const graceUntil = graceUntilRaw || null;
-  const patch = buildAdvancedBillingLegacySync(nextState, graceUntil);
+  const patch = buildAdvancedBillingLegacySync(billingState, graceUntil);
 
   tenantQueries.updateBillingState(db, tenantId, {
     ...patch,
-    billing_override_reason: reasonRaw || null,
-    billing_overridden_by_user_id: adminUser?.id ?? null,
-    billing_overridden_at: new Date().toISOString(),
+    billing_override_reason: reason || null,
+    billing_overridden_by_user_id: null,
+    billing_overridden_at: toSqlDate(new Date()),
   });
 
-  logActivity(db, {
+  db.prepare(`
+    INSERT INTO activity_logs (
+      tenant_id,
+      actor_user_id,
+      event_type,
+      entity_type,
+      entity_id,
+      description,
+      ip_address,
+      metadata_json
+    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
+  `).run(
     tenantId,
-    actorUserId: null,
-    eventType: 'tenant.billing_override_updated',
-    entityType: 'tenant',
-    entityId: tenantId,
-    description: `Platform admin ${adminEmail} changed advanced billing state from ${String(tenant.billing_state || tenant.billing_status || 'unknown')} to ${nextState}.`,
-    metadata: {
-      platform_admin_email: adminEmail,
-      previous_billing_state: tenant.billing_state || null,
-      previous_billing_status: tenant.billing_status || null,
-      previous_billing_exempt: Number(tenant.billing_exempt || 0),
-      next_billing_state: nextState,
-      next_billing_status: patch.billing_status ?? null,
-      next_billing_exempt: patch.billing_exempt ?? null,
-      next_billing_grace_until: patch.billing_grace_until ?? null,
-      next_billing_grace_ends_at: patch.billing_grace_ends_at ?? null,
-      override_reason: reasonRaw || null,
-      phase: '5B.3',
-    },
-    ipAddress: resolveRequestIp(c),
-  });
+    'admin.billing.override',
+    'tenant',
+    tenantId,
+    `Platform admin set advanced billing state to ${billingState}.`,
+    resolveRequestIp(c.req.raw),
+    JSON.stringify({
+      billing_state: billingState,
+      reason: reason || null,
+      grace_until: graceUntil,
+      platform_admin_email: c.get('platformAdmin')?.email || null,
+    }),
+  );
 
   return c.redirect(redirectTenantDetail(tenantId, 'updated=override'));
 });
@@ -922,7 +1203,6 @@ platformAdminRoutes.post('/admin/tenants/:id/billing/override', platformAdminReq
 platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired, async (c) => {
   const db = getDb();
   const tenantId = parseTenantId(c);
-  const platformAdmin = c.get('platformAdmin');
 
   if (!tenantId) {
     return c.redirect('/admin/tenants?error=tenant-not-found');
@@ -935,31 +1215,37 @@ platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired
 
   const body = await c.req.parseBody();
   const userId = parsePositiveInt(String(body['user_id'] ?? ''));
-  const supportReason = normalizeQueryText(String(body['support_reason'] ?? '')).slice(0, 200);
-  const originalReason = normalizeQueryText(String(body['support_reason'] ?? ''));
+  const supportReason = String(body['support_reason'] ?? '').trim();
 
   if (!userId) {
     return c.redirect(redirectTenantDetail(tenantId, 'error=user-not-found'));
   }
 
-  if (originalReason.length > 200) {
+  if (supportReason.length > 200) {
     return c.redirect(redirectTenantDetail(tenantId, 'error=support-reason-too-long'));
   }
 
   const user = db.prepare(`
-    SELECT id, name, email, role, active, tenant_id
+    SELECT id, tenant_id, name, email, role, active
     FROM users
-    WHERE id = ?
+    WHERE id = ? AND tenant_id = ?
     LIMIT 1
-  `).get(userId) as
-    | { id: number; name: string; email: string; role: string; active: number; tenant_id: number }
+  `).get(userId, tenantId) as
+    | {
+        id: number;
+        tenant_id: number;
+        name: string;
+        email: string;
+        role: string;
+        active: number;
+      }
     | undefined;
 
-  if (!user || user.tenant_id !== tenantId) {
+  if (!user) {
     return c.redirect(redirectTenantDetail(tenantId, 'error=user-not-found'));
   }
 
-  if (user.active !== 1) {
+  if (Number(user.active) !== 1) {
     return c.redirect(redirectTenantDetail(tenantId, 'error=user-inactive'));
   }
 
@@ -967,39 +1253,31 @@ platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired
     return c.redirect(redirectTenantDetail(tenantId, 'error=admin-user-blocked'));
   }
 
-  const env = getEnv();
-  const token = createImpersonationToken(
-    {
-      platformAdminEmail: platformAdmin?.email || env.platformAdminEmail || 'platform-admin',
-      targetUserId: user.id,
-      targetTenantId: tenantId,
-      redirectTo: '/dashboard',
-    },
-    env.secretKey,
-  );
+  const token = createImpersonationToken({
+    tenantId,
+    userId: user.id,
+    platformAdminEmail: c.get('platformAdmin')?.email || 'unknown',
+    supportReason: supportReason || 'Support access',
+  });
 
-  logActivity(db, {
+  await logActivity(db, {
     tenantId,
     actorUserId: null,
-    eventType: 'auth.impersonation_requested',
+    eventType: 'admin.impersonation.started',
     entityType: 'user',
     entityId: user.id,
-    description: supportReason
-      ? `Platform admin ${platformAdmin?.email || env.platformAdminEmail || 'platform-admin'} requested impersonation for ${user.name}. Reason: ${supportReason}`
-      : `Platform admin ${platformAdmin?.email || env.platformAdminEmail || 'platform-admin'} requested impersonation for ${user.name}.`,
+    description: `Platform admin initiated impersonation for ${user.name} (${user.role}).`,
+    ipAddress: resolveRequestIp(c.req.raw),
     metadata: {
-      platform_admin_email: platformAdmin?.email || env.platformAdminEmail || 'platform-admin',
-      impersonated_user_id: user.id,
-      impersonated_user_email: user.email,
-      impersonated_user_role: user.role,
+      target_user_name: user.name,
+      target_user_email: user.email,
+      target_user_role: user.role,
+      platform_admin_email: c.get('platformAdmin')?.email || null,
       support_reason: supportReason || null,
-      phase: '3B',
     },
-    ipAddress: resolveRequestIp(c),
   });
 
   return c.redirect(buildTenantImpersonationUrl(tenant.subdomain, token));
 });
-
 export { platformAdminRoutes };
 export default platformAdminRoutes;
