@@ -20,6 +20,9 @@ interface DashboardPageProps {
     overdue_invoice_count: number;
     overdue_invoice_total: number;
     total_profit_all: number;
+    jobs_count?: number;
+    employees_count?: number;
+    invoices_count?: number;
   };
   activeJobs: {
     id: number;
@@ -45,6 +48,7 @@ interface DashboardPageProps {
     employee_name: string;
     job_name: string;
   }[];
+  companyConfigured?: boolean;
   csrfToken: string;
 }
 
@@ -53,9 +57,80 @@ export const DashboardPage: FC<DashboardPageProps> = ({
   activeJobs,
   invoicesDue,
   recentTime,
+  companyConfigured = false,
 }) => {
+  const onboardingSteps = [
+    {
+      label: 'Complete company profile',
+      done: companyConfigured,
+      href: '/settings',
+    },
+    {
+      label: 'Create your first job',
+      done: (stats.jobs_count ?? stats.active_jobs ?? 0) > 0,
+      href: '/add_job',
+    },
+    {
+      label: 'Add your first employee',
+      done: (stats.employees_count ?? 0) > 0,
+      href: '/add_employee',
+    },
+    {
+      label: 'Create your first invoice',
+      done: (stats.invoices_count ?? stats.invoices_due_count ?? 0) > 0,
+      href: '/add_invoice',
+    },
+  ];
+
+  const completedSteps = onboardingSteps.filter((step) => step.done).length;
+  const allDone = completedSteps === onboardingSteps.length;
+
   return (
     <div>
+      {!allDone ? (
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-head">
+            <div>
+              <b>Getting Started</b>
+              <div class="muted small" style="margin-top:4px;">
+                Complete these steps to finish setting up your workspace and start using the platform.
+              </div>
+            </div>
+            <span class="badge">
+              {completedSteps}/{onboardingSteps.length} complete
+            </span>
+          </div>
+
+          <div class="list" style="margin-top:14px;">
+            {onboardingSteps.map((step) => (
+              <a
+                href={step.href}
+                class="list-item"
+                style={`display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit; ${
+                  step.done ? 'background:#F0FDF4; border-color:#BBF7D0;' : ''
+                }`}
+              >
+                <span
+                  class={step.done ? 'badge badge-good' : 'badge'}
+                  style="min-width:32px; justify-content:center;"
+                >
+                  {step.done ? '✓' : '○'}
+                </span>
+
+                <div style="flex:1;">
+                  <div style="font-weight:800; color:#0F172A;">{step.label}</div>
+                  <div class="muted small" style="margin-top:4px;">
+                    {step.done ? 'Completed' : 'Open this step'}
+                  </div>
+                </div>
+
+                <span class="btn">Open</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div class="page-head">
         <div>
           <h1>Dashboard</h1>
