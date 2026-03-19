@@ -1,246 +1,189 @@
 import type { FC } from 'hono/jsx';
 
-interface SupportTicketRow {
+interface SupportTicket {
   id: number;
   subject: string;
-  message: string;
-  priority: string;
-  status: string;
-  internal_notes: string | null;
+  priority: 'low' | 'normal' | 'high' | 'critical';
+  status: 'open' | 'in_progress' | 'closed';
   created_at: string;
   updated_at: string;
-  created_by_name: string | null;
-  created_by_email: string | null;
 }
 
 interface SupportPageProps {
-  tickets: SupportTicketRow[];
+  tickets: SupportTicket[];
+  notice?: { tone: 'good' | 'warn' | 'bad'; message: string };
   csrfToken: string;
-  error?: string;
-  success?: string;
-  formData?: {
-    subject: string;
-    priority: string;
-    message: string;
-  };
 }
 
-function priorityBadgeClass(priority: string): string {
-  const normalized = String(priority || '').toLowerCase();
-
-  if (normalized === 'critical') return 'badge badge-bad';
-  if (normalized === 'high') return 'badge badge-warn';
-  if (normalized === 'low') return 'badge badge-good';
+function priorityBadgeClass(priority: SupportTicket['priority']): string {
+  if (priority === 'critical') return 'badge badge-bad';
+  if (priority === 'high') return 'badge badge-warn';
+  if (priority === 'normal') return 'badge badge-good';
   return 'badge';
 }
 
-function priorityLabel(priority: string): string {
-  const normalized = String(priority || '').toLowerCase();
-  if (normalized === 'critical') return 'Critical';
-  if (normalized === 'high') return 'High';
-  if (normalized === 'low') return 'Low';
-  return 'Normal';
-}
-
-function statusBadgeClass(status: string): string {
-  const normalized = String(status || '').toLowerCase();
-
-  if (normalized === 'closed') return 'badge badge-good';
-  if (normalized === 'waiting_on_customer') return 'badge badge-warn';
-  if (normalized === 'in_progress') return 'badge badge-warn';
+function statusBadgeClass(status: SupportTicket['status']): string {
+  if (status === 'closed') return 'badge badge-good';
+  if (status === 'in_progress') return 'badge badge-warn';
   return 'badge';
-}
-
-function statusLabel(status: string): string {
-  const normalized = String(status || '').toLowerCase();
-
-  if (normalized === 'in_progress') return 'In Progress';
-  if (normalized === 'waiting_on_customer') return 'Waiting on Customer';
-  if (normalized === 'closed') return 'Closed';
-  return 'Open';
 }
 
 export const SupportPage: FC<SupportPageProps> = ({
   tickets,
+  notice,
   csrfToken,
-  error,
-  success,
-  formData,
 }) => {
-  const values = {
-    subject: String(formData?.subject || ''),
-    priority: String(formData?.priority || 'normal'),
-    message: String(formData?.message || ''),
-  };
+  const openTickets = tickets.filter((t) => t.status !== 'closed').length;
+  const criticalTickets = tickets.filter((t) => t.priority === 'critical' && t.status !== 'closed').length;
 
   return (
     <div>
       <div class="page-head">
         <div>
-          <h1>Support</h1>
-          <p>Submit support requests for your workspace and track their status.</p>
+          <h1>Support Center</h1>
+          <p>Get help with billing, technical issues, or questions about using Hudson Business Solutions.</p>
         </div>
       </div>
 
-      {error ? (
-        <div
-          class="card"
-          style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;"
-        >
-          {error}
+      {notice && (
+        <div class={`notice notice-${notice.tone}`} style="margin-bottom:16px;">
+          {notice.message}
         </div>
-      ) : null}
+      )}
 
-      {success ? (
-        <div
-          class="card"
-          style="margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;"
-        >
-          {success}
-        </div>
-      ) : null}
-
-      <div class="grid grid-2">
+      <div class="grid grid-3">
         <div class="card">
-          <h3 style="margin-top:0;">Submit a Support Request</h3>
-          <p class="muted" style="margin-top:0;">
-            Use priority levels to help us triage requests appropriately.
-          </p>
-
-          <form method="post" action="/support">
-            <input type="hidden" name="csrf_token" value={csrfToken} />
-
-            <label>Subject</label>
-            <input
-              name="subject"
-              value={values.subject}
-              maxlength={140}
-              required
-              placeholder="Example: Unable to reconcile invoice payment"
-            />
-
-            <label>Priority</label>
-            <select name="priority">
-              <option value="low" selected={values.priority === 'low'}>Low</option>
-              <option value="normal" selected={values.priority === 'normal'}>Normal</option>
-              <option value="high" selected={values.priority === 'high'}>High</option>
-              <option value="critical" selected={values.priority === 'critical'}>Critical</option>
-            </select>
-
-            <label>Message</label>
-            <textarea
-              name="message"
-              rows={8}
-              maxlength={5000}
-              required
-              placeholder="Describe the issue, what you expected, and any relevant job, invoice, employee, or billing details."
-            >
-              {values.message}
-            </textarea>
-
-            <div class="actions" style="margin-top:16px;">
-              <button class="btn btn-primary" type="submit">Submit Ticket</button>
-            </div>
-          </form>
+          <div class="stat-label">Open Tickets</div>
+          <div class="stat-value">{openTickets}</div>
         </div>
 
         <div class="card">
-          <h3 style="margin-top:0;">Priority Guidelines</h3>
+          <div class="stat-label">Critical Issues</div>
+          <div class="stat-value">{criticalTickets}</div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label">Total Tickets</div>
+          <div class="stat-value">{tickets.length}</div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:14px;">
+        <div class="card">
+          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">How Support Works</div>
 
           <div class="list">
             <div class="list-item">
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span class="badge badge-good">Low</span>
-                <strong>Minor questions or polish issues</strong>
-              </div>
-              <div class="muted" style="margin-top:6px;">
-                General how-to questions, non-blocking UI feedback, or small issues.
-              </div>
+              Submit a ticket describing your issue or request.
             </div>
-
             <div class="list-item">
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span class="badge">Normal</span>
-                <strong>Standard support request</strong>
-              </div>
-              <div class="muted" style="margin-top:6px;">
-                Most requests should use this level by default.
-              </div>
+              Critical issues affecting your ability to operate will be prioritized.
             </div>
-
             <div class="list-item">
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span class="badge badge-warn">High</span>
-                <strong>Operational issue affecting daily work</strong>
-              </div>
-              <div class="muted" style="margin-top:6px;">
-                Important workflows are blocked or producing incorrect results.
-              </div>
+              Billing issues are typically resolved the same business day.
             </div>
-
             <div class="list-item">
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                <span class="badge badge-bad">Critical</span>
-                <strong>Billing, access, or major production issue</strong>
-              </div>
-              <div class="muted" style="margin-top:6px;">
-                Use only when the workspace is severely impacted or normal operations cannot continue.
-              </div>
+              You will receive updates as work progresses.
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Before Submitting</div>
+
+          <div class="list">
+            <div class="list-item">
+              Include job names, employee names, or invoice numbers if relevant.
+            </div>
+            <div class="list-item">
+              Describe what you expected to happen versus what occurred.
+            </div>
+            <div class="list-item">
+              Note whether the issue is blocking normal operations.
+            </div>
+            <div class="list-item">
+              Billing questions can often be resolved from the Billing page.
             </div>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-top:14px;">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
-          <div>
-            <h3 style="margin:0;">Ticket History</h3>
-            <div class="muted" style="margin-top:4px;">
-              Visibility across your tenant workspace for submitted support requests.
-            </div>
+        <div style="font-weight:900; font-size:18px; margin-bottom:12px;">
+          Submit a Support Request
+        </div>
+
+        <form method="POST" action="/support/create" class="form">
+          <input type="hidden" name="csrfToken" value={csrfToken} />
+
+          <div class="form-group">
+            <label>Subject</label>
+            <input name="subject" required />
           </div>
-          <span class="badge">{tickets.length} ticket{tickets.length === 1 ? '' : 's'}</span>
+
+          <div class="form-group">
+            <label>Priority</label>
+            <select name="priority" required>
+              <option value="low">Low — General question</option>
+              <option value="normal">Normal — Minor issue</option>
+              <option value="high">High — Significant problem</option>
+              <option value="critical">Critical — Operations blocked</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Description</label>
+            <textarea name="description" rows={5} required />
+          </div>
+
+          <button class="btn btn-primary">Submit Ticket</button>
+        </form>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div style="font-weight:900; font-size:18px; margin-bottom:12px;">
+          Your Support Tickets
         </div>
 
-        <div class="list">
-          {tickets.length ? tickets.map((ticket) => (
-            <div class="list-item">
-              <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
-                <div style="min-width:0; flex:1;">
-                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                    <strong>#{ticket.id} — {ticket.subject}</strong>
-                    <span class={priorityBadgeClass(ticket.priority)}>{priorityLabel(ticket.priority)}</span>
-                    <span class={statusBadgeClass(ticket.status)}>{statusLabel(ticket.status)}</span>
-                  </div>
-
-                  <div class="muted" style="margin-top:6px;">
-                    Submitted by {ticket.created_by_name || 'Unknown user'}
-                    {ticket.created_by_email ? ` (${ticket.created_by_email})` : ''}
-                  </div>
-
-                  <div class="muted" style="margin-top:4px;">
-                    Created: {ticket.created_at} • Updated: {ticket.updated_at}
-                  </div>
-
-                  <div style="margin-top:12px; white-space:pre-wrap; line-height:1.6;">
-                    {ticket.message}
-                  </div>
-
-                  {ticket.internal_notes ? (
-                    <div
-                      style="margin-top:12px; padding:12px; border-radius:12px; background:#F8FAFC; border:1px solid #E5EAF2;"
-                    >
-                      <div style="font-weight:800; margin-bottom:6px;">Support Notes</div>
-                      <div style="white-space:pre-wrap; line-height:1.6;">{ticket.internal_notes}</div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          )) : (
-            <div class="muted">No support tickets have been submitted yet.</div>
-          )}
-        </div>
+        {tickets.length === 0 ? (
+          <div class="muted">
+            You have not submitted any support requests yet. If you need assistance,
+            create a ticket above and our team will respond.
+          </div>
+        ) : (
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Subject</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Last Update</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tickets.map((t) => (
+                  <tr>
+                    <td>{t.subject}</td>
+                    <td>
+                      <span class={priorityBadgeClass(t.priority)}>
+                        {t.priority}
+                      </span>
+                    </td>
+                    <td>
+                      <span class={statusBadgeClass(t.status)}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td>{t.created_at}</td>
+                    <td>{t.updated_at}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
