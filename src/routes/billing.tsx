@@ -18,6 +18,7 @@ type NoticeTone = 'info' | 'good' | 'warn' | 'bad';
 
 type BillingNotice = {
   tone: NoticeTone;
+  title?: string;
   message: string;
 };
 
@@ -51,18 +52,43 @@ function resolveOrigin(c: any): string {
   return `${proto}://${host}`;
 }
 
-function resolveBlockedMessage(reason: string | undefined): string | null {
+function resolveBlockedMessage(reason: string | undefined): BillingNotice | null {
   switch (reason) {
     case 'trial-ended':
-      return 'This workspace trial has ended. Start billing to restore full access.';
+      return {
+        tone: 'bad',
+        title: 'Trial Ended',
+        message:
+          'This workspace trial has ended. Start billing to restore full access and continue using the platform without interruption.',
+      };
     case 'grace-ended':
-      return 'This workspace grace period has ended. Update billing now to restore access.';
+      return {
+        tone: 'bad',
+        title: 'Grace Period Ended',
+        message:
+          'The temporary grace period has ended. Update billing now to restore normal workspace access.',
+      };
     case 'workspace-suspended':
-      return 'This workspace has been suspended for billing reasons. Only billing recovery actions remain available.';
+      return {
+        tone: 'bad',
+        title: 'Workspace Suspended',
+        message:
+          'This workspace is currently suspended for billing reasons. Billing recovery is required before normal access can resume.',
+      };
     case 'subscription-canceled':
-      return 'This workspace subscription has been canceled. Restart billing to continue access.';
+      return {
+        tone: 'bad',
+        title: 'Subscription Canceled',
+        message:
+          'This workspace subscription has been canceled. Restart billing to reactivate the subscription and continue access.',
+      };
     case 'payment-required':
-      return 'Billing must be completed before this workspace can continue using the platform.';
+      return {
+        tone: 'bad',
+        title: 'Billing Required',
+        message:
+          'Billing must be completed before this workspace can continue using Hudson Business Solutions.',
+      };
     default:
       return null;
   }
@@ -73,73 +99,102 @@ function resolveNotice(c: any): BillingNotice | undefined {
   const checkout = String(c.req.query('checkout') || '').trim().toLowerCase();
   const portal = String(c.req.query('portal') || '').trim().toLowerCase();
   const synced = String(c.req.query('synced') || '').trim().toLowerCase();
-  const error = String(c.req.query('error') || '').trim();
-  const stripeMessage = String(c.req.query('stripe_message') || '').trim();
+  const error = String(c.req.query('error') || '').trim().toLowerCase();
+  const stripeMessage = decodeURIComponent(String(c.req.query('stripe_message') || '').trim());
 
   const blockedMessage = resolveBlockedMessage(blockedReason);
   if (blockedMessage) {
-    return {
-      tone: 'bad',
-      message: blockedMessage,
-    };
+    return blockedMessage;
   }
 
   if (checkout === 'success' && synced === 'yes') {
     return {
       tone: 'good',
-      message: 'Checkout completed and the workspace billing record has been synced by Stripe webhooks.',
+      title: 'Billing Activated',
+      message:
+        'Checkout completed and your workspace billing record was confirmed by Stripe. Your subscription details should now be fully up to date.',
     };
   }
 
   if (checkout === 'success') {
     return {
       tone: 'good',
-      message: 'Stripe Checkout returned successfully. If the billing card does not update within a few seconds, refresh the page.',
+      title: 'Checkout Completed',
+      message:
+        'Stripe Checkout finished successfully. Your billing card may take a few seconds to refresh while Stripe sync completes.',
     };
   }
 
   if (checkout === 'cancelled') {
     return {
       tone: 'warn',
-      message: 'Checkout was canceled before completion.',
+      title: 'Checkout Canceled',
+      message:
+        'Billing checkout was canceled before completion. Your current billing state has not changed.',
+    };
+  }
+
+  if (portal === 'returned') {
+    return {
+      tone: 'info',
+      title: 'Returned from Billing Portal',
+      message:
+        'You returned from the Stripe Billing Portal. If you made changes, they may take a short moment to appear here.',
     };
   }
 
   if (portal === 'disabled') {
     return {
       tone: 'warn',
-      message: 'The Stripe Billing Portal is currently disabled in configuration.',
+      title: 'Billing Portal Unavailable',
+      message:
+        'The Stripe Billing Portal is currently disabled in configuration, so self-service payment updates are not available right now.',
     };
   }
 
   if (portal === 'unavailable') {
     return {
       tone: 'warn',
+      title: 'Billing Portal Not Ready Yet',
       message:
-        'The billing portal is not available yet for this workspace because no Stripe customer record has been saved locally.',
+        'This workspace does not have a saved Stripe customer record yet, so the self-service billing portal cannot be opened right now.',
     };
   }
 
   if (error === 'stripe-config') {
     return {
       tone: 'bad',
-      message: 'Stripe is enabled, but one or more required billing environment variables are missing.',
+      title: 'Stripe Configuration Required',
+      message:
+        'Stripe billing is enabled, but one or more required environment variables are still missing. Complete the Stripe configuration before using checkout or portal actions.',
+    };
+  }
+
+  if (error === 'portal-config') {
+    return {
+      tone: 'bad',
+      title: 'Billing Portal Configuration Required',
+      message:
+        'A Stripe customer record exists for this workspace, but the billing portal is not ready to launch because required portal settings are missing.',
     };
   }
 
   if (error === 'stripe-request') {
     return {
       tone: 'bad',
+      title: 'Stripe Request Failed',
       message: stripeMessage
-        ? `Stripe error: ${stripeMessage}`
-        : 'Stripe could not start the billing flow right now. Please try again.',
+        ? `Stripe returned an error while starting the billing action: ${stripeMessage}`
+        : 'Stripe could not start the billing action right now. Please try again in a moment.',
     };
   }
 
   if (error === 'exempt-workspace') {
     return {
       tone: 'info',
-      message: 'This workspace is marked billing-exempt, so Stripe checkout is not needed here.',
+      title: 'Billing Not Required',
+      message:
+        'This workspace is marked billing-exempt, so Stripe checkout is not needed here.',
     };
   }
 
@@ -298,7 +353,7 @@ billingRoutes.post('/billing/portal', roleRequired('Admin'), async (c) => {
     const stripe = getStripeClient();
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: billing.billing_customer_id,
-      return_url: `${resolveOrigin(c)}/billing`,
+      return_url: `${resolveOrigin(c)}/billing?portal=returned`,
     });
 
     return c.redirect(portalSession.url, 303);
@@ -311,6 +366,13 @@ billingRoutes.post('/billing/portal', roleRequired('Admin'), async (c) => {
         : 'Unknown Stripe portal error.';
 
     const safeMessage = encodeURIComponent(sanitizeStripeMessage(rawMessage));
+
+    if (/portal configuration/i.test(rawMessage) || /No configuration provided/i.test(rawMessage)) {
+      return c.redirect('/billing?error=portal-config');
+    }
+
     return c.redirect(`/billing?error=stripe-request&stripe_message=${safeMessage}`);
   }
 });
+
+export default billingRoutes;
