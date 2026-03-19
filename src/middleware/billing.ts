@@ -1,9 +1,17 @@
 import { createMiddleware } from 'hono/factory';
 import { getBillingAccess } from '../services/billing-access.js';
 
+/*
+ Phase 5B.2:
+ Expanded recovery allowlist so tenants can complete billing
+ flows even when restricted.
+*/
+
 const BILLING_ALLOWED_PREFIXES = [
   '/billing',
   '/logout',
+  '/login',
+  '/static',
 ];
 
 function isAllowedPath(path: string): boolean {
@@ -40,5 +48,7 @@ export const billingRequired = createMiddleware(async (c, next) => {
     return;
   }
 
-  return c.redirect(`/billing?reason=${encodeURIComponent(access.reason || 'payment-required')}`);
+  return c.redirect(
+    `/billing?reason=${encodeURIComponent(access.reason || 'payment-required')}`,
+  );
 });

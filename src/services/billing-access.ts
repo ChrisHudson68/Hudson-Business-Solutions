@@ -41,6 +41,8 @@ export type BillingAccessResult = {
   reason?: BillingBlockReason;
 };
 
+/* -------------------- Helpers -------------------- */
+
 function parseDate(value: string | null | undefined): Date | null {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -55,16 +57,6 @@ function parseDate(value: string | null | undefined): Date | null {
 export function hasFutureDate(value: string | null | undefined): boolean {
   const parsed = parseDate(value);
   return !!parsed && parsed.getTime() >= Date.now();
-}
-
-export function isLegacyGrandfatheredTenant(tenant: BillingTenantLike): boolean {
-  if (Number(tenant.billing_exempt || 0) === 1) {
-    return false;
-  }
-
-  const status = String(tenant.billing_status || 'trialing').trim().toLowerCase() as BillingStatus;
-
-  return status === 'trialing' && !tenant.billing_trial_ends_at && !tenant.billing_grace_ends_at;
 }
 
 function normalizeAdvancedState(value: string | null | undefined): AdvancedBillingState | null {
@@ -85,18 +77,25 @@ function normalizeAdvancedState(value: string | null | undefined): AdvancedBilli
   }
 }
 
+/* -------------------- NEW AUTHORITATIVE LOGIC -------------------- */
+
 export function resolveEffectiveBillingState(
   tenant: BillingTenantLike,
 ): Exclude<BillingAccessResult['effectiveStatus'], 'exempt' | 'incomplete'> | 'exempt' {
+
+  // ⭐ FIRST: Advanced billing state (authoritative)
+  const advanced = normalizeAdvancedState(tenant.billing_state);
+
+  if (advanced === 'billing_exempt') return 'exempt';
+  if (advanced) return advanced;
+
+  // ⭐ SECOND: Legacy exempt/internal flags
   if (Number(tenant.billing_exempt || 0) === 1) {
     return 'exempt';
   }
 
-  const advanced = normalizeAdvancedState(tenant.billing_state);
-  if (advanced === 'billing_exempt') return 'exempt';
-  if (advanced) return advanced;
-
   const legacy = String(tenant.billing_status || 'trialing').trim().toLowerCase() as BillingStatus;
+
   if (legacy === 'internal') return 'internal';
   if (legacy === 'active') return 'active';
   if (legacy === 'trialing') return 'trialing';
@@ -105,6 +104,8 @@ export function resolveEffectiveBillingState(
 
   return 'trialing';
 }
+
+/* -------------------- Access Rules -------------------- */
 
 export function getBillingAccess(tenant: BillingTenantLike): BillingAccessResult {
   const effective = resolveEffectiveBillingState(tenant);
@@ -122,7 +123,7 @@ export function getBillingAccess(tenant: BillingTenantLike): BillingAccessResult
   }
 
   if (effective === 'trialing') {
-    if (isLegacyGrandfatheredTenant(tenant) || hasFutureDate(tenant.billing_trial_ends_at)) {
+    if (hasFutureDate(tenant.billing_trial_ends_at)) {
       return { allowed: true, effectiveStatus: 'trialing' };
     }
 
@@ -134,18 +135,12 @@ export function getBillingAccess(tenant: BillingTenantLike): BillingAccessResult
   }
 
   if (effective === 'past_due') {
-    return {
-      allowed: true,
-      effectiveStatus: 'past_due',
-    };
+    return { allowed: true, effectiveStatus: 'past_due' };
   }
 
   if (effective === 'grace_period') {
     if (!tenant.billing_grace_until || hasFutureDate(tenant.billing_grace_until)) {
-      return {
-        allowed: true,
-        effectiveStatus: 'grace_period',
-      };
+      return { allowed: true, effectiveStatus: 'grace_period' };
     }
 
     return {
