@@ -6,8 +6,6 @@ interface LandingPageProps {
 }
 
 export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
-  const year = new Date().getFullYear();
-
   return (
     <div>
       <style>{`
@@ -271,12 +269,6 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           font-size:16px;
         }
 
-        .landing-mini-note{
-          margin-top:14px;
-          color:#64748B;
-          font-size:13px;
-        }
-
         @media (max-width: 1050px){
           .landing-hero{
             grid-template-columns:1fr;
@@ -536,10 +528,6 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           <div class="landing-actions" style="justify-content:center;">
             <a href="/signup" class="btn btn-primary">Create Workspace</a>
             <a href="/pick-tenant" class="btn">Find My Workspace</a>
-          </div>
-
-          <div class="landing-mini-note">
-            © {year} {appName}
           </div>
         </section>
       </div>

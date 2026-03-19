@@ -314,6 +314,7 @@ export const PublicLayout: FC<PublicLayoutProps> = ({
               <div class="public-footer-links">
                 <a href="/terms">Terms of Service</a>
                 <a href="/privacy">Privacy Policy</a>
+                <a href="/contact">Contact</a>
               </div>
             </div>
           </div>

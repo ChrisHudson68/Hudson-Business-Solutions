@@ -153,6 +153,7 @@ const adminCss = `
   }
 
   .content{
+    flex:1;
     padding:18px;
   }
 
@@ -365,6 +366,40 @@ const adminCss = `
     flex-wrap:wrap;
   }
 
+  .admin-footer{
+    border-top:1px solid var(--border);
+    background:#FFFFFF;
+    padding:16px 18px 20px;
+  }
+
+  .admin-footer-inner{
+    width:min(1280px, 100%);
+    margin:0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    color:var(--muted);
+    font-size:13px;
+  }
+
+  .admin-footer-links{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+
+  .admin-footer-links a{
+    color:var(--muted);
+  }
+
+  .admin-footer-links a:hover{
+    color:var(--navy);
+    text-decoration:none;
+  }
+
   @media (max-width:980px){
     .grid-4{
       grid-template-columns:repeat(2, minmax(0,1fr));
@@ -403,6 +438,11 @@ const adminCss = `
       width:100%;
       flex-wrap:wrap;
     }
+
+    .admin-footer-inner{
+      flex-direction:column;
+      align-items:flex-start;
+    }
   }
 `;
 
@@ -424,6 +464,8 @@ export const AdminLayout: FC<AdminLayoutProps> = ({
   subtitle,
   children,
 }) => {
+  const year = new Date().getFullYear();
+
   return (
     <html lang="en">
       <head>
@@ -484,6 +526,17 @@ export const AdminLayout: FC<AdminLayoutProps> = ({
             <div class="content">
               <div class="container">{children}</div>
             </div>
+
+            <footer class="admin-footer">
+              <div class="admin-footer-inner">
+                <div>© {year} {appName}</div>
+                <div class="admin-footer-links">
+                  <a href="/terms">Terms of Service</a>
+                  <a href="/privacy">Privacy Policy</a>
+                  <a href="/contact">Contact</a>
+                </div>
+              </div>
+            </footer>
           </main>
         </div>
       </body>

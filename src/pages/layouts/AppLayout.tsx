@@ -228,6 +228,7 @@ const appCss = `
     }
 
     .content{
+      flex:1;
       padding:18px;
     }
 
@@ -565,6 +566,40 @@ const appCss = `
       background:#fff;
     }
 
+    .app-footer{
+      border-top:1px solid var(--border);
+      background:#FFFFFF;
+      padding:16px 18px 20px;
+    }
+
+    .app-footer-inner{
+      width:min(1200px, 100%);
+      margin:0 auto;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .app-footer-links{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      flex-wrap:wrap;
+    }
+
+    .app-footer-links a{
+      color:var(--muted);
+    }
+
+    .app-footer-links a:hover{
+      color:var(--navy);
+      text-decoration:none;
+    }
+
     @media (max-width:760px){
       .billing-banner{
         flex-direction:column;
@@ -573,6 +608,11 @@ const appCss = `
 
       .billing-banner .btn{
         width:100%;
+      }
+
+      .app-footer-inner{
+        flex-direction:column;
+        align-items:flex-start;
       }
     }
   `;
@@ -717,6 +757,7 @@ export const AppLayout: FC<AppLayoutProps> = ({
   const billingBanner = getBillingBanner(currentTenant);
   const navItems = buildNavItems(currentUser);
   const permissionSummary = buildPermissionSummary(currentUser);
+  const year = new Date().getFullYear();
 
   return (
     <html lang="en">
@@ -802,6 +843,17 @@ export const AppLayout: FC<AppLayoutProps> = ({
                 {children}
               </div>
             </div>
+
+            <footer class="app-footer">
+              <div class="app-footer-inner">
+                <div>© {year} {displayAppName}</div>
+                <div class="app-footer-links">
+                  <a href="/terms">Terms of Service</a>
+                  <a href="/privacy">Privacy Policy</a>
+                  <a href="/contact">Contact</a>
+                </div>
+              </div>
+            </footer>
           </main>
         </div>
 
