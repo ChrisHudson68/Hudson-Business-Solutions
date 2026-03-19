@@ -171,6 +171,12 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           line-height:1.7;
         }
 
+        .landing-value-grid{
+          display:grid;
+          grid-template-columns:repeat(3, minmax(0,1fr));
+          gap:16px;
+        }
+
         .landing-feature-grid{
           display:grid;
           grid-template-columns:repeat(3, minmax(0,1fr));
@@ -193,6 +199,39 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
         }
 
         .landing-feature-copy{
+          color:#64748B;
+          line-height:1.75;
+        }
+
+        .landing-trust{
+          background:#FFFFFF;
+          border:1px solid #E5EAF2;
+          border-radius:20px;
+          box-shadow:0 10px 24px rgba(15,23,42,0.06);
+          padding:24px;
+        }
+
+        .landing-trust-grid{
+          display:grid;
+          grid-template-columns:repeat(3, minmax(0,1fr));
+          gap:16px;
+          margin-top:16px;
+        }
+
+        .landing-trust-item{
+          border:1px solid #E5EAF2;
+          background:#F8FAFC;
+          border-radius:16px;
+          padding:18px;
+        }
+
+        .landing-trust-title{
+          font-weight:900;
+          color:#0F172A;
+          margin-bottom:8px;
+        }
+
+        .landing-trust-copy{
           color:#64748B;
           line-height:1.75;
         }
@@ -328,8 +367,14 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           font-weight:900;
           font-size:28px;
           color:#0F172A;
-          margin:0 0 18px;
+          margin:0 0 8px;
           letter-spacing:-0.03em;
+        }
+
+        .landing-section-copy{
+          color:#64748B;
+          line-height:1.8;
+          margin:0 0 18px;
         }
 
         .landing-step-grid{
@@ -362,6 +407,38 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
         }
 
         .landing-step-copy{
+          color:#64748B;
+          line-height:1.75;
+        }
+
+        .landing-faq{
+          background:#FFFFFF;
+          border:1px solid #E5EAF2;
+          border-radius:20px;
+          box-shadow:0 10px 24px rgba(15,23,42,0.06);
+          padding:24px;
+        }
+
+        .landing-faq-grid{
+          display:grid;
+          grid-template-columns:repeat(2, minmax(0,1fr));
+          gap:16px;
+        }
+
+        .landing-faq-item{
+          border:1px solid #E5EAF2;
+          border-radius:16px;
+          background:#F8FAFC;
+          padding:18px;
+        }
+
+        .landing-faq-question{
+          font-weight:900;
+          color:#0F172A;
+          margin-bottom:8px;
+        }
+
+        .landing-faq-answer{
           color:#64748B;
           line-height:1.75;
         }
@@ -399,8 +476,11 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
         }
 
         @media (max-width: 900px){
+          .landing-value-grid,
           .landing-feature-grid,
-          .landing-step-grid{
+          .landing-trust-grid,
+          .landing-step-grid,
+          .landing-faq-grid{
             grid-template-columns:1fr;
           }
 
@@ -437,18 +517,15 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
 
           .landing-brand-sub{
             font-size:12px;
-            line-height:1.4;
           }
 
           .landing-title{
             font-size:36px;
-            line-height:1.05;
             margin-bottom:12px;
           }
 
           .landing-copy{
             font-size:16px;
-            line-height:1.7;
             margin-bottom:18px;
           }
 
@@ -461,42 +538,24 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
             width:100%;
           }
 
-          .landing-tags{
-            gap:8px;
-          }
-
-          .landing-tags .badge{
-            width:100%;
-            justify-content:center;
-          }
-
           .landing-showcase{
             padding:16px;
-            border-radius:18px;
           }
 
           .landing-showcase-grid{
             grid-template-columns:1fr;
           }
 
-          .landing-stat{
-            padding:14px;
-          }
-
-          .landing-stat-value{
-            font-size:24px;
-          }
-
-          .landing-feature-card,
-          .landing-pricing,
-          .landing-steps{
-            padding:18px;
-          }
-
           .landing-section-title,
           .landing-pricing-title{
             font-size:24px;
-            margin-bottom:14px;
+          }
+
+          .landing-pricing-card,
+          .landing-steps,
+          .landing-trust,
+          .landing-faq{
+            padding:18px;
           }
 
           .landing-pricing-price-main{
@@ -504,12 +563,7 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           }
 
           .landing-bottom-title{
-            font-size:26px;
-          }
-
-          .landing-bottom-copy,
-          .landing-pricing-copy{
-            font-size:15px;
+            font-size:25px;
           }
         }
       `}</style>
@@ -517,128 +571,217 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
       <div class="landing-page">
         <section class="landing-hero">
           <div>
-            <div class="landing-eyebrow">Construction Operations Platform</div>
+            <div class="landing-eyebrow">Construction software built for real operations</div>
 
             <div class="landing-brand">
-              <img src={appLogo} alt={appName} />
+              <img src={appLogo} alt={`${appName} logo`} />
               <div>
                 <div class="landing-brand-title">{appName}</div>
-                <div class="landing-brand-sub">
-                  Construction finances, job costing, timesheets, invoicing, and profitability
-                </div>
+                <div class="landing-brand-sub">Job costing • Labor tracking • Invoicing • Reporting</div>
               </div>
             </div>
 
             <h1 class="landing-title">
-              Run your construction business from one clean workspace.
+              Run your construction business with cleaner numbers, faster workflows, and better visibility.
             </h1>
 
             <p class="landing-copy">
-              Hudson Business Solutions helps contractors track jobs, labor, expenses, invoices,
-              payments, and profitability in a tenant-based system built for real field and office workflows.
+              Hudson Business Solutions helps construction companies track jobs, labor, invoices, payments,
+              and profitability in one professional system. Replace disconnected spreadsheets and scattered
+              processes with a workspace built for owner-operators and growing teams.
             </p>
 
             <div class="landing-actions">
-              <a href="/signup" class="btn btn-primary">Get Started</a>
-              <a href="/pick-tenant" class="btn">Sign In</a>
+              <a href="/signup" class="btn btn-primary">Create Workspace</a>
+              <a href="/pick-tenant" class="btn">Find My Workspace</a>
+              <a href="/contact" class="btn">Contact Us</a>
             </div>
 
             <div class="landing-tags">
-              <span class="badge">Multi-tenant</span>
-              <span class="badge">Job Costing</span>
-              <span class="badge">Timesheets</span>
-              <span class="badge">Invoices</span>
-              <span class="badge">Payments</span>
-              <span class="badge">Profit Tracking</span>
+              <span class="badge">Multi-tenant SaaS</span>
+              <span class="badge">Cloud-based</span>
+              <span class="badge">Mobile-friendly</span>
+              <span class="badge">Construction-focused</span>
             </div>
           </div>
 
           <div class="landing-showcase">
             <div class="landing-showcase-grid">
               <div class="landing-stat">
-                <div class="landing-stat-label">Open Receivables</div>
-                <div class="landing-stat-value">$48,320</div>
-                <div class="landing-stat-sub">7 unpaid invoices</div>
+                <div class="landing-stat-label">Job Costing</div>
+                <div class="landing-stat-value">Clear</div>
+                <div class="landing-stat-sub">Track financial performance by job without juggling separate files.</div>
               </div>
 
               <div class="landing-stat">
-                <div class="landing-stat-label">Labor This Month</div>
-                <div class="landing-stat-value">$12,640</div>
-                <div class="landing-stat-sub">Tracked by timesheets</div>
+                <div class="landing-stat-label">Time Tracking</div>
+                <div class="landing-stat-value">Simple</div>
+                <div class="landing-stat-sub">Capture employee time and labor impact inside the same platform.</div>
               </div>
 
               <div class="landing-stat">
-                <div class="landing-stat-label">Active Jobs</div>
-                <div class="landing-stat-value">18</div>
-                <div class="landing-stat-sub">Across all crews</div>
+                <div class="landing-stat-label">Invoicing</div>
+                <div class="landing-stat-value">Faster</div>
+                <div class="landing-stat-sub">Generate invoices and monitor payments and receivables in one place.</div>
               </div>
 
               <div class="landing-stat">
-                <div class="landing-stat-label">Portfolio Profit</div>
-                <div class="landing-stat-value">$92,410</div>
-                <div class="landing-stat-sub">Income minus labor and expenses</div>
+                <div class="landing-stat-label">Reporting</div>
+                <div class="landing-stat-value">Actionable</div>
+                <div class="landing-stat-sub">See trends, profitability, and cash movement without manual reporting work.</div>
               </div>
             </div>
 
             <div class="landing-callout">
-              <div class="landing-callout-title">Built for the way contractors actually work</div>
+              <div class="landing-callout-title">Built for day-to-day business control</div>
               <div class="landing-callout-copy">
-                Track job budgets, incoming cash, outgoing costs, employee labor, and invoice
-                balances without living in spreadsheets or disconnected tools.
+                The goal is not more software to manage. The goal is a cleaner operating system for your company:
+                jobs, labor, billing, and financial visibility tied together in one place.
               </div>
             </div>
           </div>
         </section>
 
-        <section class="landing-feature-grid">
-          <div class="landing-feature-card">
-            <div class="landing-feature-title">Job Costing</div>
-            <div class="landing-feature-copy">
-              Monitor contract value, expenses, labor cost, retainage, and profitability by job.
+        <section>
+          <h2 class="landing-section-title">Why companies switch</h2>
+          <p class="landing-section-copy">
+            Most small construction teams do not need bloated enterprise software. They need dependable workflows,
+            easier billing, and a better view of what is happening across jobs and cash flow.
+          </p>
+
+          <div class="landing-value-grid">
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Less spreadsheet dependence</div>
+              <div class="landing-feature-copy">
+                Bring jobs, employees, invoices, expenses, and payments into one workspace instead of chasing information across files and messages.
+              </div>
+            </div>
+
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Better owner visibility</div>
+              <div class="landing-feature-copy">
+                See job profitability, receivables, labor cost impact, and financial trends without waiting for manual rollups.
+              </div>
+            </div>
+
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Cleaner day-to-day operations</div>
+              <div class="landing-feature-copy">
+                Give admins and managers a more consistent process for entering work, reviewing data, and keeping the business organized.
+              </div>
             </div>
           </div>
+        </section>
 
-          <div class="landing-feature-card">
-            <div class="landing-feature-title">Weekly Timesheets</div>
-            <div class="landing-feature-copy">
-              Log labor by employee and job with automatic labor cost calculation built in.
+        <section>
+          <h2 class="landing-section-title">Core platform capabilities</h2>
+          <p class="landing-section-copy">
+            Everything is centered around the workflows construction businesses actually use every week.
+          </p>
+
+          <div class="landing-feature-grid">
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Jobs and project finances</div>
+              <div class="landing-feature-copy">
+                Create jobs, record income and expenses, and monitor performance at the project level.
+              </div>
+            </div>
+
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Employees and labor tracking</div>
+              <div class="landing-feature-copy">
+                Manage employee records, track time entries, and keep labor visibility tied to your operational data.
+              </div>
+            </div>
+
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Invoices and payments</div>
+              <div class="landing-feature-copy">
+                Create invoices, record payments, and keep receivables organized so billing stays visible.
+              </div>
+            </div>
+
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Reports and trends</div>
+              <div class="landing-feature-copy">
+                Review cash flow, invoice aging, rankings, profitability, and trend reporting from inside the platform.
+              </div>
+            </div>
+
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Company setup and branding</div>
+              <div class="landing-feature-copy">
+                Configure company details, invoice defaults, and branding so your workspace feels production-ready from day one.
+              </div>
+            </div>
+
+            <div class="landing-feature-card">
+              <div class="landing-feature-title">Support and billing tools</div>
+              <div class="landing-feature-copy">
+                Access billing controls and in-app support workflows without leaving the platform.
+              </div>
             </div>
           </div>
+        </section>
 
-          <div class="landing-feature-card">
-            <div class="landing-feature-title">Invoices & Payments</div>
-            <div class="landing-feature-copy">
-              Create invoices, track collections, monitor overdue balances, and stay on top of receivables.
+        <section class="landing-trust">
+          <h2 class="landing-section-title">Professional from the start</h2>
+          <p class="landing-section-copy">
+            Hudson Business Solutions is designed to feel like a real business system, not a rough internal tool.
+          </p>
+
+          <div class="landing-trust-grid">
+            <div class="landing-trust-item">
+              <div class="landing-trust-title">Secure account-based access</div>
+              <div class="landing-trust-copy">
+                Each company operates in its own workspace with its own users, settings, and subscription status.
+              </div>
+            </div>
+
+            <div class="landing-trust-item">
+              <div class="landing-trust-title">Owner and manager visibility</div>
+              <div class="landing-trust-copy">
+                Built to support decision-making, not just data entry, with reporting and operational oversight built in.
+              </div>
+            </div>
+
+            <div class="landing-trust-item">
+              <div class="landing-trust-title">Support-ready platform</div>
+              <div class="landing-trust-copy">
+                Billing and support workflows are built directly into the product to help teams resolve issues quickly.
+              </div>
             </div>
           </div>
         </section>
 
         <section class="landing-pricing">
           <div class="landing-pricing-header">
-            <h2 class="landing-pricing-title">Simple, Transparent Pricing</h2>
+            <h2 class="landing-pricing-title">Simple launch pricing</h2>
             <p class="landing-pricing-copy">
-              Start with one professional plan designed for contractors who need job costing,
-              labor tracking, invoicing, reporting, and day-to-day financial visibility in one place.
+              Clear pricing helps reduce hesitation and makes it easier for companies to understand how to get started.
             </p>
           </div>
 
           <div class="landing-pricing-grid">
             <div class="landing-pricing-card">
-              <div class="landing-pricing-plan">Professional Plan</div>
+              <div style="text-align:center;">
+                <div class="landing-pricing-plan">Standard plan</div>
+              </div>
 
               <div class="landing-pricing-price">
                 <div class="landing-pricing-price-main">$49</div>
-                <div class="landing-pricing-price-sub">/ month per company</div>
+                <div class="landing-pricing-price-sub">/ month</div>
               </div>
 
               <div class="landing-pricing-description">
-                One flat monthly plan with the core tools needed to manage construction operations professionally.
+                A professional starting point for construction businesses that want better control over job costing,
+                labor tracking, invoicing, and reporting.
               </div>
 
               <div class="landing-pricing-features">
                 <div class="landing-pricing-feature">
                   <span class="landing-pricing-check">✔</span>
-                  <span>Unlimited users</span>
+                  <span>One company workspace with isolated data and settings</span>
                 </div>
                 <div class="landing-pricing-feature">
                   <span class="landing-pricing-check">✔</span>
@@ -646,19 +789,15 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
                 </div>
                 <div class="landing-pricing-feature">
                   <span class="landing-pricing-check">✔</span>
-                  <span>Employee timesheets and labor visibility</span>
+                  <span>Employee time tracking and labor visibility</span>
                 </div>
                 <div class="landing-pricing-feature">
                   <span class="landing-pricing-check">✔</span>
-                  <span>Invoices, payments, and receivables tracking</span>
+                  <span>Invoices, payments, and receivables visibility</span>
                 </div>
                 <div class="landing-pricing-feature">
                   <span class="landing-pricing-check">✔</span>
-                  <span>Reports and operational insights</span>
-                </div>
-                <div class="landing-pricing-feature">
-                  <span class="landing-pricing-check">✔</span>
-                  <span>Secure cloud hosting and support access</span>
+                  <span>Reports, dashboard visibility, and in-app support</span>
                 </div>
               </div>
 
@@ -667,52 +806,92 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
               </div>
 
               <div class="landing-pricing-note">
-                Pricing can be updated later as the platform grows, but this provides a clear and professional starting point for launch.
+                Start with a clear monthly plan and move your operations into a more organized system.
               </div>
             </div>
           </div>
         </section>
 
         <section class="landing-steps">
-          <h2 class="landing-section-title">How Hudson Business Solutions works</h2>
+          <h2 class="landing-section-title">How it works</h2>
+          <p class="landing-section-copy">
+            Getting started is straightforward and built around a clean first-run experience.
+          </p>
 
           <div class="landing-step-grid">
             <div class="landing-step">
               <div class="landing-step-number">1</div>
               <div class="landing-step-title">Create your workspace</div>
               <div class="landing-step-copy">
-                Set up your company, branding, invoice defaults, and admin account.
+                Set up your company, admin account, invoice defaults, and basic business details.
               </div>
             </div>
 
             <div class="landing-step">
               <div class="landing-step-number">2</div>
-              <div class="landing-step-title">Run daily operations</div>
+              <div class="landing-step-title">Add your operating data</div>
               <div class="landing-step-copy">
-                Track jobs, labor, costs, invoices, and collections inside one system built for your team.
+                Start with jobs, employees, and invoices so the platform can begin reflecting your real workflow.
               </div>
             </div>
 
             <div class="landing-step">
               <div class="landing-step-number">3</div>
-              <div class="landing-step-title">See the financial picture</div>
+              <div class="landing-step-title">Run and review</div>
               <div class="landing-step-copy">
-                Review profitability, receivables, and job performance without piecing together reports by hand.
+                Use dashboards and reports to track profitability, billing, labor, and financial movement more confidently.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="landing-faq">
+          <h2 class="landing-section-title">Common questions</h2>
+          <p class="landing-section-copy">
+            These are the questions most visitors usually need answered before signing up.
+          </p>
+
+          <div class="landing-faq-grid">
+            <div class="landing-faq-item">
+              <div class="landing-faq-question">Who is this built for?</div>
+              <div class="landing-faq-answer">
+                Hudson Business Solutions is designed for construction companies that want better financial and operational visibility without overly complex software.
+              </div>
+            </div>
+
+            <div class="landing-faq-item">
+              <div class="landing-faq-question">Do I get my own company workspace?</div>
+              <div class="landing-faq-answer">
+                Yes. Each company uses its own isolated workspace with its own users, settings, billing status, and business data.
+              </div>
+            </div>
+
+            <div class="landing-faq-item">
+              <div class="landing-faq-question">Can my team track labor and invoices in one place?</div>
+              <div class="landing-faq-answer">
+                Yes. The platform is designed to bring employees, time tracking, jobs, invoices, payments, and reporting together in one workflow.
+              </div>
+            </div>
+
+            <div class="landing-faq-item">
+              <div class="landing-faq-question">How do I get help if I run into an issue?</div>
+              <div class="landing-faq-answer">
+                Support and billing workflows are available inside the platform, and public contact information is also available before signup.
               </div>
             </div>
           </div>
         </section>
 
         <section class="landing-bottom">
-          <h2 class="landing-bottom-title">Built for owner-operators and growing construction teams</h2>
+          <h2 class="landing-bottom-title">A better operating system for your construction business</h2>
           <p class="landing-bottom-copy">
-            Whether you are managing a handful of jobs or scaling into a larger operation,
-            Hudson Business Solutions gives you a cleaner way to control job costing, labor tracking,
-            billing, and visibility across the business.
+            If you want cleaner job costing, better billing visibility, and a more professional workflow for your team,
+            Hudson Business Solutions gives you a strong place to start.
           </p>
 
           <div class="landing-actions" style="justify-content:center;">
             <a href="/signup" class="btn btn-primary">Create Workspace</a>
+            <a href="/contact" class="btn">Talk to Us</a>
             <a href="/pick-tenant" class="btn">Find My Workspace</a>
           </div>
         </section>
