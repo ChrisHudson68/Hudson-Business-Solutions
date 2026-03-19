@@ -6,6 +6,11 @@ import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { SupportPage } from '../pages/support/SupportPage.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 
+type SupportNotice = {
+  tone: 'good' | 'warn' | 'bad';
+  message: string;
+};
+
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
   return c.html(
     <AppLayout
@@ -34,31 +39,34 @@ function normalizePriority(value: unknown): 'low' | 'normal' | 'high' | 'critica
   return 'normal';
 }
 
-function resolveNotice(c: any): { success?: string; error?: string } {
+function resolveNotice(c: any): SupportNotice | undefined {
   const created = String(c.req.query('created') || '').trim().toLowerCase();
   const error = String(c.req.query('error') || '').trim().toLowerCase();
 
   if (created === '1') {
-    return { success: 'Your support ticket was submitted successfully.' };
+    return {
+      tone: 'good',
+      message: 'Your support request was submitted successfully. You can track updates below in Ticket History.',
+    };
   }
 
   if (error === 'subject-required') {
-    return { error: 'Subject is required.' };
+    return { tone: 'bad', message: 'Please enter a subject for your support request.' };
   }
 
   if (error === 'subject-too-long') {
-    return { error: 'Subject must be 140 characters or less.' };
+    return { tone: 'bad', message: 'Subject must be 140 characters or less.' };
   }
 
   if (error === 'message-required') {
-    return { error: 'Message is required.' };
+    return { tone: 'bad', message: 'Please enter a message describing the issue.' };
   }
 
   if (error === 'message-too-long') {
-    return { error: 'Message must be 5000 characters or less.' };
+    return { tone: 'bad', message: 'Message must be 5000 characters or less.' };
   }
 
-  return {};
+  return undefined;
 }
 
 function getSupportTickets(db: any, tenantId: number) {
@@ -120,12 +128,11 @@ supportRoutes.get('/support', loginRequired, (c) => {
 
   return renderApp(
     c,
-    'Support',
+    'Support Center',
     <SupportPage
       tickets={tickets}
       csrfToken={c.get('csrfToken')}
-      error={notice.error}
-      success={notice.success}
+      notice={notice}
     />,
   );
 });
@@ -148,11 +155,11 @@ supportRoutes.post('/support', loginRequired, async (c) => {
 
     return renderApp(
       c,
-      'Support',
+      'Support Center',
       <SupportPage
         tickets={tickets}
         csrfToken={c.get('csrfToken')}
-        error="Subject is required."
+        notice={{ tone: 'bad', message: 'Please enter a subject for your support request.' }}
         formData={{ subject, priority, message }}
       />,
       400,
@@ -165,11 +172,11 @@ supportRoutes.post('/support', loginRequired, async (c) => {
 
     return renderApp(
       c,
-      'Support',
+      'Support Center',
       <SupportPage
         tickets={tickets}
         csrfToken={c.get('csrfToken')}
-        error="Subject must be 140 characters or less."
+        notice={{ tone: 'bad', message: 'Subject must be 140 characters or less.' }}
         formData={{ subject, priority, message }}
       />,
       400,
@@ -182,11 +189,11 @@ supportRoutes.post('/support', loginRequired, async (c) => {
 
     return renderApp(
       c,
-      'Support',
+      'Support Center',
       <SupportPage
         tickets={tickets}
         csrfToken={c.get('csrfToken')}
-        error="Message is required."
+        notice={{ tone: 'bad', message: 'Please enter a message describing the issue.' }}
         formData={{ subject, priority, message }}
       />,
       400,
@@ -199,11 +206,11 @@ supportRoutes.post('/support', loginRequired, async (c) => {
 
     return renderApp(
       c,
-      'Support',
+      'Support Center',
       <SupportPage
         tickets={tickets}
         csrfToken={c.get('csrfToken')}
-        error="Message must be 5000 characters or less."
+        notice={{ tone: 'bad', message: 'Message must be 5000 characters or less.' }}
         formData={{ subject, priority, message }}
       />,
       400,
@@ -249,3 +256,5 @@ supportRoutes.post('/support', loginRequired, async (c) => {
 
   return c.redirect('/support?created=1');
 });
+
+export default supportRoutes;
