@@ -47,6 +47,16 @@ function buildTenantLoginUrl(subdomain: string, email?: string): string {
   return `${host}/login${emailQs}`;
 }
 
+function buildBaseAppUrl(path = '/'): string {
+  const env = getEnv();
+
+  if (env.baseDomain === 'localhost') {
+    return `http://localhost:${env.port}${path}`;
+  }
+
+  return `https://${env.baseDomain}${path}`;
+}
+
 function buildPlatformAdminTenantDetailUrl(tenantId: number): string {
   const env = getEnv();
 
@@ -202,6 +212,7 @@ authRoutes.get('/login', (c) => {
   }
 
   const prefillEmail = (c.req.query('email') || '').trim().toLowerCase();
+  const findWorkspaceUrl = buildBaseAppUrl('/pick-tenant');
 
   return c.html(
     renderPublicLayout(
@@ -209,6 +220,7 @@ authRoutes.get('/login', (c) => {
         prefillEmail={prefillEmail}
         csrfToken={c.get('csrfToken')}
         currentTenant={tenant}
+        findWorkspaceUrl={findWorkspaceUrl}
       />,
     ),
   );
@@ -240,6 +252,8 @@ authRoutes.post('/login', async (c) => {
   }
 
   if (error) {
+    const findWorkspaceUrl = buildBaseAppUrl('/pick-tenant');
+
     return c.html(
       renderPublicLayout(
         <LoginPage
@@ -247,6 +261,7 @@ authRoutes.post('/login', async (c) => {
           prefillEmail={email}
           csrfToken={c.get('csrfToken')}
           currentTenant={tenant}
+          findWorkspaceUrl={findWorkspaceUrl}
         />,
       ),
     );
@@ -257,6 +272,8 @@ authRoutes.post('/login', async (c) => {
     .get(row!.id, tenant.id) as { id: number; name: string; email: string; role: string } | undefined;
 
   if (!fullUser) {
+    const findWorkspaceUrl = buildBaseAppUrl('/pick-tenant');
+
     return c.html(
       renderPublicLayout(
         <LoginPage
@@ -264,6 +281,7 @@ authRoutes.post('/login', async (c) => {
           prefillEmail={email}
           csrfToken={c.get('csrfToken')}
           currentTenant={tenant}
+          findWorkspaceUrl={findWorkspaceUrl}
         />,
       ),
       401,
@@ -338,6 +356,7 @@ authRoutes.get('/impersonation/start', (c) => {
       impersonatedUserId: targetUser.id,
       impersonatedTenantId: tenant.id,
       startedAt,
+      supportReason: token.supportReason,
     },
   );
 
@@ -345,201 +364,254 @@ authRoutes.get('/impersonation/start', (c) => {
 
   logActivity(db, {
     tenantId: tenant.id,
-    actorUserId: null,
-    eventType: 'auth.impersonation_started',
+    actorUserId: targetUser.id,
+    eventType: 'auth.impersonation.start',
     entityType: 'user',
     entityId: targetUser.id,
-    description: `Platform admin ${token.platformAdminEmail} started impersonating ${targetUser.name}.`,
+    description: `Platform admin impersonation started for ${targetUser.name}.`,
     metadata: {
-      platform_admin_email: token.platformAdminEmail,
-      impersonated_user_id: targetUser.id,
       impersonated_user_email: targetUser.email,
       impersonated_user_role: targetUser.role,
-      started_at_unix: startedAt,
+      platform_admin_email: token.platformAdminEmail,
+      support_reason: token.supportReason,
+      started_at: startedAt,
     },
     ipAddress: resolveRequestIp(c),
   });
 
-  return c.redirect(token.redirectTo || '/dashboard');
+  return c.redirect('/dashboard');
 });
 
-authRoutes.get('/impersonation/stop', (c) => {
+authRoutes.get('/logout', (c) => {
+  const user = c.get('user');
   const tenant = c.get('tenant');
-  if (!tenant) {
-    return c.redirect('/pick-tenant');
-  }
 
-  const env = getEnv();
-  const cookie = getCookie(c, SESSION_COOKIE_NAME);
-  if (!cookie) {
-    return c.redirect('/login');
-  }
-
-  const session = getSessionUser(cookie, env.secretKey);
-  if (!session?.impersonation) {
-    return c.redirect('/dashboard');
-  }
-
-  const db = getDb();
-  const targetUser = db
-    .prepare('SELECT id, name, email, role, tenant_id FROM users WHERE id = ? LIMIT 1')
-    .get(session.userId) as { id: number; name: string; email: string; role: string; tenant_id: number } | undefined;
-
-  clearSessionCookie(c);
-
-  if (targetUser && targetUser.tenant_id === tenant.id) {
+  if (user && tenant) {
+    const db = getDb();
     logActivity(db, {
       tenantId: tenant.id,
-      actorUserId: null,
-      eventType: 'auth.impersonation_ended',
+      actorUserId: user.id,
+      eventType: 'auth.logout',
       entityType: 'user',
-      entityId: targetUser.id,
-      description: `Platform admin ${session.impersonation.platformAdminEmail} ended impersonation for ${targetUser.name}.`,
+      entityId: user.id,
+      description: `${user.name} signed out.`,
       metadata: {
-        platform_admin_email: session.impersonation.platformAdminEmail,
-        impersonated_user_id: targetUser.id,
-        impersonated_user_email: targetUser.email,
-        impersonated_user_role: targetUser.role,
+        email: user.email,
+        role: user.role,
       },
       ipAddress: resolveRequestIp(c),
     });
   }
 
-  return c.redirect(buildPlatformAdminTenantDetailUrl(session.impersonation.impersonatedTenantId));
-});
-
-authRoutes.get('/logout', (c) => {
   clearSessionCookie(c);
   return c.redirect('/login');
 });
 
 authRoutes.get('/signup', (c) => {
-  const env = getEnv();
+  const tenant = c.get('tenant');
+  if (tenant) {
+    return c.redirect('/dashboard');
+  }
 
-  const formData = {
-    company_name: '',
-    subdomain: '',
-    admin_name: '',
-    admin_email: '',
-    invite_code: '',
-  };
+  const env = getEnv();
+  const inviteOnly = !!env.signupInviteCode;
 
   return c.html(
     renderPublicLayout(
       <SignupPage
-        formData={formData}
         csrfToken={c.get('csrfToken')}
-        inviteOnly={!!env.launchCode}
+        formData={{}}
+        inviteOnly={inviteOnly}
       />,
     ),
   );
 });
 
 authRoutes.post('/signup', async (c) => {
+  const tenant = c.get('tenant');
+  if (tenant) {
+    return c.redirect('/dashboard');
+  }
+
   const env = getEnv();
+  const inviteOnly = !!env.signupInviteCode;
+
   const body = await c.req.parseBody();
-
-  const company_name = (typeof body.company_name === 'string' ? body.company_name : '').trim();
+  const companyName = (typeof body.company_name === 'string' ? body.company_name : '').trim();
   const subdomain = (typeof body.subdomain === 'string' ? body.subdomain : '').trim().toLowerCase();
-  const admin_name = (typeof body.admin_name === 'string' ? body.admin_name : '').trim();
-  const admin_email = (typeof body.admin_email === 'string' ? body.admin_email : '').trim().toLowerCase();
+  const adminName = (typeof body.admin_name === 'string' ? body.admin_name : '').trim();
+  const adminEmail = (typeof body.admin_email === 'string' ? body.admin_email : '').trim().toLowerCase();
   const password = typeof body.password === 'string' ? body.password : '';
-  const invite_code = (typeof body.invite_code === 'string' ? body.invite_code : '').trim();
+  const inviteCode = (typeof body.invite_code === 'string' ? body.invite_code : '').trim();
 
-  const formData = { company_name, subdomain, admin_name, admin_email, invite_code };
+  const formData = {
+    company_name: companyName,
+    subdomain,
+    admin_name: adminName,
+    admin_email: adminEmail,
+    invite_code: inviteCode,
+  };
 
-  const renderError = (error: string) =>
-    c.html(
+  let error: string | undefined;
+
+  if (!companyName) error = 'Company name is required.';
+  else if (!isValidSubdomain(subdomain)) error = 'Please choose a valid subdomain.';
+  else if (!adminName) error = 'Admin name is required.';
+  else if (!isValidEmail(adminEmail)) error = 'Please enter a valid admin email.';
+  else if (!password || password.length < 8) error = 'Password must be at least 8 characters.';
+  else if (inviteOnly && inviteCode !== env.signupInviteCode) error = 'Invite code is invalid.';
+
+  const db = getDb();
+
+  if (!error) {
+    const existingTenant = tenantQueries.findBySubdomain(db, subdomain);
+    if (existingTenant) {
+      error = 'That subdomain is already in use.';
+    }
+  }
+
+  if (!error) {
+    const existingUser = db
+      .prepare('SELECT id FROM users WHERE email = ? LIMIT 1')
+      .get(adminEmail) as { id: number } | undefined;
+
+    if (existingUser) {
+      error = 'That email address is already in use.';
+    }
+  }
+
+  if (error) {
+    return c.html(
       renderPublicLayout(
         <SignupPage
           error={error}
           formData={formData}
           csrfToken={c.get('csrfToken')}
-          inviteOnly={!!env.launchCode}
+          inviteOnly={inviteOnly}
         />,
       ),
       400,
     );
-
-  if (!company_name || !subdomain || !admin_name || !admin_email || !password) {
-    return renderError('All fields are required.');
   }
 
-  if (env.launchCode && invite_code !== env.launchCode) {
-    return renderError('Invalid invite code.');
+  const passwordHash = hashPassword(password);
+
+  const tenantInsert = db.prepare(`
+    INSERT INTO tenants (
+      name,
+      subdomain,
+      billing_status,
+      billing_plan,
+      billing_trial_ends_at,
+      billing_exempt,
+      created_at
+    ) VALUES (?, ?, 'trialing', 'standard', ?, 0, CURRENT_TIMESTAMP)
+  `).run(companyName, subdomain, buildTenantTrialEndDate());
+
+  const tenantId = Number(tenantInsert.lastInsertRowid);
+
+  const userInsert = db.prepare(`
+    INSERT INTO users (
+      tenant_id,
+      name,
+      email,
+      password_hash,
+      role,
+      active,
+      created_at
+    ) VALUES (?, ?, ?, ?, 'Admin', 1, CURRENT_TIMESTAMP)
+  `).run(tenantId, adminName, adminEmail, passwordHash);
+
+  const userId = Number(userInsert.lastInsertRowid);
+
+  db.prepare(`
+    INSERT INTO settings (
+      tenant_id,
+      key,
+      value,
+      created_at,
+      updated_at
+    ) VALUES
+      (?, 'company_name', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+      (?, 'invoice_prefix', 'INV', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `).run(tenantId, companyName, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: userId,
+    eventType: 'auth.signup',
+    entityType: 'tenant',
+    entityId: tenantId,
+    description: `${companyName} workspace was created.`,
+    metadata: {
+      subdomain,
+      admin_name: adminName,
+      admin_email: adminEmail,
+      billing_status: 'trialing',
+      billing_plan: 'standard',
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  const adminUrl = buildPlatformAdminTenantDetailUrl(tenantId);
+  console.log(`[signup] New tenant created: ${companyName} (${subdomain}) -> ${adminUrl}`);
+
+  return c.redirect(buildTenantLoginUrl(subdomain, adminEmail));
+});
+
+authRoutes.use('*', async (c, next) => {
+  const cookie = getCookie(c, SESSION_COOKIE_NAME);
+  if (!cookie) {
+    c.set('user', null);
+    return next();
   }
 
-  if (!isValidSubdomain(subdomain)) {
-    return renderError('Subdomain can only contain lowercase letters, numbers, hyphens, or underscores.');
+  const env = getEnv();
+  const session = getSessionUser(cookie, env.secretKey);
+
+  if (!session || typeof session.userId !== 'number') {
+    clearSessionCookie(c);
+    c.set('user', null);
+    return next();
   }
 
-  if (!isValidEmail(admin_email)) {
-    return renderError('Please enter a valid admin email address.');
-  }
-
-  if (password.length < 8) {
-    return renderError('Password must be at least 8 characters long.');
+  const tenant = c.get('tenant');
+  if (!tenant) {
+    clearSessionCookie(c);
+    c.set('user', null);
+    return c.redirect('/pick-tenant');
   }
 
   const db = getDb();
+  const user = db
+    .prepare('SELECT id, tenant_id, name, email, role, active FROM users WHERE id = ? LIMIT 1')
+    .get(session.userId) as
+    | { id: number; tenant_id: number; name: string; email: string; role: string; active: number }
+    | undefined;
 
-  const existingTenant = tenantQueries.findBySubdomain(db, subdomain);
-  if (existingTenant) {
-    return renderError('That subdomain is already taken.');
+  if (!user || user.active !== 1 || user.tenant_id !== tenant.id) {
+    clearSessionCookie(c);
+    c.set('user', null);
+    return c.redirect('/login');
   }
 
-  try {
-    const createTenantAndAdmin = db.transaction(() => {
-      const tenantId = tenantQueries.create(db, {
-        name: company_name,
-        subdomain,
-        billing_plan: 'standard',
-        billing_status: 'trialing',
-        billing_trial_ends_at: buildTenantTrialEndDate(),
-      });
+  c.set('user', {
+    id: user.id,
+    tenant_id: user.tenant_id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    isImpersonating: !!session.platformAdminEmail,
+    impersonationContext: session.platformAdminEmail ? {
+      platformAdminEmail: session.platformAdminEmail,
+      impersonatedUserId: session.impersonatedUserId ?? user.id,
+      impersonatedTenantId: session.impersonatedTenantId ?? tenant.id,
+      startedAt: session.startedAt ?? null,
+      supportReason: session.supportReason ?? null,
+    } : null,
+  });
 
-      const adminUserId = userQueries.create(db, {
-        name: admin_name,
-        email: admin_email,
-        password_hash: hashPassword(password),
-        role: 'Admin',
-        tenant_id: tenantId,
-      });
-
-      logActivity(db, {
-        tenantId,
-        actorUserId: adminUserId,
-        eventType: 'tenant.signup',
-        entityType: 'tenant',
-        entityId: tenantId,
-        description: `${company_name} was created with ${admin_name} as the initial admin.`,
-        metadata: {
-          subdomain,
-          admin_email,
-        },
-        ipAddress: resolveRequestIp(c),
-      });
-
-      return tenantId;
-    });
-
-    createTenantAndAdmin();
-  } catch (error: any) {
-    const message = String(error?.message || '');
-
-    if (message.includes('users.tenant_id, users.email') || message.includes('idx_users_tenant_email_unique')) {
-      return renderError('That admin email is already in use for this company.');
-    }
-
-    if (message.includes('users.email')) {
-      return renderError(
-        'That admin email is already being used elsewhere in the platform. Apply the tenant-scoped email migration before creating more tenants.',
-      );
-    }
-
-    console.error('Signup failed:', error);
-    return renderError('Signup could not be completed right now. Please try again.');
-  }
-
-  return c.redirect(buildTenantLoginUrl(subdomain, admin_email));
+  return next();
 });
+
+export default authRoutes;
