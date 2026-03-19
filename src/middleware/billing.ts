@@ -31,6 +31,8 @@ export const billingRequired = createMiddleware(async (c, next) => {
     billing_status: tenant.billing_status,
     billing_trial_ends_at: tenant.billing_trial_ends_at,
     billing_grace_ends_at: tenant.billing_grace_ends_at,
+    billing_state: tenant.billing_state || null,
+    billing_grace_until: tenant.billing_grace_until || null,
   });
 
   if (access.allowed) {

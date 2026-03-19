@@ -1,8 +1,12 @@
+import { resolveEffectiveBillingState } from './billing-access.js';
+
 export type BillingBannerTenantLike = {
   billing_exempt?: number;
   billing_status?: string;
   billing_trial_ends_at?: string | null;
   billing_grace_ends_at?: string | null;
+  billing_state?: string | null;
+  billing_grace_until?: string | null;
 };
 
 export type BillingBanner = {
@@ -15,7 +19,8 @@ function parseDate(value: string | null | undefined): Date | null {
   const raw = String(value || '').trim();
   if (!raw) return null;
 
-  const parsed = new Date(raw.includes('T') ? raw : `${raw}T23:59:59Z`);
+  const normalized = raw.includes('T') ? raw : `${raw.replace(' ', 'T')}Z`;
+  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return null;
 
   return parsed;
@@ -41,17 +46,22 @@ function formatDate(value: string | null | undefined): string {
 
 export function getBillingBanner(tenant: BillingBannerTenantLike | null | undefined): BillingBanner | null {
   if (!tenant) return null;
-  if (Number(tenant.billing_exempt || 0) === 1) return null;
 
-  const status = String(tenant.billing_status || 'trialing').trim().toLowerCase();
+  const effective = resolveEffectiveBillingState({
+    billing_exempt: Number(tenant.billing_exempt || 0),
+    billing_status: String(tenant.billing_status || 'trialing'),
+    billing_trial_ends_at: tenant.billing_trial_ends_at || null,
+    billing_grace_ends_at: tenant.billing_grace_ends_at || null,
+    billing_state: tenant.billing_state || null,
+    billing_grace_until: tenant.billing_grace_until || null,
+  });
 
-  if (status === 'internal' || status === 'active') {
+  if (effective === 'exempt' || effective === 'internal' || effective === 'active') {
     return null;
   }
 
-  if (status === 'trialing') {
+  if (effective === 'trialing') {
     const remaining = daysUntil(tenant.billing_trial_ends_at);
-
     if (remaining === null) return null;
 
     if (remaining < 0) {
@@ -73,14 +83,14 @@ export function getBillingBanner(tenant: BillingBannerTenantLike | null | undefi
     return null;
   }
 
-  if (status === 'past_due') {
-    const remaining = daysUntil(tenant.billing_grace_ends_at);
+  if (effective === 'past_due') {
+    const remaining = daysUntil(tenant.billing_grace_until);
 
     if (remaining === null) {
       return {
         tone: 'warn',
         title: 'Payment past due',
-        message: 'Your workspace has a past-due payment. Update billing to avoid interruption.',
+        message: 'This workspace is marked past due. Update billing to avoid interruption.',
       };
     }
 
@@ -88,18 +98,44 @@ export function getBillingBanner(tenant: BillingBannerTenantLike | null | undefi
       return {
         tone: 'bad',
         title: 'Grace period expired',
-        message: 'Your billing grace period has ended. Update billing to restore access.',
+        message: 'The billing grace period has expired. Update billing now to avoid suspension.',
       };
     }
 
     return {
       tone: remaining <= 3 ? 'bad' : 'warn',
       title: `Payment past due — ${remaining} day${remaining === 1 ? '' : 's'} left`,
-      message: `Your grace period ends on ${formatDate(tenant.billing_grace_ends_at)}. Update billing to avoid interruption.`,
+      message: `The current billing grace window ends on ${formatDate(tenant.billing_grace_until)}. Update billing to avoid suspension.`,
     };
   }
 
-  if (status === 'canceled') {
+  if (effective === 'grace_period') {
+    const remaining = daysUntil(tenant.billing_grace_until);
+
+    if (remaining === null) {
+      return {
+        tone: 'warn',
+        title: 'Grace period active',
+        message: 'This workspace is in a temporary grace period. Update billing before access is restricted.',
+      };
+    }
+
+    if (remaining < 0) {
+      return {
+        tone: 'bad',
+        title: 'Grace period expired',
+        message: 'This workspace grace period has expired. Update billing now to restore access.',
+      };
+    }
+
+    return {
+      tone: remaining <= 3 ? 'bad' : 'warn',
+      title: `Grace period — ${remaining} day${remaining === 1 ? '' : 's'} left`,
+      message: `This workspace grace period ends on ${formatDate(tenant.billing_grace_until)}. Update billing before access is restricted.`,
+    };
+  }
+
+  if (effective === 'canceled') {
     return {
       tone: 'bad',
       title: 'Subscription canceled',
@@ -107,11 +143,11 @@ export function getBillingBanner(tenant: BillingBannerTenantLike | null | undefi
     };
   }
 
-  if (status === 'incomplete') {
+  if (effective === 'suspended') {
     return {
-      tone: 'warn',
-      title: 'Billing setup incomplete',
-      message: 'Billing setup is incomplete. Finish checkout to continue using the workspace without interruption.',
+      tone: 'bad',
+      title: 'Workspace suspended',
+      message: 'This workspace has been suspended for billing reasons. Only billing recovery actions remain available.',
     };
   }
 

@@ -1,4 +1,5 @@
 import type { FC } from 'hono/jsx';
+import { getBillingAccess, resolveEffectiveBillingState } from '../../services/billing-access.js';
 
 type BillingTenant = {
   name: string;
@@ -12,6 +13,10 @@ type BillingTenant = {
   billing_subscription_id: string | null;
   billing_subscription_status: string | null;
   billing_updated_at: string | null;
+  billing_state?: string | null;
+  billing_grace_until?: string | null;
+  billing_override_reason?: string | null;
+  billing_overridden_at?: string | null;
 };
 
 type BillingNotice = {
@@ -23,7 +28,6 @@ interface BillingPageProps {
   tenant: BillingTenant;
   csrfToken: string;
   currentUserRole: string;
-  canManageBilling?: boolean;
   stripeEnabled: boolean;
   stripeModeLabel: string;
   stripePortalEnabled: boolean;
@@ -80,6 +84,14 @@ function toneStyles(tone: BillingNotice['tone']): string {
   }
 }
 
+function stateBadgeClass(state: string): string {
+  const value = String(state || '').trim().toLowerCase();
+  if (value === 'active' || value === 'internal' || value === 'billing_exempt') return 'badge badge-good';
+  if (value === 'trialing' || value === 'past_due' || value === 'grace_period') return 'badge badge-warn';
+  if (value === 'suspended' || value === 'canceled') return 'badge badge-bad';
+  return 'badge';
+}
+
 export const BillingPage: FC<BillingPageProps> = ({
   tenant,
   csrfToken,
@@ -89,12 +101,30 @@ export const BillingPage: FC<BillingPageProps> = ({
   stripePortalEnabled,
   stripePlanLabel,
   notice,
-  canManageBilling,
 }) => {
   const trialDays = daysRemaining(tenant.billing_trial_ends_at);
-  const graceDays = daysRemaining(tenant.billing_grace_ends_at);
+  const graceDays = daysRemaining(tenant.billing_grace_until || tenant.billing_grace_ends_at);
   const planLabel = tenant.billing_plan || 'standard';
+  const isAdmin = currentUserRole === 'Admin';
   const hasCustomer = !!tenant.billing_customer_id;
+  const effectiveState = resolveEffectiveBillingState({
+    billing_exempt: tenant.billing_exempt,
+    billing_status: tenant.billing_status,
+    billing_trial_ends_at: tenant.billing_trial_ends_at,
+    billing_grace_ends_at: tenant.billing_grace_ends_at,
+    billing_state: tenant.billing_state || null,
+    billing_grace_until: tenant.billing_grace_until || null,
+  });
+  const access = getBillingAccess({
+    billing_exempt: tenant.billing_exempt,
+    billing_status: tenant.billing_status,
+    billing_trial_ends_at: tenant.billing_trial_ends_at,
+    billing_grace_ends_at: tenant.billing_grace_ends_at,
+    billing_state: tenant.billing_state || null,
+    billing_grace_until: tenant.billing_grace_until || null,
+  });
+  const legacyDisplay = tenant.billing_exempt ? 'internal' : tenant.billing_status;
+  const advancedDisplay = effectiveState === 'exempt' ? 'billing_exempt' : effectiveState;
 
   return (
     <div>
@@ -102,7 +132,7 @@ export const BillingPage: FC<BillingPageProps> = ({
         <div>
           <h1>Billing</h1>
           <p>
-            Manage workspace billing, start Stripe checkout, and monitor webhook-synced subscription state.
+            Manage workspace billing, review the advanced enforcement state, and recover access when billing changes.
           </p>
         </div>
       </div>
@@ -124,13 +154,13 @@ export const BillingPage: FC<BillingPageProps> = ({
 
         <div class="card">
           <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">
-            Billing Status
+            Effective Access
           </div>
           <div style="font-size:24px; font-weight:900; margin-top:8px;">
-            {tenant.billing_exempt ? 'Exempt' : humanStatus(tenant.billing_status)}
+            {access.allowed ? 'Allowed' : 'Restricted'}
           </div>
           <div class="muted" style="margin-top:6px;">
-            Plan: {humanStatus(planLabel)}
+            Advanced state: {humanStatus(advancedDisplay)}
           </div>
         </div>
 
@@ -151,9 +181,7 @@ export const BillingPage: FC<BillingPageProps> = ({
 
           <div style="display:grid; gap:10px;">
             <div>
-              <span class={tenant.billing_exempt ? 'badge badge-good' : 'badge'}>
-                {tenant.billing_exempt ? 'Billing Exempt' : humanStatus(tenant.billing_status)}
-              </span>
+              <span class={stateBadgeClass(advancedDisplay)}>{humanStatus(advancedDisplay)}</span>
             </div>
 
             <div class="muted">
@@ -162,12 +190,16 @@ export const BillingPage: FC<BillingPageProps> = ({
             </div>
 
             <div class="muted">
-              Grace ends: <b style="color:#0F172A;">{formatDateTime(tenant.billing_grace_ends_at)}</b>
+              Grace until: <b style="color:#0F172A;">{formatDateTime(tenant.billing_grace_until || tenant.billing_grace_ends_at)}</b>
               {graceDays !== null ? ` (${graceDays} day${graceDays === 1 ? '' : 's'} remaining)` : ''}
             </div>
 
             <div class="muted">
               Last billing update: <b style="color:#0F172A;">{formatDateTime(tenant.billing_updated_at)}</b>
+            </div>
+
+            <div class="muted">
+              Override applied: <b style="color:#0F172A;">{formatDateTime(tenant.billing_overridden_at)}</b>
             </div>
           </div>
         </div>
@@ -177,8 +209,7 @@ export const BillingPage: FC<BillingPageProps> = ({
 
           <div style="display:grid; gap:12px;">
             <div class="muted">
-              Webhooks are now intended to keep this billing record synced automatically after checkout,
-              renewals, payment failures, and cancellations.
+              Webhooks keep the legacy billing record synced automatically after checkout, renewals, payment failures, and cancellations.
             </div>
 
             <div class="muted">
@@ -186,7 +217,7 @@ export const BillingPage: FC<BillingPageProps> = ({
               at <b style="color:#0F172A;">{stripePlanLabel}</b>
             </div>
 
-            {!canManageBilling ? (
+            {!isAdmin ? (
               <div class="card" style="padding:12px; background:#F8FAFC;">
                 Only workspace admins can start checkout or open the billing portal.
               </div>
@@ -222,22 +253,42 @@ export const BillingPage: FC<BillingPageProps> = ({
       </div>
 
       <div class="card" style="margin-top:14px;">
-        <h3 style="margin-top:0;">Current stored billing fields</h3>
+        <h3 style="margin-top:0;">Legacy vs advanced billing</h3>
 
         <div class="table-wrap">
           <table>
             <tbody>
               <tr>
-                <th>Billing Exempt</th>
+                <th>Legacy Billing Exempt</th>
                 <td>{tenant.billing_exempt ? 'Yes' : 'No'}</td>
+              </tr>
+              <tr>
+                <th>Legacy Billing Status</th>
+                <td>{tenant.billing_status}</td>
+              </tr>
+              <tr>
+                <th>Advanced Billing State</th>
+                <td>{tenant.billing_state || 'Not set'}</td>
+              </tr>
+              <tr>
+                <th>Advanced Grace Until</th>
+                <td>{tenant.billing_grace_until || 'Not set'}</td>
+              </tr>
+              <tr>
+                <th>Override Reason</th>
+                <td>{tenant.billing_override_reason || 'Not set'}</td>
+              </tr>
+              <tr>
+                <th>Effective Access Decision</th>
+                <td>{access.allowed ? 'Allowed' : 'Restricted'}</td>
+              </tr>
+              <tr>
+                <th>Effective Access State</th>
+                <td>{advancedDisplay}</td>
               </tr>
               <tr>
                 <th>Billing Plan</th>
                 <td>{tenant.billing_plan || 'standard'}</td>
-              </tr>
-              <tr>
-                <th>Billing Status</th>
-                <td>{tenant.billing_status}</td>
               </tr>
               <tr>
                 <th>Stripe Customer ID</th>
@@ -254,16 +305,6 @@ export const BillingPage: FC<BillingPageProps> = ({
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div class="card" style="margin-top:14px;">
-        <h3 style="margin-top:0;">Webhook-driven sync</h3>
-        <ol style="margin:0 0 0 18px; padding:0; line-height:1.8; color:#334155;">
-          <li>Checkout creates or reuses one Stripe customer per tenant.</li>
-          <li>Stripe sends subscription and invoice events to your webhook endpoint.</li>
-          <li>Your app updates the tenant billing record in SQLite.</li>
-          <li>Your billing middleware reads the local tenant record to decide access.</li>
-        </ol>
       </div>
     </div>
   );

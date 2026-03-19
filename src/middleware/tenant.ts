@@ -13,6 +13,8 @@ export type TenantVariables = {
         billing_plan: string | null;
         billing_trial_ends_at: string | null;
         billing_grace_ends_at: string | null;
+        billing_state?: string | null;
+        billing_grace_until?: string | null;
       }
     | null;
   subdomain: string | null;
@@ -46,7 +48,8 @@ export const tenantMiddleware = createMiddleware<{ Variables: TenantVariables }>
         .prepare(
           `SELECT id, name, subdomain, logo_path,
                   billing_exempt, billing_status, billing_plan,
-                  billing_trial_ends_at, billing_grace_ends_at
+                  billing_trial_ends_at, billing_grace_ends_at,
+                  billing_state, billing_grace_until
            FROM tenants WHERE subdomain = ?`,
         )
         .get(subdomain) as
@@ -60,6 +63,8 @@ export const tenantMiddleware = createMiddleware<{ Variables: TenantVariables }>
             billing_plan: string | null;
             billing_trial_ends_at: string | null;
             billing_grace_ends_at: string | null;
+            billing_state: string | null;
+            billing_grace_until: string | null;
           }
         | undefined;
 
@@ -74,6 +79,8 @@ export const tenantMiddleware = createMiddleware<{ Variables: TenantVariables }>
           billing_plan: row.billing_plan || null,
           billing_trial_ends_at: row.billing_trial_ends_at || null,
           billing_grace_ends_at: row.billing_grace_ends_at || null,
+          billing_state: row.billing_state || null,
+          billing_grace_until: row.billing_grace_until || null,
         });
       }
     }

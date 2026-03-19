@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
 import * as tenantQueries from '../db/queries/tenants.js';
-import { permissionRequired, userHasPermission } from '../middleware/auth.js';
+import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { BillingPage } from '../pages/billing/BillingPage.js';
 import { getEnv } from '../config/env.js';
@@ -56,7 +56,9 @@ function resolveBlockedMessage(reason: string | undefined): string | null {
     case 'trial-ended':
       return 'This workspace trial has ended. Start billing to restore full access.';
     case 'grace-ended':
-      return 'This workspace is past due and the grace period has ended. A valid subscription is required.';
+      return 'This workspace grace period has ended. Update billing now to restore access.';
+    case 'workspace-suspended':
+      return 'This workspace has been suspended for billing reasons. Only billing recovery actions remain available.';
     case 'subscription-canceled':
       return 'This workspace subscription has been canceled. Restart billing to continue access.';
     case 'payment-required':
@@ -150,7 +152,7 @@ function sanitizeStripeMessage(message: string): string {
 
 export const billingRoutes = new Hono<AppEnv>();
 
-billingRoutes.get('/billing', permissionRequired('billing.view'), (c) => {
+billingRoutes.get('/billing', loginRequired, (c) => {
   const tenant = c.get('tenant');
   const user = c.get('user');
   if (!tenant || !user) return c.redirect('/login');
@@ -177,13 +179,12 @@ billingRoutes.get('/billing', permissionRequired('billing.view'), (c) => {
       stripePortalEnabled={isStripePortalEnabled()}
       stripePlanLabel={getStripePlanLabel()}
       notice={notice}
-      canManageBilling={userHasPermission(user, 'billing.manage')}
     />,
     notice?.tone === 'bad' ? 402 : 200,
   );
 });
 
-billingRoutes.post('/billing/checkout', permissionRequired('billing.manage'), async (c) => {
+billingRoutes.post('/billing/checkout', roleRequired('Admin'), async (c) => {
   const tenant = c.get('tenant');
   const user = c.get('user');
   if (!tenant || !user) return c.redirect('/login');
@@ -201,7 +202,7 @@ billingRoutes.post('/billing/checkout', permissionRequired('billing.manage'), as
     return c.text('Tenant not found', 404);
   }
 
-  if (Number(billing.billing_exempt || 0) === 1) {
+  if (Number(billing.billing_exempt || 0) === 1 || billing.billing_state === 'billing_exempt') {
     return c.redirect('/billing?error=exempt-workspace');
   }
 
@@ -274,7 +275,7 @@ billingRoutes.post('/billing/checkout', permissionRequired('billing.manage'), as
   }
 });
 
-billingRoutes.post('/billing/portal', permissionRequired('billing.manage'), async (c) => {
+billingRoutes.post('/billing/portal', roleRequired('Admin'), async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 

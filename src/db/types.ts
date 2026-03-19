@@ -6,6 +6,16 @@ export type BillingStatus =
   | 'internal'
   | 'incomplete';
 
+export type AdvancedBillingState =
+  | 'trialing'
+  | 'active'
+  | 'past_due'
+  | 'grace_period'
+  | 'suspended'
+  | 'canceled'
+  | 'internal'
+  | 'billing_exempt';
+
 export interface Tenant {
   id: number;
   name: string;
@@ -26,6 +36,11 @@ export interface Tenant {
   billing_subscription_id: string | null;
   billing_subscription_status: string | null;
   billing_updated_at: string | null;
+  billing_state?: AdvancedBillingState | null;
+  billing_grace_until?: string | null;
+  billing_override_reason?: string | null;
+  billing_overridden_by_user_id?: number | null;
+  billing_overridden_at?: string | null;
   created_at: string;
 }
 
@@ -50,8 +65,6 @@ export interface Job {
   start_date: string | null;
   status: string | null;
   tenant_id: number;
-  archived_at: string | null;
-  archived_by_user_id: number | null;
 }
 
 export interface Income {
@@ -61,8 +74,6 @@ export interface Income {
   date: string | null;
   description: string | null;
   tenant_id: number;
-  archived_at: string | null;
-  archived_by_user_id: number | null;
 }
 
 export interface Expense {
@@ -74,8 +85,6 @@ export interface Expense {
   date: string | null;
   receipt_filename: string | null;
   tenant_id: number;
-  archived_at: string | null;
-  archived_by_user_id: number | null;
 }
 
 export interface Employee {
@@ -86,8 +95,6 @@ export interface Employee {
   annual_salary: number | null;
   active: number;
   tenant_id: number;
-  archived_at: string | null;
-  archived_by_user_id: number | null;
 }
 
 export type TimeEntryApprovalStatus = 'approved' | 'pending_edit';
@@ -122,8 +129,6 @@ export interface Invoice {
   status: string;
   notes: string | null;
   tenant_id: number;
-  archived_at: string | null;
-  archived_by_user_id: number | null;
 }
 
 export interface Payment {
@@ -134,8 +139,6 @@ export interface Payment {
   method: string | null;
   reference: string | null;
   tenant_id: number;
-  archived_at: string | null;
-  archived_by_user_id: number | null;
 }
 
 export interface JobWithFinancials extends Job {
