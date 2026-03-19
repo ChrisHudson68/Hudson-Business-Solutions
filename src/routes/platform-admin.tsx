@@ -21,6 +21,16 @@ import { AdminTenantsPage } from '../pages/admin/AdminTenantsPage.js';
 import { AdminTenantDetailPage } from '../pages/admin/AdminTenantDetailPage.js';
 import { AdminActivityPage } from '../pages/admin/AdminActivityPage.js';
 
+type AdvancedBillingState =
+  | 'trialing'
+  | 'active'
+  | 'past_due'
+  | 'grace_period'
+  | 'suspended'
+  | 'canceled'
+  | 'internal'
+  | 'billing_exempt';
+
 function renderPublicLayout(children: any) {
   const env = getEnv();
 
@@ -145,6 +155,24 @@ function normalizeStatusFilter(value: string | undefined | null): string {
   return '';
 }
 
+function normalizeAdvancedBillingState(value: string | undefined | null): AdvancedBillingState | null {
+  const normalized = String(value || '').trim().toLowerCase();
+
+  switch (normalized) {
+    case 'trialing':
+    case 'active':
+    case 'past_due':
+    case 'grace_period':
+    case 'suspended':
+    case 'canceled':
+    case 'internal':
+    case 'billing_exempt':
+      return normalized;
+    default:
+      return null;
+  }
+}
+
 function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string } | undefined {
   const updated = String(c.req.query('updated') || '').trim().toLowerCase();
   const error = String(c.req.query('error') || '').trim().toLowerCase();
@@ -164,6 +192,9 @@ function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string
   if (updated === 'grace') {
     return { tone: 'good', message: 'Tenant grace period was extended by 7 days.' };
   }
+  if (updated === 'override') {
+    return { tone: 'good', message: 'Advanced billing override was applied and logged.' };
+  }
   if (updated === 'impersonation-started') {
     return { tone: 'good', message: 'Impersonation session started in the tenant workspace.' };
   }
@@ -174,6 +205,12 @@ function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string
   if (error === 'invalid-status') {
     return { tone: 'bad', message: 'That billing status is not allowed from the admin portal.' };
   }
+  if (error === 'invalid-advanced-state') {
+    return { tone: 'bad', message: 'That advanced billing state is not allowed.' };
+  }
+  if (error === 'reason-too-long') {
+    return { tone: 'bad', message: 'Billing override reason must be 300 characters or less.' };
+  }
   if (error === 'user-not-found') {
     return { tone: 'bad', message: 'That tenant user was not found or cannot be impersonated.' };
   }
@@ -183,7 +220,7 @@ function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string
   if (error === 'admin-user-blocked') {
     return { tone: 'bad', message: 'Platform admin impersonation of tenant Admin users is blocked in Phase 3B for safety.' };
   }
-  if (error === 'reason-too-long') {
+  if (error === 'support-reason-too-long') {
     return { tone: 'bad', message: 'Support reason must be 200 characters or less.' };
   }
 
@@ -199,6 +236,72 @@ function titleizeEventType(value: string): string {
     .split('.')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' / ');
+}
+
+function buildAdvancedBillingLegacySync(
+  state: AdvancedBillingState,
+  graceUntil: string | null,
+) {
+  const patch: Record<string, unknown> = {
+    billing_state: state,
+    billing_grace_until: graceUntil,
+  };
+
+  switch (state) {
+    case 'billing_exempt':
+      patch.billing_exempt = 1;
+      patch.billing_status = 'internal';
+      patch.billing_grace_ends_at = null;
+      break;
+
+    case 'internal':
+      patch.billing_exempt = 0;
+      patch.billing_status = 'internal';
+      patch.billing_grace_ends_at = null;
+      break;
+
+    case 'active':
+      patch.billing_exempt = 0;
+      patch.billing_status = 'active';
+      patch.billing_grace_ends_at = null;
+      patch.billing_grace_until = null;
+      break;
+
+    case 'trialing':
+      patch.billing_exempt = 0;
+      patch.billing_status = 'trialing';
+      patch.billing_grace_ends_at = null;
+      patch.billing_grace_until = null;
+      break;
+
+    case 'past_due':
+      patch.billing_exempt = 0;
+      patch.billing_status = 'past_due';
+      patch.billing_grace_ends_at = graceUntil;
+      break;
+
+    case 'grace_period': {
+      const safeGrace = graceUntil || addDays(7);
+      patch.billing_exempt = 0;
+      patch.billing_status = 'past_due';
+      patch.billing_grace_until = safeGrace;
+      patch.billing_grace_ends_at = safeGrace;
+      break;
+    }
+
+    case 'suspended':
+      patch.billing_exempt = 0;
+      patch.billing_status = 'past_due';
+      break;
+
+    case 'canceled':
+      patch.billing_exempt = 0;
+      patch.billing_status = 'canceled';
+      patch.billing_grace_ends_at = null;
+      break;
+  }
+
+  return patch;
 }
 
 const platformAdminRoutes = new Hono<AppEnv>();
@@ -541,6 +644,11 @@ platformAdminRoutes.get('/admin/tenants/:id', platformAdminRequired, (c) => {
         billing_subscription_id: string | null;
         billing_subscription_status: string | null;
         billing_updated_at: string | null;
+        billing_state: string | null;
+        billing_grace_until: string | null;
+        billing_override_reason: string | null;
+        billing_overridden_by_user_id: number | null;
+        billing_overridden_at: string | null;
         created_at: string | null;
         user_count: number;
         job_count: number;
@@ -755,23 +863,60 @@ platformAdminRoutes.post('/admin/tenants/:id/billing/override', platformAdminReq
     return c.redirect('/admin/tenants?error=tenant-not-found');
   }
 
+  const tenant = tenantQueries.findById(db, tenantId);
+  if (!tenant) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
   const body = await c.req.parseBody();
-
-  const billingState = String(body['billing_state'] ?? '').trim();
-  const graceUntil = String(body['grace_until'] ?? '').trim() || null;
-  const reason = String(body['reason'] ?? '').trim() || null;
-
+  const nextState = normalizeAdvancedBillingState(String(body['billing_state'] ?? ''));
+  const graceUntilRaw = String(body['grace_until'] ?? '').trim();
+  const reasonRaw = String(body['reason'] ?? '').trim();
   const adminUser = c.get('platformAdminUser');
+  const adminEmail = adminUser?.email || getEnv().platformAdminEmail || 'platform-admin';
+
+  if (!nextState) {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=invalid-advanced-state'));
+  }
+
+  if (reasonRaw.length > 300) {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=reason-too-long'));
+  }
+
+  const graceUntil = graceUntilRaw || null;
+  const patch = buildAdvancedBillingLegacySync(nextState, graceUntil);
 
   tenantQueries.updateBillingState(db, tenantId, {
-    billing_state: billingState || null,
-    billing_grace_until: graceUntil,
-    billing_override_reason: reason,
+    ...patch,
+    billing_override_reason: reasonRaw || null,
     billing_overridden_by_user_id: adminUser?.id ?? null,
     billing_overridden_at: new Date().toISOString(),
   });
 
-  return c.redirect(`/admin/tenants/${tenantId}`);
+  logActivity(db, {
+    tenantId,
+    actorUserId: null,
+    eventType: 'tenant.billing_override_updated',
+    entityType: 'tenant',
+    entityId: tenantId,
+    description: `Platform admin ${adminEmail} changed advanced billing state from ${String(tenant.billing_state || tenant.billing_status || 'unknown')} to ${nextState}.`,
+    metadata: {
+      platform_admin_email: adminEmail,
+      previous_billing_state: tenant.billing_state || null,
+      previous_billing_status: tenant.billing_status || null,
+      previous_billing_exempt: Number(tenant.billing_exempt || 0),
+      next_billing_state: nextState,
+      next_billing_status: patch.billing_status ?? null,
+      next_billing_exempt: patch.billing_exempt ?? null,
+      next_billing_grace_until: patch.billing_grace_until ?? null,
+      next_billing_grace_ends_at: patch.billing_grace_ends_at ?? null,
+      override_reason: reasonRaw || null,
+      phase: '5B.3',
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(redirectTenantDetail(tenantId, 'updated=override'));
 });
 
 platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired, async (c) => {
@@ -798,7 +943,7 @@ platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired
   }
 
   if (originalReason.length > 200) {
-    return c.redirect(redirectTenantDetail(tenantId, 'error=reason-too-long'));
+    return c.redirect(redirectTenantDetail(tenantId, 'error=support-reason-too-long'));
   }
 
   const user = db.prepare(`
