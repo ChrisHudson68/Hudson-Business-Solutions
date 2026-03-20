@@ -81,6 +81,30 @@ function canManageWorkflow(user: any): boolean {
   return user?.role === 'Admin' || user?.role === 'Manager';
 }
 
+
+function hasValue(value: unknown): boolean {
+  return String(value ?? '').trim().length > 0;
+}
+
+function isCompanyProfileComplete(profile: {
+  name: string | null;
+  company_email: string | null;
+  company_phone: string | null;
+  company_address: string | null;
+  invoice_prefix: string | null;
+  logo_path: string | null;
+} | null | undefined): boolean {
+  if (!profile) return false;
+
+  return (
+    hasValue(profile.name)
+    && hasValue(profile.company_email)
+    && hasValue(profile.company_phone)
+    && hasValue(profile.company_address)
+    && hasValue(profile.invoice_prefix)
+  );
+}
+
 export const dashboardRoutes = new Hono<AppEnv>();
 
 dashboardRoutes.get('/dashboard', loginRequired, (c) => {
@@ -273,10 +297,22 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
     invoices_count: Number(invoicesCountRow?.count || 0),
   };
 
-  const companyConfigured =
-    Boolean(String(tenant?.company_address || '').trim()) ||
-    Boolean(String(tenant?.company_email || '').trim()) ||
-    Boolean(String(tenant?.company_phone || '').trim());
+  const tenantProfile = db
+    .prepare(
+      `SELECT name, logo_path, invoice_prefix, company_email, company_phone, company_address
+       FROM tenants
+       WHERE id = ?`,
+    )
+    .get(tenantId) as {
+      name: string | null;
+      logo_path: string | null;
+      invoice_prefix: string | null;
+      company_email: string | null;
+      company_phone: string | null;
+      company_address: string | null;
+    } | undefined;
+
+  const companyConfigured = isCompanyProfileComplete(tenantProfile);
 
   return renderApp(
     c,
