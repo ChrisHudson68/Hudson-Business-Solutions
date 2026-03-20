@@ -144,14 +144,6 @@ function hoursBetween(startIso: string, endIso: string): number {
   return Number(hours.toFixed(2));
 }
 
-function canRequestOwnEntryEditsForSelection(
-  selectedEmployeeId: number | null,
-  linkedEmployeeId: number | null,
-  canRequestEdits: boolean,
-) {
-  return canRequestEdits && !!selectedEmployeeId && !!linkedEmployeeId && selectedEmployeeId === linkedEmployeeId;
-}
-
 function loadEmployees(db: any, tenantId: number) {
   return db.prepare(`
     SELECT id, name
@@ -335,7 +327,6 @@ function renderTimesheetPage(
     canRequestEdits: boolean;
     canManageTimeEntries: boolean;
     canApproveEditRequests: boolean;
-    canRequestOwnEntryEdits: boolean;
     error?: string;
     success?: string;
   },
@@ -359,7 +350,6 @@ function renderTimesheetPage(
       canRequestEdits={options.canRequestEdits}
       canManageTimeEntries={options.canManageTimeEntries}
       canApproveEditRequests={options.canApproveEditRequests}
-      canRequestOwnEntryEdits={options.canRequestOwnEntryEdits}
       csrfToken={c.get('csrfToken')}
       error={options.error}
       success={options.success}
@@ -394,6 +384,25 @@ function ensureJobExists(db: any, jobId: number, tenantId: number) {
   if (!job) {
     throw new Error('Selected job was not found.');
   }
+}
+
+function preferredSelectedEmployeeId(
+  requestedEmployeeId: number | null,
+  linkedEmployeeId: number | null,
+  employees: Array<{ id: number }>,
+): number | null {
+  if (requestedEmployeeId !== null) {
+    return requestedEmployeeId;
+  }
+
+  if (linkedEmployeeId !== null) {
+    const linkedExists = employees.some((employee) => employee.id === linkedEmployeeId);
+    if (linkedExists) {
+      return linkedEmployeeId;
+    }
+  }
+
+  return employees.length > 0 ? employees[0].id : null;
 }
 
 export const timesheetRoutes = new Hono<AppEnv>();
@@ -432,17 +441,20 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
     employeeId = link?.employee_id ?? null;
   } else {
     const requestedEmployeeId = c.req.query('employee_id');
+    const parsedRequestedEmployeeId = requestedEmployeeId
+      ? parsePositiveInt(requestedEmployeeId)
+      : null;
 
-    if (requestedEmployeeId) {
-      employeeId = parsePositiveInt(requestedEmployeeId);
-    } else if (employees.length > 0) {
-      employeeId = employees[0].id;
-    }
+    employeeId = preferredSelectedEmployeeId(
+      parsedRequestedEmployeeId,
+      link?.employee_id ?? null,
+      employees,
+    );
 
     if (employeeId !== null) {
       const employeeExists = employees.some((employee) => employee.id === employeeId);
       if (!employeeExists) {
-        employeeId = employees.length > 0 ? employees[0].id : null;
+        employeeId = preferredSelectedEmployeeId(null, link?.employee_id ?? null, employees);
       }
     }
   }
@@ -459,7 +471,6 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
   const activeClockEntry = canUseSelfClock
     ? loadActiveClockEntry(db, tenantId, link?.employee_id ?? null)
     : null;
-  const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(employeeId, link?.employee_id ?? null, canRequestEdits);
 
   if (isEmployeeUser && !employeeId) {
     return renderTimesheetPage(c, {
@@ -477,7 +488,6 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
       canRequestEdits: false,
       canManageTimeEntries,
       canApproveEditRequests,
-      canRequestOwnEntryEdits: false,
       error: 'Your user account is not linked to an employee record yet. Ask an Admin to link your user to an employee profile.',
     });
   }
@@ -497,7 +507,6 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
     canRequestEdits,
     canManageTimeEntries,
     canApproveEditRequests,
-    canRequestOwnEntryEdits,
   });
 });
 
@@ -529,31 +538,40 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
     const dates = weekDates(start);
     const allowedDates = new Set(dates);
 
+    const rowDate = Array.isArray(body['row_date']) ? body['row_date'] : [body['row_date']];
+    const rowJobId = Array.isArray(body['row_job_id']) ? body['row_job_id'] : [body['row_job_id']];
     const rowClockInUtc = Array.isArray(body['row_clock_in_utc']) ? body['row_clock_in_utc'] : [body['row_clock_in_utc']];
     const rowClockOutUtc = Array.isArray(body['row_clock_out_utc']) ? body['row_clock_out_utc'] : [body['row_clock_out_utc']];
-    const rowJobId = Array.isArray(body['row_job_id']) ? body['row_job_id'] : [body['row_job_id']];
     const rowNote = Array.isArray(body['row_note']) ? body['row_note'] : [body['row_note']];
 
-    const rowCount = Math.max(rowClockInUtc.length, rowClockOutUtc.length, rowJobId.length, rowNote.length);
     let insertedCount = 0;
 
-    for (let i = 0; i < rowCount; i++) {
+    for (let i = 0; i < rowDate.length; i++) {
+      const rawDate = String(rowDate[i] ?? '').trim();
+      const rawJobId = String(rowJobId[i] ?? '').trim();
       const rawClockInUtc = String(rowClockInUtc[i] ?? '').trim();
       const rawClockOutUtc = String(rowClockOutUtc[i] ?? '').trim();
-      const rawJobId = String(rowJobId[i] ?? '').trim();
-      const hasAnyValue = !!rawClockInUtc || !!rawClockOutUtc || !!rawJobId || !!String(rowNote[i] ?? '').trim();
+      const rawNote = rowNote[i];
 
-      if (!hasAnyValue) {
+      if (!rawClockInUtc && !rawClockOutUtc && !rawJobId && !String(rawNote ?? '').trim()) {
         continue;
       }
 
-      if (!isValidIsoDateTime(rawClockInUtc) || !isValidIsoDateTime(rawClockOutUtc)) {
-        throw new Error('Each manual time row must include a valid clock in and clock out.');
+      if (!rawClockInUtc || !rawClockOutUtc) {
+        throw new Error('Each manual row must include both a time in and time out.');
       }
 
-      const entryDate = toIsoDate(new Date(rawClockInUtc));
-      if (!allowedDates.has(entryDate)) {
-        throw new Error('Manual entries must use a clock in time that falls within the selected week.');
+      if (!isValidIsoDateTime(rawClockInUtc) || !isValidIsoDateTime(rawClockOutUtc)) {
+        throw new Error('One or more manual time rows contain invalid timestamps.');
+      }
+
+      if (!isRealIsoDate(rawDate) || !allowedDates.has(rawDate)) {
+        throw new Error('One or more entry dates are invalid for the selected week.');
+      }
+
+      const derivedDate = toIsoDate(new Date(rawClockInUtc));
+      if (derivedDate !== rawDate) {
+        throw new Error('Manual entry dates must match the selected row date.');
       }
 
       const jobId = rawJobId ? parsePositiveInt(rawJobId) : null;
@@ -566,38 +584,16 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
       }
 
       const hours = hoursBetween(rawClockInUtc, rawClockOutUtc);
-      const note = normalizeNote(rowNote[i]);
+      const note = normalizeNote(rawNote);
       const laborCost = Number((hours * rate).toFixed(2));
 
       db.prepare(`
         INSERT INTO time_entries (
-          job_id,
-          employee_id,
-          date,
-          hours,
-          note,
-          labor_cost,
-          tenant_id,
-          clock_in_at,
-          clock_out_at,
-          entry_method,
-          approval_status,
-          approved_by_user_id,
-          approved_at
+          job_id, employee_id, date, hours, note, labor_cost, tenant_id,
+          clock_in_at, clock_out_at, entry_method, approval_status, approved_by_user_id, approved_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'approved', ?, CURRENT_TIMESTAMP)
-      `).run(
-        jobId,
-        employeeId,
-        entryDate,
-        hours,
-        note,
-        laborCost,
-        tenantId,
-        rawClockInUtc,
-        rawClockOutUtc,
-        currentUser.id,
-      );
+      `).run(jobId, employeeId, rawDate, hours, note, laborCost, tenantId, rawClockInUtc, rawClockOutUtc, currentUser.id);
 
       insertedCount += 1;
     }
@@ -610,7 +606,6 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
     const activeClockEntry = canUseSelfClock
       ? loadActiveClockEntry(db, tenantId, link?.employee_id ?? null)
       : null;
-    const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(employeeId, link?.employee_id ?? null, canRequestEdits);
 
     return renderTimesheetPage(c, {
       employees,
@@ -627,7 +622,6 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
       canRequestEdits,
       canManageTimeEntries,
       canApproveEditRequests,
-      canRequestOwnEntryEdits,
       success: insertedCount > 0 ? 'Time entries saved successfully.' : 'No new time entries were added.',
     });
   } catch (error) {
@@ -641,7 +635,6 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
       ? loadActiveClockEntry(db, tenantId, link?.employee_id ?? null)
       : null;
     const message = error instanceof Error ? error.message : 'Unable to save time entries.';
-    const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(employeeId, link?.employee_id ?? null, canRequestEdits);
 
     return renderTimesheetPage(
       c,
@@ -660,7 +653,6 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
         canRequestEdits,
         canManageTimeEntries,
         canApproveEditRequests,
-        canRequestOwnEntryEdits,
         error: message,
       },
       400,
@@ -716,15 +708,19 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
       ? { employeeId, employeeName: link.employee_name }
       : null;
 
-    const selectedEmployeeId = employeeId;
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
+    const selectedAdminEmployeeId = preferredSelectedEmployeeId(null, employeeId, employees);
+    const existing = currentUser.role === 'Employee'
+      ? loadExistingEntries(db, tenant.id, employeeId, start)
+      : loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
+
     const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-    const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(selectedEmployeeId, link?.employee_id ?? null, canRequestEdits);
 
     return renderTimesheetPage(c, {
       employees,
       jobs,
-      employeeId: selectedEmployeeId,
+      employeeId: currentUser.role === 'Employee'
+        ? employeeId
+        : selectedAdminEmployeeId,
       start,
       dates,
       existing,
@@ -736,7 +732,6 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
       canRequestEdits,
       canManageTimeEntries,
       canApproveEditRequests,
-      canRequestOwnEntryEdits,
       success: 'You are now clocked in.',
     });
   } catch (error) {
@@ -745,15 +740,18 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
       ? { employeeId: link.employee_id, employeeName: link.employee_name }
       : null;
 
-    const selectedEmployeeId = employeeId;
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
+    const selectedAdminEmployeeId =
+      currentUser.role === 'Employee'
+        ? employeeId
+        : preferredSelectedEmployeeId(null, employeeId, employees);
+
+    const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
     const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-    const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(selectedEmployeeId, link?.employee_id ?? null, canRequestEdits);
 
     return renderTimesheetPage(c, {
       employees,
       jobs,
-      employeeId: selectedEmployeeId,
+      employeeId: selectedAdminEmployeeId,
       start,
       dates,
       existing,
@@ -765,7 +763,6 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
       canRequestEdits,
       canManageTimeEntries,
       canApproveEditRequests,
-      canRequestOwnEntryEdits,
       error: error instanceof Error ? error.message : 'Unable to punch in.',
     }, 400);
   }
@@ -833,15 +830,19 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
       ? { employeeId, employeeName: link.employee_name }
       : null;
 
-    const selectedEmployeeId = employeeId;
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
+    const selectedAdminEmployeeId = preferredSelectedEmployeeId(null, employeeId, employees);
+    const existing = currentUser.role === 'Employee'
+      ? loadExistingEntries(db, tenant.id, employeeId, start)
+      : loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
+
     const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-    const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(selectedEmployeeId, link?.employee_id ?? null, canRequestEdits);
 
     return renderTimesheetPage(c, {
       employees,
       jobs,
-      employeeId: selectedEmployeeId,
+      employeeId: currentUser.role === 'Employee'
+        ? employeeId
+        : selectedAdminEmployeeId,
       start,
       dates,
       existing,
@@ -853,7 +854,6 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
       canRequestEdits,
       canManageTimeEntries,
       canApproveEditRequests,
-      canRequestOwnEntryEdits,
       success: 'You have been clocked out successfully.',
     });
   } catch (error) {
@@ -861,15 +861,18 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
       ? { employeeId: link.employee_id, employeeName: link.employee_name }
       : null;
 
-    const selectedEmployeeId = employeeId;
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
+    const selectedAdminEmployeeId =
+      currentUser.role === 'Employee'
+        ? employeeId
+        : preferredSelectedEmployeeId(null, employeeId, employees);
+
+    const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
     const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-    const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(selectedEmployeeId, link?.employee_id ?? null, canRequestEdits);
 
     return renderTimesheetPage(c, {
       employees,
       jobs,
-      employeeId: selectedEmployeeId,
+      employeeId: selectedAdminEmployeeId,
       start,
       dates,
       existing,
@@ -881,7 +884,6 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
       canRequestEdits,
       canManageTimeEntries,
       canApproveEditRequests,
-      canRequestOwnEntryEdits,
       error: error instanceof Error ? error.message : 'Unable to punch out.',
     }, 400);
   }
@@ -1014,15 +1016,19 @@ timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edi
       ? { employeeId, employeeName: link.employee_name }
       : null;
 
-    const selectedEmployeeId = employeeId;
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
+    const selectedAdminEmployeeId = preferredSelectedEmployeeId(null, employeeId, employees);
+    const existing = currentUser.role === 'Employee'
+      ? loadExistingEntries(db, tenant.id, employeeId, start)
+      : loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
+
     const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-    const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(selectedEmployeeId, link?.employee_id ?? null, canRequestEdits);
 
     return renderTimesheetPage(c, {
       employees,
       jobs,
-      employeeId: selectedEmployeeId,
+      employeeId: currentUser.role === 'Employee'
+        ? employeeId
+        : selectedAdminEmployeeId,
       start,
       dates,
       existing,
@@ -1034,7 +1040,6 @@ timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edi
       canRequestEdits,
       canManageTimeEntries,
       canApproveEditRequests,
-      canRequestOwnEntryEdits,
       success: 'Your edit request has been submitted for approval.',
     });
   } catch (error) {
@@ -1042,15 +1047,18 @@ timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edi
       ? { employeeId: link.employee_id, employeeName: link.employee_name }
       : null;
 
-    const selectedEmployeeId = employeeId;
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
+    const selectedAdminEmployeeId =
+      currentUser.role === 'Employee'
+        ? employeeId
+        : preferredSelectedEmployeeId(null, employeeId, employees);
+
+    const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
     const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-    const canRequestOwnEntryEdits = canRequestOwnEntryEditsForSelection(selectedEmployeeId, link?.employee_id ?? null, canRequestEdits);
 
     return renderTimesheetPage(c, {
       employees,
       jobs,
-      employeeId: selectedEmployeeId,
+      employeeId: selectedAdminEmployeeId,
       start,
       dates,
       existing,
@@ -1062,7 +1070,6 @@ timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edi
       canRequestEdits,
       canManageTimeEntries,
       canApproveEditRequests,
-      canRequestOwnEntryEdits,
       error: error instanceof Error ? error.message : 'Unable to submit edit request.',
     }, 400);
   }
