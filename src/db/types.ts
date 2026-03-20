@@ -16,6 +16,15 @@ export type AdvancedBillingState =
   | 'internal'
   | 'billing_exempt';
 
+export type EstimateStatus =
+  | 'draft'
+  | 'ready'
+  | 'sent'
+  | 'approved'
+  | 'rejected'
+  | 'expired'
+  | 'converted';
+
 export interface Tenant {
   id: number;
   name: string;
@@ -65,6 +74,52 @@ export interface Job {
   start_date: string | null;
   status: string | null;
   tenant_id: number;
+}
+
+export interface Estimate {
+  id: number;
+  tenant_id: number;
+  estimate_number: string;
+  customer_name: string;
+  customer_email: string | null;
+  customer_phone: string | null;
+  site_address: string | null;
+  scope_of_work: string | null;
+  subtotal: number;
+  tax: number;
+  total: number;
+  status: EstimateStatus;
+  created_by_user_id: number;
+  updated_by_user_id: number | null;
+  sent_at: string | null;
+  responded_at: string | null;
+  approval_notes: string | null;
+  rejection_reason: string | null;
+  converted_job_id: number | null;
+  expiration_date: string | null;
+  public_token: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by_name?: string | null;
+  updated_by_name?: string | null;
+  converted_job_name?: string | null;
+}
+
+export interface EstimateLineItem {
+  id: number;
+  estimate_id: number;
+  tenant_id: number;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EstimateWithLineItems extends Estimate {
+  line_items: EstimateLineItem[];
 }
 
 export interface Income {
