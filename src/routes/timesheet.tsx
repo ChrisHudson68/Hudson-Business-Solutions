@@ -6,6 +6,104 @@ import { TimesheetPage } from '../pages/timesheet/TimesheetPage.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 
+interface EmployeeOption {
+  id: number;
+  name: string;
+}
+
+interface JobOption {
+  id: number;
+  job_name: string;
+  client_name: string | null;
+  status: string | null;
+}
+
+interface ExistingEntry {
+  id: number;
+  date: string;
+  job_id: number | null;
+  job_name: string;
+  hours: number;
+  note: string | null;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+  entry_method: string;
+  approval_status: string;
+  has_pending_edit_request: number;
+}
+
+interface PendingRequestSummary {
+  id: number;
+  employee_name: string;
+  job_name: string;
+  original_job_name: string;
+  original_clock_in_at: string | null;
+  original_clock_out_at: string | null;
+  proposed_clock_in_at: string;
+  proposed_clock_out_at: string;
+  request_reason: string;
+  created_at: string;
+}
+
+interface ActiveClockEntry {
+  id: number;
+  job_id: number | null;
+  job_name: string;
+  clock_in_at: string;
+}
+
+interface CurrentEmployeeContext {
+  employeeId: number;
+  employeeName: string;
+}
+
+interface WeekApproval {
+  id: number;
+  employee_id: number;
+  week_start: string;
+  approved_at: string;
+  note: string | null;
+  approved_by_user_id: number;
+  approved_by_name: string | null;
+}
+
+interface CalendarWeekSummary {
+  week_start: string;
+  week_end: string;
+  total_hours: number;
+  entry_count: number;
+  approved_at: string | null;
+  approved_by_name: string | null;
+  is_selected: boolean;
+  is_approved: boolean;
+}
+
+interface TimesheetViewState {
+  employees: EmployeeOption[];
+  jobs: JobOption[];
+  employeeId: number | null;
+  start: string;
+  dates: string[];
+  existing: ExistingEntry[];
+  pendingRequests: PendingRequestSummary[];
+  currentEmployeeContext: CurrentEmployeeContext | null;
+  activeClockEntry: ActiveClockEntry | null;
+  isEmployeeUser: boolean;
+  canUseSelfClock: boolean;
+  canRequestEdits: boolean;
+  canManageTimeEntries: boolean;
+  canApproveEditRequests: boolean;
+  weekApproval: WeekApproval | null;
+  weekCalendar: CalendarWeekSummary[];
+  selectedWeekHours: number;
+  selectedWeekEntryCount: number;
+  pendingWeekEditRequestCount: number;
+  openClockEntryCount: number;
+  selectedWeekLabel: string;
+  prevWeekStart: string;
+  nextWeekStart: string;
+}
+
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
   return c.html(
     <AppLayout
@@ -64,6 +162,12 @@ function weekStart(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function weekDates(mondayStr: string): string[] {
   const monday = new Date(`${mondayStr}T00:00:00Z`);
   const dates: string[] = [];
@@ -77,25 +181,17 @@ function weekDates(mondayStr: string): string[] {
   return dates;
 }
 
+function weekRangeLabel(mondayStr: string): string {
+  const dates = weekDates(mondayStr);
+  return `${dates[0]} to ${dates[6]}`;
+}
+
 function parsePositiveInt(value: unknown): number | null {
   const raw = String(value ?? '').trim();
   if (!/^\d+$/.test(raw)) return null;
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-function parseHours(value: unknown): number | null {
-  const raw = String(value ?? '').trim();
-  if (!raw) return null;
-
-  if (!/^\d+(\.\d{1,2})?$/.test(raw)) return null;
-
-  const parsed = Number.parseFloat(raw);
-  if (!Number.isFinite(parsed)) return null;
-  if (parsed <= 0 || parsed > 24) return null;
-
-  return Number(parsed.toFixed(2));
 }
 
 function parseLocalTime(value: unknown): string | null {
@@ -163,22 +259,22 @@ function hoursBetween(startIso: string, endIso: string): number {
   return Number(hours.toFixed(2));
 }
 
-function loadEmployees(db: any, tenantId: number) {
+function loadEmployees(db: any, tenantId: number): EmployeeOption[] {
   return db.prepare(`
     SELECT id, name
     FROM employees
     WHERE active = 1 AND tenant_id = ?
     ORDER BY name ASC
-  `).all(tenantId) as Array<{ id: number; name: string }>;
+  `).all(tenantId) as EmployeeOption[];
 }
 
-function loadJobs(db: any, tenantId: number) {
+function loadJobs(db: any, tenantId: number): JobOption[] {
   return db.prepare(`
     SELECT id, job_name, client_name, status
     FROM jobs
     WHERE tenant_id = ? AND COALESCE(status, 'Active') != 'Cancelled'
     ORDER BY job_name ASC
-  `).all(tenantId) as Array<{ id: number; job_name: string; client_name: string | null; status: string | null }>;
+  `).all(tenantId) as JobOption[];
 }
 
 function loadEmployeeForUser(db: any, userId: number, tenantId: number) {
@@ -198,7 +294,35 @@ function displayJobName(jobName: string | null): string {
   return jobName || 'Unassigned / General Time';
 }
 
-function loadExistingEntries(db: any, tenantId: number, employeeId: number | null, start: string) {
+function ensureJobExists(db: any, jobId: number, tenantId: number) {
+  const job = db.prepare(`
+    SELECT id
+    FROM jobs
+    WHERE id = ? AND tenant_id = ? AND COALESCE(status, 'Active') != 'Cancelled'
+  `).get(jobId, tenantId) as { id: number } | undefined;
+
+  if (!job) {
+    throw new Error('Selected job was not found.');
+  }
+}
+
+function getEmployeeRate(db: any, employeeId: number, tenantId: number) {
+  const employee = db.prepare(`
+    SELECT id, pay_type, hourly_rate, annual_salary
+    FROM employees
+    WHERE id = ? AND tenant_id = ? AND active = 1
+  `).get(employeeId, tenantId) as
+    | { id: number; pay_type: string; hourly_rate: number | null; annual_salary: number | null }
+    | undefined;
+
+  if (!employee) {
+    throw new Error('Selected employee was not found.');
+  }
+
+  return hourlyEquivalent(employee.pay_type, employee.hourly_rate, employee.annual_salary);
+}
+
+function loadExistingEntries(db: any, tenantId: number, employeeId: number | null, start: string): ExistingEntry[] {
   if (!employeeId) return [];
 
   const dates = weekDates(start);
@@ -231,23 +355,11 @@ function loadExistingEntries(db: any, tenantId: number, employeeId: number | nul
       ON j.id = t.job_id
      AND j.tenant_id = t.tenant_id
     WHERE t.employee_id = ? AND t.date BETWEEN ? AND ? AND t.tenant_id = ?
-    ORDER BY t.date ASC, t.id ASC
-  `).all(employeeId, dates[0], dates[6], tenantId) as Array<{
-    id: number;
-    date: string;
-    job_id: number | null;
-    job_name: string;
-    hours: number;
-    note: string | null;
-    clock_in_at: string | null;
-    clock_out_at: string | null;
-    entry_method: string;
-    approval_status: string;
-    has_pending_edit_request: number;
-  }>;
+    ORDER BY t.date ASC, t.clock_in_at ASC, t.id ASC
+  `).all(employeeId, dates[0], dates[6], tenantId) as ExistingEntry[];
 }
 
-function loadPendingRequests(db: any, tenantId: number) {
+function loadPendingRequests(db: any, tenantId: number): PendingRequestSummary[] {
   return db.prepare(`
     SELECT
       r.id,
@@ -267,21 +379,10 @@ function loadPendingRequests(db: any, tenantId: number) {
     LEFT JOIN jobs oj ON oj.id = t.job_id AND oj.tenant_id = t.tenant_id
     WHERE r.tenant_id = ? AND r.status = 'pending'
     ORDER BY r.created_at ASC, r.id ASC
-  `).all(tenantId) as Array<{
-    id: number;
-    employee_name: string;
-    job_name: string;
-    original_job_name: string;
-    original_clock_in_at: string | null;
-    original_clock_out_at: string | null;
-    proposed_clock_in_at: string;
-    proposed_clock_out_at: string;
-    request_reason: string;
-    created_at: string;
-  }>;
+  `).all(tenantId) as PendingRequestSummary[];
 }
 
-function loadActiveClockEntry(db: any, tenantId: number, employeeId: number | null) {
+function loadActiveClockEntry(db: any, tenantId: number, employeeId: number | null): ActiveClockEntry | null {
   if (!employeeId) return null;
 
   return db.prepare(`
@@ -301,122 +402,163 @@ function loadActiveClockEntry(db: any, tenantId: number, employeeId: number | nu
       AND t.clock_out_at IS NULL
     ORDER BY t.id DESC
     LIMIT 1
-  `).get(tenantId, employeeId) as
-    | { id: number; job_id: number | null; job_name: string; clock_in_at: string }
-    | null;
+  `).get(tenantId, employeeId) as ActiveClockEntry | null;
 }
 
-function renderTimesheetPage(
-  c: any,
-  options: {
-    employees: Array<{ id: number; name: string }>;
-    jobs: Array<{ id: number; job_name: string; client_name: string | null; status: string | null }>;
-    employeeId: number | null;
-    start: string;
-    dates: string[];
-    existing: Array<{
-      id: number;
-      date: string;
-      job_id: number | null;
-      job_name: string;
-      hours: number;
-      note: string | null;
-      clock_in_at: string | null;
-      clock_out_at: string | null;
-      entry_method: string;
-      approval_status: string;
-      has_pending_edit_request?: number;
-    }>;
-    pendingRequests: Array<{
-      id: number;
-      employee_name: string;
-      job_name: string;
-      original_job_name: string;
-      original_clock_in_at: string | null;
-      original_clock_out_at: string | null;
-      proposed_clock_in_at: string;
-      proposed_clock_out_at: string;
-      request_reason: string;
-      created_at: string;
-    }>;
-    currentEmployeeContext?: { employeeId: number; employeeName: string } | null;
-    activeClockEntry?: { id: number; job_id: number | null; job_name: string; clock_in_at: string } | null;
-    isEmployeeUser: boolean;
-    canUseSelfClock: boolean;
-    canRequestEdits: boolean;
-    canManageTimeEntries: boolean;
-    canApproveEditRequests: boolean;
-    error?: string;
-    success?: string;
-  },
-  status: 200 | 400 = 200,
-) {
-  return renderApp(
-    c,
-    options.isEmployeeUser ? 'Time Clock' : 'Timesheets',
-    <TimesheetPage
-      employees={options.employees}
-      jobs={options.jobs}
-      employeeId={options.employeeId}
-      start={options.start}
-      dates={options.dates}
-      existing={options.existing}
-      pendingRequests={options.pendingRequests}
-      currentEmployeeContext={options.currentEmployeeContext}
-      activeClockEntry={options.activeClockEntry}
-      isEmployeeUser={options.isEmployeeUser}
-      canUseSelfClock={options.canUseSelfClock}
-      canRequestEdits={options.canRequestEdits}
-      canManageTimeEntries={options.canManageTimeEntries}
-      canApproveEditRequests={options.canApproveEditRequests}
-      csrfToken={c.get('csrfToken')}
-      error={options.error}
-      success={options.success}
-    />,
-    status,
-  );
+function loadWeekApproval(db: any, tenantId: number, employeeId: number | null, start: string): WeekApproval | null {
+  if (!employeeId) return null;
+
+  return db.prepare(`
+    SELECT
+      w.id,
+      w.employee_id,
+      w.week_start,
+      w.approved_at,
+      w.note,
+      w.approved_by_user_id,
+      u.name AS approved_by_name
+    FROM time_entry_week_approvals w
+    LEFT JOIN users u ON u.id = w.approved_by_user_id AND u.tenant_id = w.tenant_id
+    WHERE w.tenant_id = ? AND w.employee_id = ? AND w.week_start = ?
+    LIMIT 1
+  `).get(tenantId, employeeId, start) as WeekApproval | null;
 }
 
-function getEmployeeRate(db: any, employeeId: number, tenantId: number) {
-  const employee = db.prepare(`
-    SELECT id, pay_type, hourly_rate, annual_salary
-    FROM employees
-    WHERE id = ? AND tenant_id = ? AND active = 1
-  `).get(employeeId, tenantId) as
-    | { id: number; pay_type: string; hourly_rate: number | null; annual_salary: number | null }
-    | undefined;
+function countPendingWeekEditRequests(db: any, tenantId: number, employeeId: number | null, start: string): number {
+  if (!employeeId) return 0;
+  const dates = weekDates(start);
 
-  if (!employee) {
-    throw new Error('Selected employee was not found.');
+  const row = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM time_entry_edit_requests r
+    WHERE r.tenant_id = ?
+      AND r.employee_id = ?
+      AND r.status = 'pending'
+      AND r.proposed_date BETWEEN ? AND ?
+  `).get(tenantId, employeeId, dates[0], dates[6]) as { total: number };
+
+  return Number(row?.total || 0);
+}
+
+function countOpenClockEntriesForWeek(db: any, tenantId: number, employeeId: number | null, start: string): number {
+  if (!employeeId) return 0;
+  const dates = weekDates(start);
+
+  const row = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM time_entries
+    WHERE tenant_id = ?
+      AND employee_id = ?
+      AND date BETWEEN ? AND ?
+      AND clock_in_at IS NOT NULL
+      AND clock_out_at IS NULL
+  `).get(tenantId, employeeId, dates[0], dates[6]) as { total: number };
+
+  return Number(row?.total || 0);
+}
+
+function loadWeekCalendar(db: any, tenantId: number, employeeId: number | null, selectedStart: string): CalendarWeekSummary[] {
+  if (!employeeId) return [];
+
+  const firstWeek = addDays(selectedStart, -7 * 11);
+  const lastWeek = addDays(selectedStart, 7 * 4);
+  const lastWeekEnd = addDays(lastWeek, 6);
+
+  const entryRows = db.prepare(`
+    SELECT date, hours
+    FROM time_entries
+    WHERE tenant_id = ?
+      AND employee_id = ?
+      AND date BETWEEN ? AND ?
+  `).all(tenantId, employeeId, firstWeek, lastWeekEnd) as Array<{ date: string; hours: number }>;
+
+  const approvalRows = db.prepare(`
+    SELECT w.week_start, w.approved_at, u.name AS approved_by_name
+    FROM time_entry_week_approvals w
+    LEFT JOIN users u ON u.id = w.approved_by_user_id AND u.tenant_id = w.tenant_id
+    WHERE w.tenant_id = ?
+      AND w.employee_id = ?
+      AND w.week_start BETWEEN ? AND ?
+  `).all(tenantId, employeeId, firstWeek, lastWeek) as Array<{
+    week_start: string;
+    approved_at: string;
+    approved_by_name: string | null;
+  }>;
+
+  const totals = new Map<string, { total_hours: number; entry_count: number }>();
+  for (const row of entryRows) {
+    const key = weekStart(row.date);
+    const current = totals.get(key) || { total_hours: 0, entry_count: 0 };
+    current.total_hours = Number((current.total_hours + Number(row.hours || 0)).toFixed(2));
+    current.entry_count += 1;
+    totals.set(key, current);
   }
 
-  return hourlyEquivalent(employee.pay_type, employee.hourly_rate, employee.annual_salary);
+  const approvals = new Map<string, { approved_at: string; approved_by_name: string | null }>();
+  for (const row of approvalRows) {
+    approvals.set(row.week_start, {
+      approved_at: row.approved_at,
+      approved_by_name: row.approved_by_name,
+    });
+  }
+
+  const weeks: CalendarWeekSummary[] = [];
+  for (let i = 0; i < 16; i++) {
+    const currentWeekStart = addDays(firstWeek, i * 7);
+    const totalsRow = totals.get(currentWeekStart);
+    const approval = approvals.get(currentWeekStart);
+
+    weeks.push({
+      week_start: currentWeekStart,
+      week_end: addDays(currentWeekStart, 6),
+      total_hours: Number((totalsRow?.total_hours || 0).toFixed(2)),
+      entry_count: totalsRow?.entry_count || 0,
+      approved_at: approval?.approved_at || null,
+      approved_by_name: approval?.approved_by_name || null,
+      is_selected: currentWeekStart === selectedStart,
+      is_approved: !!approval,
+    });
+  }
+
+  return weeks;
 }
 
-function ensureJobExists(db: any, jobId: number, tenantId: number) {
-  const job = db.prepare(`
-    SELECT id
-    FROM jobs
-    WHERE id = ? AND tenant_id = ? AND COALESCE(status, 'Active') != 'Cancelled'
-  `).get(jobId, tenantId) as { id: number } | undefined;
-
-  if (!job) {
-    throw new Error('Selected job was not found.');
+function assertWeekNotApproved(db: any, tenantId: number, employeeId: number, start: string, message?: string) {
+  const approval = loadWeekApproval(db, tenantId, employeeId, start);
+  if (approval) {
+    throw new Error(message || 'This week has already been approved. Reopen the week before making changes.');
   }
 }
 
-export const timesheetRoutes = new Hono<AppEnv>();
+function deriveSelectedEmployeeId(
+  employees: EmployeeOption[],
+  currentUser: any,
+  linkedEmployeeId: number | null | undefined,
+  requestedEmployeeId?: number | null,
+): number | null {
+  if (currentUser.role === 'Employee') {
+    return linkedEmployeeId ?? null;
+  }
 
-timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
-  const tenant = c.get('tenant');
-  const currentUser = c.get('user');
-  if (!tenant || !currentUser) return c.redirect('/login');
-  const tenantId = tenant.id;
+  if (requestedEmployeeId && employees.some((employee) => employee.id === requestedEmployeeId)) {
+    return requestedEmployeeId;
+  }
 
-  const db = getDb();
+  if (linkedEmployeeId && employees.some((employee) => employee.id === linkedEmployeeId)) {
+    return linkedEmployeeId;
+  }
+
+  return employees.length > 0 ? employees[0].id : null;
+}
+
+function buildTimesheetState(
+  db: any,
+  tenantId: number,
+  currentUser: any,
+  options?: { employeeId?: number | null; start?: string },
+): TimesheetViewState {
   const employees = loadEmployees(db, tenantId);
   const jobs = loadJobs(db, tenantId);
-
   const isEmployeeUser = currentUser.role === 'Employee';
   const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
   const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
@@ -424,74 +566,26 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
   const link = loadEmployeeForUser(db, currentUser.id, tenantId);
   const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const fallbackStart = weekStart(today);
-
-  let employeeId: number | null = null;
-  let currentEmployeeContext: { employeeId: number; employeeName: string } | null = null;
-
-  if (canUseSelfClock && link?.employee_id && link?.employee_name) {
-    currentEmployeeContext = {
-      employeeId: link.employee_id,
-      employeeName: link.employee_name,
-    };
-  }
-
-  if (isEmployeeUser) {
-    employeeId = link?.employee_id ?? null;
-  } else {
-    const requestedEmployeeId = c.req.query('employee_id');
-
-    if (requestedEmployeeId) {
-      employeeId = parsePositiveInt(requestedEmployeeId);
-    } else if (link?.employee_id && employees.some((employee) => employee.id === link.employee_id)) {
-      employeeId = link.employee_id;
-    } else if (employees.length > 0) {
-      employeeId = employees[0].id;
-    }
-
-    if (employeeId !== null) {
-      const employeeExists = employees.some((employee) => employee.id === employeeId);
-      if (!employeeExists) {
-        employeeId = employees.length > 0 ? employees[0].id : null;
-      }
-    }
-  }
-
-  let start = fallbackStart;
-  const requestedStart = c.req.query('start');
-  if (requestedStart && isRealIsoDate(requestedStart)) {
-    start = weekStart(requestedStart);
-  }
-
+  const fallbackStart = weekStart(toIsoDate(new Date()));
+  const start = options?.start && isRealIsoDate(options.start) ? weekStart(options.start) : fallbackStart;
+  const employeeId = deriveSelectedEmployeeId(employees, currentUser, link?.employee_id, options?.employeeId ?? null);
   const dates = weekDates(start);
-  const existing = loadExistingEntries(db, tenantId, employeeId, start);
-  const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenantId) : [];
-  const activeClockEntry = canUseSelfClock
-    ? loadActiveClockEntry(db, tenantId, link?.employee_id ?? null)
+
+  const currentEmployeeContext = canUseSelfClock && link?.employee_id && link?.employee_name
+    ? { employeeId: link.employee_id, employeeName: link.employee_name }
     : null;
 
-  if (isEmployeeUser && !employeeId) {
-    return renderTimesheetPage(c, {
-      employees,
-      jobs,
-      employeeId: null,
-      start,
-      dates,
-      existing: [],
-      pendingRequests: [],
-      currentEmployeeContext: null,
-      activeClockEntry: null,
-      isEmployeeUser,
-      canUseSelfClock: false,
-      canRequestEdits: false,
-      canManageTimeEntries,
-      canApproveEditRequests,
-      error: 'Your user account is not linked to an employee record yet. Ask an Admin to link your user to an employee profile.',
-    });
-  }
+  const existing = loadExistingEntries(db, tenantId, employeeId, start);
+  const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenantId) : [];
+  const activeClockEntry = canUseSelfClock ? loadActiveClockEntry(db, tenantId, link?.employee_id ?? null) : null;
+  const weekApproval = loadWeekApproval(db, tenantId, employeeId, start);
+  const weekCalendar = loadWeekCalendar(db, tenantId, employeeId, start);
+  const pendingWeekEditRequestCount = countPendingWeekEditRequests(db, tenantId, employeeId, start);
+  const openClockEntryCount = countOpenClockEntriesForWeek(db, tenantId, employeeId, start);
+  const selectedWeekHours = Number(existing.reduce((sum, entry) => sum + Number(entry.hours || 0), 0).toFixed(2));
+  const selectedWeekEntryCount = existing.length;
 
-  return renderTimesheetPage(c, {
+  return {
     employees,
     jobs,
     employeeId,
@@ -506,87 +600,154 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
     canRequestEdits,
     canManageTimeEntries,
     canApproveEditRequests,
+    weekApproval,
+    weekCalendar,
+    selectedWeekHours,
+    selectedWeekEntryCount,
+    pendingWeekEditRequestCount,
+    openClockEntryCount,
+    selectedWeekLabel: weekRangeLabel(start),
+    prevWeekStart: addDays(start, -7),
+    nextWeekStart: addDays(start, 7),
+  };
+}
+
+function renderTimesheetPage(
+  c: any,
+  state: TimesheetViewState,
+  extras?: { error?: string; success?: string },
+  status: 200 | 400 = 200,
+) {
+  return renderApp(
+    c,
+    state.isEmployeeUser ? 'Time Clock' : 'Weekly Timesheet',
+    <TimesheetPage
+      employees={state.employees}
+      jobs={state.jobs}
+      employeeId={state.employeeId}
+      start={state.start}
+      dates={state.dates}
+      existing={state.existing}
+      pendingRequests={state.pendingRequests}
+      currentEmployeeContext={state.currentEmployeeContext}
+      activeClockEntry={state.activeClockEntry}
+      isEmployeeUser={state.isEmployeeUser}
+      canUseSelfClock={state.canUseSelfClock}
+      canRequestEdits={state.canRequestEdits}
+      canManageTimeEntries={state.canManageTimeEntries}
+      canApproveEditRequests={state.canApproveEditRequests}
+      csrfToken={c.get('csrfToken')}
+      weekApproval={state.weekApproval}
+      weekCalendar={state.weekCalendar}
+      selectedWeekHours={state.selectedWeekHours}
+      selectedWeekEntryCount={state.selectedWeekEntryCount}
+      pendingWeekEditRequestCount={state.pendingWeekEditRequestCount}
+      openClockEntryCount={state.openClockEntryCount}
+      selectedWeekLabel={state.selectedWeekLabel}
+      prevWeekStart={state.prevWeekStart}
+      nextWeekStart={state.nextWeekStart}
+      error={extras?.error}
+      success={extras?.success}
+    />,
+    status,
+  );
+}
+
+export const timesheetRoutes = new Hono<AppEnv>();
+
+timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  const db = getDb();
+  const requestedEmployeeId = parsePositiveInt(c.req.query('employee_id'));
+  const requestedStart = c.req.query('start') || undefined;
+  const state = buildTimesheetState(db, tenant.id, currentUser, {
+    employeeId: requestedEmployeeId,
+    start: requestedStart,
   });
+
+  if (state.isEmployeeUser && !state.employeeId) {
+    return renderTimesheetPage(c, {
+      ...state,
+      existing: [],
+      weekCalendar: [],
+      weekApproval: null,
+      pendingWeekEditRequestCount: 0,
+      openClockEntryCount: 0,
+      selectedWeekHours: 0,
+      selectedWeekEntryCount: 0,
+    }, {
+      error: 'Your user account is not linked to an employee record yet. Ask an Admin to link your user to an employee profile.',
+    }, 400);
+  }
+
+  return renderTimesheetPage(c, state);
 });
 
 timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
-  const tenantId = tenant.id;
 
   const db = getDb();
-  const body = (await c.req.parseBody({ all: true })) as Record<string, unknown>;
-
-  const employees = loadEmployees(db, tenantId);
-  const jobs = loadJobs(db, tenantId);
-  const link = loadEmployeeForUser(db, currentUser.id, tenantId);
-  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
-  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
-  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
-  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
+  const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
 
   let employeeId: number | null = null;
-  let start = weekStart(new Date().toISOString().slice(0, 10));
+  let start = weekStart(toIsoDate(new Date()));
 
   try {
     employeeId = normalizeEmployeeId(body.employee_id);
     start = normalizeWeekStart(body.start);
 
-    const rate = getEmployeeRate(db, employeeId, tenantId);
-    const dates = weekDates(start);
-    const allowedDates = new Set(dates);
+    assertWeekNotApproved(db, tenant.id, employeeId, start);
 
-    const rowDate = bodyValues(body, 'row_date');
-    const rowJobId = bodyValues(body, 'row_job_id');
-    const rowTimeInLocal = bodyValues(body, 'row_time_in_local');
-    const rowTimeOutLocal = bodyValues(body, 'row_time_out_local');
-    const rowClockInUtc = bodyValues(body, 'row_clock_in_utc');
-    const rowClockOutUtc = bodyValues(body, 'row_clock_out_utc');
-    const rowNote = bodyValues(body, 'row_note');
+    const rate = getEmployeeRate(db, employeeId, tenant.id);
+    const allowedDates = new Set(weekDates(start));
+    const rowDates = bodyValues(body, 'row_date');
+    const rowTimeIns = bodyValues(body, 'row_time_in_local');
+    const rowTimeOuts = bodyValues(body, 'row_time_out_local');
+    const rowJobIds = bodyValues(body, 'row_job_id');
+    const rowNotes = bodyValues(body, 'row_note');
 
     let insertedCount = 0;
 
-    for (let i = 0; i < rowDate.length; i++) {
-      const rawDate = String(rowDate[i] ?? '').trim();
-      const rawJobId = String(rowJobId[i] ?? '').trim();
-      const rawTimeInLocal = String(rowTimeInLocal[i] ?? '').trim();
-      const rawTimeOutLocal = String(rowTimeOutLocal[i] ?? '').trim();
-      const rawClockInUtc = String(rowClockInUtc[i] ?? '').trim();
-      const rawClockOutUtc = String(rowClockOutUtc[i] ?? '').trim();
+    for (let i = 0; i < rowDates.length; i++) {
+      const rawDate = String(rowDates[i] ?? '').trim();
+      const rawTimeIn = parseLocalTime(rowTimeIns[i]);
+      const rawTimeOut = parseLocalTime(rowTimeOuts[i]);
+      const rawJobId = String(rowJobIds[i] ?? '').trim();
+      const rawNote = rowNotes[i];
+      const hasAnyValue = !!(rawTimeIn || rawTimeOut || rawJobId || String(rawNote ?? '').trim());
 
-      const hasAnyValue = !!(rawTimeInLocal || rawTimeOutLocal || rawJobId || String(rowNote[i] ?? '').trim());
-      if (!hasAnyValue) continue;
+      if (!hasAnyValue) {
+        continue;
+      }
 
       if (!isRealIsoDate(rawDate) || !allowedDates.has(rawDate)) {
         throw new Error('One or more entry dates are invalid for the selected week.');
       }
 
-      const timeInLocal = parseLocalTime(rawTimeInLocal);
-      const timeOutLocal = parseLocalTime(rawTimeOutLocal);
-      if (!timeInLocal || !timeOutLocal) {
-        throw new Error('Please enter a valid time in and time out for each manual entry.');
+      if (!rawTimeIn || !rawTimeOut) {
+        throw new Error('Each manual entry row must include both time in and time out.');
       }
 
-      const clockInUtc = isValidIsoDateTime(rawClockInUtc)
-        ? rawClockInUtc
-        : localDateTimeToUtc(rawDate, timeInLocal);
-      const clockOutUtc = isValidIsoDateTime(rawClockOutUtc)
-        ? rawClockOutUtc
-        : localDateTimeToUtc(rawDate, timeOutLocal);
-
+      const clockInUtc = localDateTimeToUtc(rawDate, rawTimeIn);
+      const clockOutUtc = localDateTimeToUtc(rawDate, rawTimeOut);
       const hours = hoursBetween(clockInUtc, clockOutUtc);
-      const note = normalizeNote(rowNote[i]);
-      const laborCost = Number((hours * rate).toFixed(2));
+      const note = normalizeNote(rawNote);
+      const jobId = rawJobId ? parsePositiveInt(rawJobId) : null;
 
-      let jobId: number | null = null;
-      if (rawJobId) {
-        jobId = parsePositiveInt(rawJobId);
-        if (!jobId) {
-          throw new Error('Please select a valid job when a job is provided.');
-        }
-        ensureJobExists(db, jobId, tenantId);
+      if (rawJobId && !jobId) {
+        throw new Error('Please select a valid job when a job is provided.');
       }
+
+      if (jobId) {
+        ensureJobExists(db, jobId, tenant.id);
+      }
+
+      const laborCost = Number((hours * rate).toFixed(2));
 
       db.prepare(`
         INSERT INTO time_entries (
@@ -594,70 +755,145 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
           clock_in_at, clock_out_at, entry_method, approval_status, approved_by_user_id, approved_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', 'approved', ?, CURRENT_TIMESTAMP)
-      `).run(jobId, employeeId, rawDate, hours, note, laborCost, tenantId, clockInUtc, clockOutUtc, currentUser.id);
+      `).run(jobId, employeeId, rawDate, hours, note, laborCost, tenant.id, clockInUtc, clockOutUtc, currentUser.id);
 
       insertedCount += 1;
     }
 
-    const existing = loadExistingEntries(db, tenantId, employeeId, start);
-    const pendingRequests = loadPendingRequests(db, tenantId);
-    const currentEmployeeContext = canUseSelfClock && link?.employee_id && link?.employee_name
-      ? { employeeId: link.employee_id, employeeName: link.employee_name }
-      : null;
-    const activeClockEntry = canUseSelfClock
-      ? loadActiveClockEntry(db, tenantId, link?.employee_id ?? null)
-      : null;
-
-    return renderTimesheetPage(c, {
-      employees,
-      jobs,
-      employeeId,
-      start,
-      dates,
-      existing,
-      pendingRequests,
-      currentEmployeeContext,
-      activeClockEntry,
-      isEmployeeUser: false,
-      canUseSelfClock,
-      canRequestEdits,
-      canManageTimeEntries,
-      canApproveEditRequests,
+    const state = buildTimesheetState(db, tenant.id, currentUser, { employeeId, start });
+    return renderTimesheetPage(c, state, {
       success: insertedCount > 0 ? 'Time entries saved successfully.' : 'No new time entries were added.',
     });
   } catch (error) {
-    const dates = weekDates(start);
-    const existing = loadExistingEntries(db, tenantId, employeeId, start);
-    const pendingRequests = loadPendingRequests(db, tenantId);
-    const currentEmployeeContext = canUseSelfClock && link?.employee_id && link?.employee_name
-      ? { employeeId: link.employee_id, employeeName: link.employee_name }
-      : null;
-    const activeClockEntry = canUseSelfClock
-      ? loadActiveClockEntry(db, tenantId, link?.employee_id ?? null)
-      : null;
-    const message = error instanceof Error ? error.message : 'Unable to save time entries.';
+    const state = buildTimesheetState(db, tenant.id, currentUser, { employeeId, start });
+    return renderTimesheetPage(c, state, {
+      error: error instanceof Error ? error.message : 'Unable to save time entries.',
+    }, 400);
+  }
+});
 
-    return renderTimesheetPage(
-      c,
-      {
-        employees,
-        jobs,
-        employeeId,
-        start,
-        dates,
-        existing,
-        pendingRequests,
-        currentEmployeeContext,
-        activeClockEntry,
-        isEmployeeUser: false,
-        canUseSelfClock,
-        canRequestEdits,
-        canManageTimeEntries,
-        canApproveEditRequests,
-        error: message,
+timesheetRoutes.post('/timesheet/week-approve', permissionRequired('time.approve'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  const db = getDb();
+  const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+
+  let employeeId: number | null = null;
+  let start = weekStart(toIsoDate(new Date()));
+
+  try {
+    employeeId = normalizeEmployeeId(body.employee_id);
+    start = normalizeWeekStart(body.start);
+    const note = normalizeNote(body.note);
+
+    const existing = loadExistingEntries(db, tenant.id, employeeId, start);
+    if (existing.length === 0) {
+      throw new Error('Add at least one completed time entry before approving the week.');
+    }
+
+    if (existing.some((entry) => !entry.clock_out_at)) {
+      throw new Error('An open clock entry must be closed before this week can be approved.');
+    }
+
+    if (existing.some((entry) => entry.approval_status !== 'approved')) {
+      throw new Error('Resolve all pending edit requests before approving the week.');
+    }
+
+    if (countPendingWeekEditRequests(db, tenant.id, employeeId, start) > 0) {
+      throw new Error('Resolve all pending edit requests before approving the week.');
+    }
+
+    db.prepare(`
+      INSERT INTO time_entry_week_approvals (
+        tenant_id, employee_id, week_start, approved_by_user_id, approved_at, note
+      )
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+      ON CONFLICT(tenant_id, employee_id, week_start)
+      DO UPDATE SET
+        approved_by_user_id = excluded.approved_by_user_id,
+        approved_at = CURRENT_TIMESTAMP,
+        note = excluded.note
+    `).run(tenant.id, employeeId, start, currentUser.id, note);
+
+    logActivity(db, {
+      tenantId: tenant.id,
+      actorUserId: currentUser.id,
+      eventType: 'time.week_approved',
+      entityType: 'employee',
+      entityId: employeeId,
+      description: `${currentUser.name} approved the timesheet week starting ${start} for employee #${employeeId}.`,
+      metadata: {
+        employee_id: employeeId,
+        week_start: start,
+        week_end: addDays(start, 6),
+        note,
       },
-      400,
-    );
+      ipAddress: resolveRequestIp(c),
+    });
+
+    const state = buildTimesheetState(db, tenant.id, currentUser, { employeeId, start });
+    return renderTimesheetPage(c, state, {
+      success: 'Week approved. Employee edits are now locked until the week is reopened.',
+    });
+  } catch (error) {
+    const state = buildTimesheetState(db, tenant.id, currentUser, { employeeId, start });
+    return renderTimesheetPage(c, state, {
+      error: error instanceof Error ? error.message : 'Unable to approve the week.',
+    }, 400);
+  }
+});
+
+timesheetRoutes.post('/timesheet/week-reopen', permissionRequired('time.approve'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  const db = getDb();
+  const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+
+  let employeeId: number | null = null;
+  let start = weekStart(toIsoDate(new Date()));
+
+  try {
+    employeeId = normalizeEmployeeId(body.employee_id);
+    start = normalizeWeekStart(body.start);
+
+    const approval = loadWeekApproval(db, tenant.id, employeeId, start);
+    if (!approval) {
+      throw new Error('This week is not currently approved.');
+    }
+
+    db.prepare(`
+      DELETE FROM time_entry_week_approvals
+      WHERE tenant_id = ? AND employee_id = ? AND week_start = ?
+    `).run(tenant.id, employeeId, start);
+
+    logActivity(db, {
+      tenantId: tenant.id,
+      actorUserId: currentUser.id,
+      eventType: 'time.week_reopened',
+      entityType: 'employee',
+      entityId: employeeId,
+      description: `${currentUser.name} reopened the timesheet week starting ${start} for employee #${employeeId}.`,
+      metadata: {
+        employee_id: employeeId,
+        week_start: start,
+        week_end: addDays(start, 6),
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    const state = buildTimesheetState(db, tenant.id, currentUser, { employeeId, start });
+    return renderTimesheetPage(c, state, {
+      success: 'Week reopened. Time entries can be adjusted again.',
+    });
+  } catch (error) {
+    const state = buildTimesheetState(db, tenant.id, currentUser, { employeeId, start });
+    return renderTimesheetPage(c, state, {
+      error: error instanceof Error ? error.message : 'Unable to reopen the week.',
+    }, 400);
   }
 });
 
@@ -668,15 +904,6 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
 
   const db = getDb();
   const link = loadEmployeeForUser(db, currentUser.id, tenant.id);
-  const employees = loadEmployees(db, tenant.id);
-  const jobs = loadJobs(db, tenant.id);
-  const today = toIsoDate(new Date());
-  const start = weekStart(today);
-  const dates = weekDates(start);
-  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
-  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
-  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
-  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
 
   try {
     const employeeId = link?.employee_id ?? null;
@@ -684,14 +911,17 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
       throw new Error('Your user account is not linked to an employee record.');
     }
 
+    const todayStart = weekStart(toIsoDate(new Date()));
+    assertWeekNotApproved(db, tenant.id, employeeId, todayStart, 'Your timesheet for this week has already been approved. Ask a manager to reopen the week before clocking in.');
+
     const activeClockEntry = loadActiveClockEntry(db, tenant.id, employeeId);
     if (activeClockEntry) {
       throw new Error('You are already clocked in.');
     }
 
-    const body = await c.req.parseBody();
-    const nowUtc = String(body['client_now_utc'] ?? '').trim();
-    const note = normalizeNote(body['note']);
+    const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+    const nowUtc = String(body.client_now_utc ?? '').trim();
+    const note = normalizeNote(body.note);
 
     if (!isValidIsoDateTime(nowUtc)) {
       throw new Error('Invalid punch in timestamp.');
@@ -705,68 +935,13 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
       VALUES (NULL, ?, ?, 0, ?, 0, ?, ?, NULL, 'clock', 'approved', ?, CURRENT_TIMESTAMP)
     `).run(employeeId, toIsoDate(new Date(nowUtc)), note, tenant.id, nowUtc, currentUser.id);
 
-    const currentEmployeeContext = link?.employee_name
-      ? { employeeId, employeeName: link.employee_name }
-      : null;
-
-    const selectedEmployeeId = currentUser.role === 'Employee'
-      ? employeeId
-      : (link?.employee_id && employees.some((employee) => employee.id === link.employee_id)
-          ? link.employee_id
-          : (employees.length > 0 ? employees[0].id : null));
-
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
-
-    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-
-    return renderTimesheetPage(c, {
-      employees,
-      jobs,
-      employeeId: selectedEmployeeId,
-      start,
-      dates,
-      existing,
-      pendingRequests,
-      currentEmployeeContext,
-      activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
-      isEmployeeUser: currentUser.role === 'Employee',
-      canUseSelfClock,
-      canRequestEdits,
-      canManageTimeEntries,
-      canApproveEditRequests,
+    const state = buildTimesheetState(db, tenant.id, currentUser);
+    return renderTimesheetPage(c, state, {
       success: 'You are now clocked in.',
     });
   } catch (error) {
-    const employeeId = link?.employee_id ?? null;
-    const currentEmployeeContext = link?.employee_id && link?.employee_name
-      ? { employeeId: link.employee_id, employeeName: link.employee_name }
-      : null;
-
-    const selectedAdminEmployeeId =
-      currentUser.role === 'Employee'
-        ? employeeId
-        : (link?.employee_id && employees.some((employee) => employee.id === link.employee_id)
-            ? link.employee_id
-            : (employees.length > 0 ? employees[0].id : null));
-
-    const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
-    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-
-    return renderTimesheetPage(c, {
-      employees,
-      jobs,
-      employeeId: selectedAdminEmployeeId,
-      start,
-      dates,
-      existing,
-      pendingRequests,
-      currentEmployeeContext,
-      activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
-      isEmployeeUser: currentUser.role === 'Employee',
-      canUseSelfClock,
-      canRequestEdits,
-      canManageTimeEntries,
-      canApproveEditRequests,
+    const state = buildTimesheetState(db, tenant.id, currentUser);
+    return renderTimesheetPage(c, state, {
       error: error instanceof Error ? error.message : 'Unable to punch in.',
     }, 400);
   }
@@ -779,18 +954,9 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
 
   const db = getDb();
   const link = loadEmployeeForUser(db, currentUser.id, tenant.id);
-  const employees = loadEmployees(db, tenant.id);
-  const jobs = loadJobs(db, tenant.id);
-  const today = toIsoDate(new Date());
-  const start = weekStart(today);
-  const dates = weekDates(start);
-  const employeeId = link?.employee_id ?? null;
-  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
-  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
-  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
-  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
 
   try {
+    const employeeId = link?.employee_id ?? null;
     if (!employeeId) {
       throw new Error('Your user account is not linked to an employee record.');
     }
@@ -800,8 +966,8 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
       throw new Error('You are not currently clocked in.');
     }
 
-    const body = await c.req.parseBody();
-    const nowUtc = String(body['client_now_utc'] ?? '').trim();
+    const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+    const nowUtc = String(body.client_now_utc ?? '').trim();
 
     if (!isValidIsoDateTime(nowUtc)) {
       throw new Error('Invalid punch out timestamp.');
@@ -814,83 +980,20 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
     db.prepare(`
       UPDATE time_entries
       SET clock_out_at = ?,
-          date = ?,
           hours = ?,
           labor_cost = ?,
           approved_by_user_id = ?,
           approved_at = CURRENT_TIMESTAMP
       WHERE id = ? AND tenant_id = ?
-    `).run(
-      nowUtc,
-      toIsoDate(new Date(activeClockEntry.clock_in_at)),
-      hours,
-      laborCost,
-      currentUser.id,
-      activeClockEntry.id,
-      tenant.id,
-    );
+    `).run(nowUtc, hours, laborCost, currentUser.id, activeClockEntry.id, tenant.id);
 
-    const currentEmployeeContext = link?.employee_name
-      ? { employeeId, employeeName: link.employee_name }
-      : null;
-
-    const selectedEmployeeId = currentUser.role === 'Employee'
-      ? employeeId
-      : (link?.employee_id && employees.some((employee) => employee.id === link.employee_id)
-          ? link.employee_id
-          : (employees.length > 0 ? employees[0].id : null));
-
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
-
-    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-
-    return renderTimesheetPage(c, {
-      employees,
-      jobs,
-      employeeId: selectedEmployeeId,
-      start,
-      dates,
-      existing,
-      pendingRequests,
-      currentEmployeeContext,
-      activeClockEntry: null,
-      isEmployeeUser: currentUser.role === 'Employee',
-      canUseSelfClock,
-      canRequestEdits,
-      canManageTimeEntries,
-      canApproveEditRequests,
+    const state = buildTimesheetState(db, tenant.id, currentUser);
+    return renderTimesheetPage(c, state, {
       success: 'You have been clocked out successfully.',
     });
   } catch (error) {
-    const currentEmployeeContext = link?.employee_id && link?.employee_name
-      ? { employeeId: link.employee_id, employeeName: link.employee_name }
-      : null;
-
-    const selectedAdminEmployeeId =
-      currentUser.role === 'Employee'
-        ? employeeId
-        : (link?.employee_id && employees.some((employee) => employee.id === link.employee_id)
-            ? link.employee_id
-            : (employees.length > 0 ? employees[0].id : null));
-
-    const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
-    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-
-    return renderTimesheetPage(c, {
-      employees,
-      jobs,
-      employeeId: selectedAdminEmployeeId,
-      start,
-      dates,
-      existing,
-      pendingRequests,
-      currentEmployeeContext,
-      activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
-      isEmployeeUser: currentUser.role === 'Employee',
-      canUseSelfClock,
-      canRequestEdits,
-      canManageTimeEntries,
-      canApproveEditRequests,
+    const state = buildTimesheetState(db, tenant.id, currentUser);
+    return renderTimesheetPage(c, state, {
       error: error instanceof Error ? error.message : 'Unable to punch out.',
     }, 400);
   }
@@ -901,68 +1004,74 @@ timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edi
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
 
+  const timeEntryId = parsePositiveInt(c.req.param('id'));
+  if (!timeEntryId) {
+    return c.text('Time entry not found', 404);
+  }
+
   const db = getDb();
   const link = loadEmployeeForUser(db, currentUser.id, tenant.id);
-  const employees = loadEmployees(db, tenant.id);
-  const jobs = loadJobs(db, tenant.id);
-  const today = toIsoDate(new Date());
-  const start = weekStart(today);
-  const dates = weekDates(start);
-  const employeeId = link?.employee_id ?? null;
-  const canUseSelfClock = userHasPermission(currentUser, 'time.clock') && !!(link?.employee_id && link?.employee_name);
-  const canRequestEdits = userHasPermission(currentUser, 'time.edit_requests');
-  const canManageTimeEntries = userHasPermission(currentUser, 'time.approve');
-  const canApproveEditRequests = userHasPermission(currentUser, 'time.approve');
 
   try {
+    const employeeId = link?.employee_id ?? null;
     if (!employeeId) {
       throw new Error('Your user account is not linked to an employee record.');
     }
 
-    const timeEntryId = parsePositiveInt(c.req.param('id'));
-    if (!timeEntryId) {
-      throw new Error('Time entry not found.');
-    }
-
-    const existingEntry = db.prepare(`
-      SELECT id, job_id, note, clock_in_at, clock_out_at
+    const timeEntry = db.prepare(`
+      SELECT id, employee_id, job_id, date, clock_in_at, clock_out_at, note
       FROM time_entries
-      WHERE id = ? AND tenant_id = ? AND employee_id = ?
-    `).get(timeEntryId, tenant.id, employeeId) as
-      | { id: number; job_id: number | null; note: string | null; clock_in_at: string | null; clock_out_at: string | null }
+      WHERE id = ? AND tenant_id = ?
+      LIMIT 1
+    `).get(timeEntryId, tenant.id) as
+      | {
+          id: number;
+          employee_id: number;
+          job_id: number | null;
+          date: string;
+          clock_in_at: string | null;
+          clock_out_at: string | null;
+          note: string | null;
+        }
       | undefined;
 
-    if (!existingEntry) {
-      throw new Error('Time entry not found.');
+    if (!timeEntry || timeEntry.employee_id !== employeeId) {
+      throw new Error('You can only request edits for your own time entries.');
     }
+
+    assertWeekNotApproved(db, tenant.id, employeeId, weekStart(timeEntry.date), 'This week has already been approved, so employee edit requests are locked. Ask a manager to reopen the week first.');
 
     const existingPending = db.prepare(`
       SELECT id
       FROM time_entry_edit_requests
-      WHERE tenant_id = ? AND time_entry_id = ? AND status = 'pending'
+      WHERE time_entry_id = ? AND tenant_id = ? AND status = 'pending'
       LIMIT 1
-    `).get(tenant.id, timeEntryId) as { id: number } | undefined;
+    `).get(timeEntryId, tenant.id) as { id: number } | undefined;
 
     if (existingPending) {
-      throw new Error('There is already a pending edit request for this time entry.');
+      throw new Error('An edit request is already pending for this entry.');
     }
 
-    const body = await c.req.parseBody();
-    const clockInUtc = String(body['clock_in_utc'] ?? '').trim();
-    const clockOutUtc = String(body['clock_out_utc'] ?? '').trim();
-    const note = normalizeNote(body['note']);
-    const requestReason = String(body['request_reason'] ?? '').trim();
+    const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+    const proposedClockIn = String(body.clock_in_utc ?? '').trim();
+    const proposedClockOut = String(body.clock_out_utc ?? '').trim();
+    const requestReason = String(body.request_reason ?? '').trim();
+    const proposedNote = normalizeNote(body.note);
 
-    if (!requestReason || requestReason.length > 500) {
-      throw new Error('Please provide a brief reason for this edit request (500 characters max).');
+    if (!isValidIsoDateTime(proposedClockIn) || !isValidIsoDateTime(proposedClockOut)) {
+      throw new Error('Please provide valid clock in and clock out values.');
     }
 
-    if (!isValidIsoDateTime(clockInUtc) || !isValidIsoDateTime(clockOutUtc)) {
-      throw new Error('Please provide valid edited clock times.');
+    if (!requestReason) {
+      throw new Error('Please explain why this edit is being requested.');
     }
 
-    const hours = hoursBetween(clockInUtc, clockOutUtc);
-    const proposedDate = toIsoDate(new Date(clockInUtc));
+    if (requestReason.length > 500) {
+      throw new Error('Request reason must be 500 characters or less.');
+    }
+
+    const proposedDate = toIsoDate(new Date(proposedClockIn));
+    const proposedHours = hoursBetween(proposedClockIn, proposedClockOut);
 
     db.prepare(`
       INSERT INTO time_entry_edit_requests (
@@ -976,21 +1085,20 @@ timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edi
         proposed_clock_out_at,
         proposed_hours,
         proposed_note,
-        request_reason,
-        status
+        request_reason
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       tenant.id,
       timeEntryId,
       employeeId,
       currentUser.id,
-      existingEntry.job_id,
+      timeEntry.job_id,
       proposedDate,
-      clockInUtc,
-      clockOutUtc,
-      hours,
-      note,
+      proposedClockIn,
+      proposedClockOut,
+      proposedHours,
+      proposedNote,
       requestReason,
     );
 
@@ -999,7 +1107,7 @@ timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edi
       SET approval_status = 'pending_edit'
       WHERE id = ? AND tenant_id = ?
     `).run(timeEntryId, tenant.id);
-    
+
     logActivity(db, {
       tenantId: tenant.id,
       actorUserId: currentUser.id,
@@ -1008,78 +1116,21 @@ timesheetRoutes.post('/timeclock/request-edit/:id', permissionRequired('time.edi
       entityId: timeEntryId,
       description: `${currentUser.name} requested a time edit for entry #${timeEntryId}.`,
       metadata: {
-        employee_id: employeeId,
-        proposed_date: proposedDate,
-        proposed_clock_in_at: clockInUtc,
-        proposed_clock_out_at: clockOutUtc,
-        proposed_hours: hours,
-        proposed_note: note,
-        request_reason: requestReason,
+        time_entry_id: timeEntryId,
+        proposed_clock_in_at: proposedClockIn,
+        proposed_clock_out_at: proposedClockOut,
+        proposed_hours: proposedHours,
       },
       ipAddress: resolveRequestIp(c),
     });
 
-    const currentEmployeeContext = link?.employee_name
-      ? { employeeId, employeeName: link.employee_name }
-      : null;
-
-    const selectedEmployeeId = currentUser.role === 'Employee'
-      ? employeeId
-      : (link?.employee_id && employees.some((employee) => employee.id === link.employee_id)
-          ? link.employee_id
-          : (employees.length > 0 ? employees[0].id : null));
-
-    const existing = loadExistingEntries(db, tenant.id, selectedEmployeeId, start);
-
-    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-
-    return renderTimesheetPage(c, {
-      employees,
-      jobs,
-      employeeId: selectedEmployeeId,
-      start,
-      dates,
-      existing,
-      pendingRequests,
-      currentEmployeeContext,
-      activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
-      isEmployeeUser: currentUser.role === 'Employee',
-      canUseSelfClock,
-      canRequestEdits,
-      canManageTimeEntries,
-      canApproveEditRequests,
+    const state = buildTimesheetState(db, tenant.id, currentUser);
+    return renderTimesheetPage(c, state, {
       success: 'Your edit request has been submitted for approval.',
     });
   } catch (error) {
-    const currentEmployeeContext = link?.employee_id && link?.employee_name
-      ? { employeeId: link.employee_id, employeeName: link.employee_name }
-      : null;
-
-    const selectedAdminEmployeeId =
-      currentUser.role === 'Employee'
-        ? employeeId
-        : (link?.employee_id && employees.some((employee) => employee.id === link.employee_id)
-            ? link.employee_id
-            : (employees.length > 0 ? employees[0].id : null));
-
-    const existing = loadExistingEntries(db, tenant.id, selectedAdminEmployeeId, start);
-    const pendingRequests = canApproveEditRequests ? loadPendingRequests(db, tenant.id) : [];
-
-    return renderTimesheetPage(c, {
-      employees,
-      jobs,
-      employeeId: selectedAdminEmployeeId,
-      start,
-      dates,
-      existing,
-      pendingRequests,
-      currentEmployeeContext,
-      activeClockEntry: loadActiveClockEntry(db, tenant.id, employeeId),
-      isEmployeeUser: currentUser.role === 'Employee',
-      canUseSelfClock,
-      canRequestEdits,
-      canManageTimeEntries,
-      canApproveEditRequests,
+    const state = buildTimesheetState(db, tenant.id, currentUser);
+    return renderTimesheetPage(c, state, {
       error: error instanceof Error ? error.message : 'Unable to submit edit request.',
     }, 400);
   }
@@ -1129,68 +1180,76 @@ timesheetRoutes.post('/timeclock/edit-request/:id/approve', permissionRequired('
     return c.text('Edit request not found', 404);
   }
 
-  const rate = getEmployeeRate(db, request.employee_id, tenant.id);
-  const laborCost = Number((request.proposed_hours * rate).toFixed(2));
+  try {
+    assertWeekNotApproved(db, tenant.id, request.employee_id, weekStart(request.proposed_date));
 
-  db.prepare(`
-    UPDATE time_entries
-    SET job_id = ?,
-        date = ?,
-        clock_in_at = ?,
-        clock_out_at = ?,
-        hours = ?,
-        labor_cost = ?,
-        note = ?,
-        approval_status = 'approved',
-        approved_by_user_id = ?,
-        approved_at = CURRENT_TIMESTAMP,
-        last_edited_by_user_id = ?,
-        last_edited_at = CURRENT_TIMESTAMP,
-        edit_reason = 'Approved employee edit request'
-    WHERE id = ? AND tenant_id = ?
-  `).run(
-    request.proposed_job_id,
-    request.proposed_date,
-    request.proposed_clock_in_at,
-    request.proposed_clock_out_at,
-    request.proposed_hours,
-    laborCost,
-    request.proposed_note,
-    currentUser.id,
-    currentUser.id,
-    request.time_entry_id,
-    tenant.id,
-  );
+    const rate = getEmployeeRate(db, request.employee_id, tenant.id);
+    const laborCost = Number((request.proposed_hours * rate).toFixed(2));
 
-  db.prepare(`
-    UPDATE time_entry_edit_requests
-    SET status = 'approved',
-        reviewed_by_user_id = ?,
-        reviewed_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND tenant_id = ?
-  `).run(currentUser.id, requestId, tenant.id);
+    db.prepare(`
+      UPDATE time_entries
+      SET job_id = ?,
+          date = ?,
+          clock_in_at = ?,
+          clock_out_at = ?,
+          hours = ?,
+          labor_cost = ?,
+          note = ?,
+          approval_status = 'approved',
+          approved_by_user_id = ?,
+          approved_at = CURRENT_TIMESTAMP,
+          last_edited_by_user_id = ?,
+          last_edited_at = CURRENT_TIMESTAMP,
+          edit_reason = 'Approved employee edit request'
+      WHERE id = ? AND tenant_id = ?
+    `).run(
+      request.proposed_job_id,
+      request.proposed_date,
+      request.proposed_clock_in_at,
+      request.proposed_clock_out_at,
+      request.proposed_hours,
+      laborCost,
+      request.proposed_note,
+      currentUser.id,
+      currentUser.id,
+      request.time_entry_id,
+      tenant.id,
+    );
 
-  logActivity(db, {
-    tenantId: tenant.id,
-    actorUserId: currentUser.id,
-    eventType: 'time.edit_approved',
-    entityType: 'time_entry',
-    entityId: request.time_entry_id,
-    description: `${currentUser.name} approved a time edit for entry #${request.time_entry_id}.`,
-    metadata: {
-      request_id: requestId,
-      employee_id: request.employee_id,
-      proposed_job_id: request.proposed_job_id,
-      proposed_date: request.proposed_date,
-      proposed_clock_in_at: request.proposed_clock_in_at,
-      proposed_clock_out_at: request.proposed_clock_out_at,
-      proposed_hours: request.proposed_hours,
-      proposed_note: request.proposed_note,
-    },
-    ipAddress: resolveRequestIp(c),
-  });
+    db.prepare(`
+      UPDATE time_entry_edit_requests
+      SET status = 'approved',
+          reviewed_by_user_id = ?,
+          reviewed_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND tenant_id = ?
+    `).run(currentUser.id, requestId, tenant.id);
 
-  return c.redirect('/timesheet');
+    logActivity(db, {
+      tenantId: tenant.id,
+      actorUserId: currentUser.id,
+      eventType: 'time.edit_approved',
+      entityType: 'time_entry',
+      entityId: request.time_entry_id,
+      description: `${currentUser.name} approved a time edit for entry #${request.time_entry_id}.`,
+      metadata: {
+        request_id: requestId,
+        employee_id: request.employee_id,
+        proposed_job_id: request.proposed_job_id,
+        proposed_date: request.proposed_date,
+        proposed_clock_in_at: request.proposed_clock_in_at,
+        proposed_clock_out_at: request.proposed_clock_out_at,
+        proposed_hours: request.proposed_hours,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.redirect('/timesheet');
+  } catch (error) {
+    const state = buildTimesheetState(db, tenant.id, currentUser);
+    return renderTimesheetPage(c, state, {
+      error: error instanceof Error ? error.message : 'Unable to approve the edit request.',
+    }, 400);
+  }
 });
 
 timesheetRoutes.post('/timeclock/edit-request/:id/reject', permissionRequired('time.approve'), async (c) => {
@@ -1260,20 +1319,31 @@ timesheetRoutes.post('/delete_time/:id', permissionRequired('time.approve'), asy
   const db = getDb();
 
   const entry = db.prepare(`
-    SELECT id
+    SELECT id, employee_id, date
     FROM time_entries
     WHERE id = ? AND tenant_id = ?
-  `).get(timeId, tenantId) as { id: number } | undefined;
+  `).get(timeId, tenantId) as { id: number; employee_id: number; date: string } | undefined;
 
   if (!entry) {
     return c.text('Time entry not found', 404);
   }
 
-  db.prepare('DELETE FROM time_entry_edit_requests WHERE time_entry_id = ? AND tenant_id = ?').run(timeId, tenantId);
-  db.prepare('DELETE FROM time_entries WHERE id = ? AND tenant_id = ?').run(timeId, tenantId);
+  try {
+    assertWeekNotApproved(db, tenantId, entry.employee_id, weekStart(entry.date));
 
-  const referer = c.req.header('Referer') || '/timesheet';
-  return c.redirect(referer);
+    db.prepare('DELETE FROM time_entry_edit_requests WHERE time_entry_id = ? AND tenant_id = ?').run(timeId, tenantId);
+    db.prepare('DELETE FROM time_entries WHERE id = ? AND tenant_id = ?').run(timeId, tenantId);
+
+    const referer = c.req.header('Referer') || '/timesheet';
+    return c.redirect(referer);
+  } catch (error) {
+    const currentUser = c.get('user');
+    if (!currentUser) return c.redirect('/login');
+    const state = buildTimesheetState(db, tenantId, currentUser, { employeeId: entry.employee_id, start: weekStart(entry.date) });
+    return renderTimesheetPage(c, state, {
+      error: error instanceof Error ? error.message : 'Unable to delete the time entry.',
+    }, 400);
+  }
 });
 
 export default timesheetRoutes;
