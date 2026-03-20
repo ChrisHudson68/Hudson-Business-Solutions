@@ -1,0 +1,1 @@
+ALTER TABLE estimate_line_items ADD COLUMN unit TEXT NOT NULL DEFAULT '';

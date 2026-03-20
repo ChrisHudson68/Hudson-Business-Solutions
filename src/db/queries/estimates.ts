@@ -4,6 +4,7 @@ import type { Estimate, EstimateLineItem, EstimateStatus, EstimateWithLineItems 
 export interface EstimateLineItemInput {
   description: string;
   quantity: number;
+  unit?: string | null;
   unit_price: number;
   line_total: number;
   sort_order?: number;
@@ -62,6 +63,7 @@ function normalizeLineItem(input: EstimateLineItemInput, index: number): Estimat
   return {
     description: String(input.description ?? '').trim(),
     quantity: normalizeMoney(input.quantity),
+    unit: String(input.unit ?? '').trim().slice(0, 40),
     unit_price: normalizeMoney(input.unit_price),
     line_total: normalizeMoney(input.line_total),
     sort_order: Number.isInteger(input.sort_order) ? Number(input.sort_order) : index,
@@ -168,6 +170,7 @@ export function getLineItems(db: DB, estimateId: number, tenantId: number): Esti
       tenant_id,
       description,
       quantity,
+      unit,
       unit_price,
       line_total,
       sort_order,
@@ -210,12 +213,13 @@ export function replaceLineItems(
       tenant_id,
       description,
       quantity,
+      unit,
       unit_price,
       line_total,
       sort_order,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `);
 
   lineItems
@@ -227,6 +231,7 @@ export function replaceLineItems(
         tenantId,
         item.description,
         item.quantity,
+        item.unit || '',
         item.unit_price,
         item.line_total,
         Number.isInteger(item.sort_order) ? item.sort_order : index,

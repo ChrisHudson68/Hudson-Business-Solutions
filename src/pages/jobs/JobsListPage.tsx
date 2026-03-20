@@ -21,6 +21,8 @@ interface JobRow {
   retainage_held: number;
   unpaid_invoice_balance: number;
   archived_at?: string | null;
+  source_estimate_id?: number | null;
+  source_estimate_number?: string | null;
 }
 
 interface JobsListPageProps {
@@ -59,11 +61,9 @@ export const JobsListPage: FC<JobsListPageProps> = ({
   totalPayments,
   totalUnpaidInvoiceBalance,
   deleteError,
-  csrfToken,
   showArchived,
   canCreateJobs,
   canEditJobs,
-  canArchiveJobs,
 }) => {
   const hasJobs = jobs.length > 0;
 
@@ -72,7 +72,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Jobs</h1>
-          <p class="muted">Track project profitability, invoices, collections, and labor.</p>
+          <p class="muted">Track project profitability, invoices, collections, labor, and estimate conversions.</p>
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href={showArchived ? '/jobs' : '/jobs?show_archived=1'}>
@@ -91,7 +91,6 @@ export const JobsListPage: FC<JobsListPageProps> = ({
         </div>
       ) : null}
 
-      {/* KPI CARDS (UNCHANGED) */}
       <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
         <div class="card mobile-kpi-card">
           <div class="metric-label">Jobs</div>
@@ -162,6 +161,13 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                           {job.job_code || 'No job code'}
                           {job.archived_at ? ' • Archived' : ''}
                         </div>
+                        {job.source_estimate_id ? (
+                          <div class="small" style="margin-top:6px;">
+                            <span class="badge badge-good">
+                              From {job.source_estimate_number || `Estimate #${job.source_estimate_id}`}
+                            </span>
+                          </div>
+                        ) : null}
                       </td>
                       <td>{job.client_name || '—'}</td>
                       <td>
@@ -192,7 +198,6 @@ export const JobsListPage: FC<JobsListPageProps> = ({
             </div>
           </>
         ) : (
-          /* ⭐ NEW SMART EMPTY STATE */
           <div style="text-align:center; padding:36px 20px;">
             <div style="
               width:64px;
@@ -216,7 +221,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
 
             <p class="muted" style="max-width:520px; margin:0 auto 16px;">
               Jobs are the foundation of your workspace. Track contract value,
-              labor, expenses, invoices, payments, and profitability for each project.
+              labor, expenses, invoices, payments, profitability, and estimate conversions for each project.
             </p>
 
             {!showArchived && canCreateJobs ? (

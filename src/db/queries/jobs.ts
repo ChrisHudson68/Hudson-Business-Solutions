@@ -5,22 +5,31 @@ function archivedFilter(includeArchived = false): string {
   return includeArchived ? '' : 'AND j.archived_at IS NULL';
 }
 
+function baseJobColumns(alias = 'j'): string {
+  return `
+    ${alias}.id,
+    ${alias}.job_name,
+    ${alias}.job_code,
+    ${alias}.client_name,
+    ${alias}.contract_amount,
+    ${alias}.retainage_percent,
+    ${alias}.start_date,
+    ${alias}.status,
+    ${alias}.tenant_id,
+    ${alias}.archived_at,
+    ${alias}.archived_by_user_id,
+    ${alias}.source_estimate_id
+  `;
+}
+
 export function listWithFinancials(db: DB, tenantId: number, includeArchived = false) {
   return db.prepare(`
     SELECT
-      j.id,
-      j.job_name,
-      j.job_code,
-      j.client_name,
-      j.contract_amount,
-      j.retainage_percent,
-      j.start_date,
-      j.status,
-      j.tenant_id,
-      j.archived_at,
-      j.archived_by_user_id,
+      ${baseJobColumns('j')},
+      e.estimate_number AS source_estimate_number,
+      e.customer_name AS source_estimate_customer_name,
       (SELECT COALESCE(SUM(i.amount), 0) FROM income i WHERE i.job_id = j.id AND i.tenant_id = j.tenant_id AND i.archived_at IS NULL) AS total_income,
-      (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.job_id = j.id AND e.tenant_id = j.tenant_id AND e.archived_at IS NULL) AS total_expenses,
+      (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.job_id = j.id AND ex.tenant_id = j.tenant_id AND ex.archived_at IS NULL) AS total_expenses,
       (SELECT COALESCE(SUM(t.labor_cost), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_labor,
       (SELECT COALESCE(SUM(t.hours), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_hours,
       (SELECT COALESCE(SUM(inv.amount), 0) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_invoiced,
@@ -30,6 +39,9 @@ export function listWithFinancials(db: DB, tenantId: number, includeArchived = f
         WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
       (SELECT COUNT(*) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id AND inv.status = 'Unpaid') AS unpaid_invoices
     FROM jobs j
+    LEFT JOIN estimates e
+      ON e.id = j.source_estimate_id
+     AND e.tenant_id = j.tenant_id
     WHERE j.tenant_id = ?
       ${archivedFilter(includeArchived)}
     ORDER BY
@@ -48,19 +60,11 @@ export function listWithFinancials(db: DB, tenantId: number, includeArchived = f
 export function findWithFinancialsById(db: DB, jobId: number, tenantId: number) {
   return db.prepare(`
     SELECT
-      j.id,
-      j.job_name,
-      j.job_code,
-      j.client_name,
-      j.contract_amount,
-      j.retainage_percent,
-      j.start_date,
-      j.status,
-      j.tenant_id,
-      j.archived_at,
-      j.archived_by_user_id,
+      ${baseJobColumns('j')},
+      e.estimate_number AS source_estimate_number,
+      e.customer_name AS source_estimate_customer_name,
       (SELECT COALESCE(SUM(i.amount), 0) FROM income i WHERE i.job_id = j.id AND i.tenant_id = j.tenant_id AND i.archived_at IS NULL) AS total_income,
-      (SELECT COALESCE(SUM(e.amount), 0) FROM expenses e WHERE e.job_id = j.id AND e.tenant_id = j.tenant_id AND e.archived_at IS NULL) AS total_expenses,
+      (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.job_id = j.id AND ex.tenant_id = j.tenant_id AND ex.archived_at IS NULL) AS total_expenses,
       (SELECT COALESCE(SUM(t.labor_cost), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_labor,
       (SELECT COALESCE(SUM(t.hours), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_hours,
       (SELECT COALESCE(SUM(inv.amount), 0) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_invoiced,
@@ -70,6 +74,9 @@ export function findWithFinancialsById(db: DB, jobId: number, tenantId: number) 
         WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
       (SELECT COUNT(*) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id AND inv.status = 'Unpaid') AS unpaid_invoices
     FROM jobs j
+    LEFT JOIN estimates e
+      ON e.id = j.source_estimate_id
+     AND e.tenant_id = j.tenant_id
     WHERE j.id = ? AND j.tenant_id = ?
     LIMIT 1
   `).get(jobId, tenantId) as JobWithFinancials | undefined;
@@ -77,53 +84,99 @@ export function findWithFinancialsById(db: DB, jobId: number, tenantId: number) 
 
 export function listByTenant(db: DB, tenantId: number, includeArchived = false) {
   return db.prepare(`
-    SELECT *
+    SELECT
+      ${baseJobColumns('jobs')},
+      e.estimate_number AS source_estimate_number,
+      e.customer_name AS source_estimate_customer_name
     FROM jobs
-    WHERE tenant_id = ?
-      ${includeArchived ? '' : 'AND archived_at IS NULL'}
-    ORDER BY job_name ASC
+    LEFT JOIN estimates e
+      ON e.id = jobs.source_estimate_id
+     AND e.tenant_id = jobs.tenant_id
+    WHERE jobs.tenant_id = ?
+      ${includeArchived ? '' : 'AND jobs.archived_at IS NULL'}
+    ORDER BY jobs.job_name ASC
   `).all(tenantId) as Job[];
 }
 
 export function listByTenantSorted(db: DB, tenantId: number, includeArchived = false) {
   return db.prepare(`
-    SELECT *
+    SELECT
+      ${baseJobColumns('jobs')},
+      e.estimate_number AS source_estimate_number,
+      e.customer_name AS source_estimate_customer_name
     FROM jobs
-    WHERE tenant_id = ?
-      ${includeArchived ? '' : 'AND archived_at IS NULL'}
+    LEFT JOIN estimates e
+      ON e.id = jobs.source_estimate_id
+     AND e.tenant_id = jobs.tenant_id
+    WHERE jobs.tenant_id = ?
+      ${includeArchived ? '' : 'AND jobs.archived_at IS NULL'}
     ORDER BY
-      CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END,
+      CASE WHEN jobs.archived_at IS NULL THEN 0 ELSE 1 END,
       CASE
-        WHEN status = 'Active' THEN 0
-        WHEN status = 'On Hold' THEN 1
-        WHEN status = 'Complete' THEN 2
-        WHEN status = 'Completed' THEN 2
+        WHEN jobs.status = 'Active' THEN 0
+        WHEN jobs.status = 'On Hold' THEN 1
+        WHEN jobs.status = 'Complete' THEN 2
+        WHEN jobs.status = 'Completed' THEN 2
         ELSE 3
       END,
-      job_name ASC
+      jobs.job_name ASC
   `).all(tenantId) as Job[];
 }
 
 export function findById(db: DB, jobId: number, tenantId: number) {
-  return db.prepare(
-    'SELECT * FROM jobs WHERE id = ? AND tenant_id = ?'
-  ).get(jobId, tenantId) as Job | undefined;
+  return db.prepare(`
+    SELECT
+      ${baseJobColumns('jobs')},
+      e.estimate_number AS source_estimate_number,
+      e.customer_name AS source_estimate_customer_name
+    FROM jobs
+    LEFT JOIN estimates e
+      ON e.id = jobs.source_estimate_id
+     AND e.tenant_id = jobs.tenant_id
+    WHERE jobs.id = ? AND jobs.tenant_id = ?
+    LIMIT 1
+  `).get(jobId, tenantId) as Job | undefined;
 }
 
 export function findByCode(db: DB, tenantId: number, jobCode: string) {
-  return db.prepare(
-    'SELECT * FROM jobs WHERE tenant_id = ? AND UPPER(job_code) = UPPER(?)'
-  ).get(tenantId, jobCode) as Job | undefined;
+  return db.prepare(`
+    SELECT
+      ${baseJobColumns('jobs')},
+      e.estimate_number AS source_estimate_number,
+      e.customer_name AS source_estimate_customer_name
+    FROM jobs
+    LEFT JOIN estimates e
+      ON e.id = jobs.source_estimate_id
+     AND e.tenant_id = jobs.tenant_id
+    WHERE jobs.tenant_id = ? AND UPPER(jobs.job_code) = UPPER(?)
+    LIMIT 1
+  `).get(tenantId, jobCode) as Job | undefined;
+}
+
+export function findBySourceEstimateId(db: DB, tenantId: number, sourceEstimateId: number) {
+  return db.prepare(`
+    SELECT
+      ${baseJobColumns('jobs')},
+      e.estimate_number AS source_estimate_number,
+      e.customer_name AS source_estimate_customer_name
+    FROM jobs
+    LEFT JOIN estimates e
+      ON e.id = jobs.source_estimate_id
+     AND e.tenant_id = jobs.tenant_id
+    WHERE jobs.tenant_id = ? AND jobs.source_estimate_id = ?
+    LIMIT 1
+  `).get(tenantId, sourceEstimateId) as Job | undefined;
 }
 
 export function create(db: DB, tenantId: number, data: {
   job_name: string;
-  job_code?: string;
-  client_name?: string;
-  contract_amount?: number;
-  retainage_percent?: number;
-  start_date?: string;
-  status?: string;
+  job_code?: string | null;
+  client_name?: string | null;
+  contract_amount?: number | null;
+  retainage_percent?: number | null;
+  start_date?: string | null;
+  status?: string | null;
+  source_estimate_id?: number | null;
 }) {
   const result = db.prepare(
     `INSERT INTO jobs (
@@ -136,44 +189,55 @@ export function create(db: DB, tenantId: number, data: {
       status,
       tenant_id,
       archived_at,
-      archived_by_user_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`
+      archived_by_user_id,
+      source_estimate_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`
   ).run(
     data.job_name,
     data.job_code || null,
     data.client_name || null,
-    data.contract_amount || null,
-    data.retainage_percent || null,
-    data.start_date || null,
+    data.contract_amount ?? null,
+    data.retainage_percent ?? null,
+    data.start_date ?? null,
     data.status || 'Active',
-    tenantId
+    tenantId,
+    data.source_estimate_id ?? null,
   );
   return result.lastInsertRowid as number;
 }
 
 export function update(db: DB, jobId: number, tenantId: number, data: {
-  job_name?: string;
-  job_code?: string;
-  client_name?: string;
-  contract_amount?: number;
-  retainage_percent?: number;
-  start_date?: string;
-  status?: string;
+  job_name?: string | null;
+  job_code?: string | null;
+  client_name?: string | null;
+  contract_amount?: number | null;
+  retainage_percent?: number | null;
+  start_date?: string | null;
+  status?: string | null;
+  source_estimate_id?: number | null;
 }) {
   db.prepare(`
     UPDATE jobs
-    SET job_name = ?, job_code = ?, client_name = ?, contract_amount = ?, retainage_percent = ?, start_date = ?, status = ?
+    SET job_name = ?,
+        job_code = ?,
+        client_name = ?,
+        contract_amount = ?,
+        retainage_percent = ?,
+        start_date = ?,
+        status = ?,
+        source_estimate_id = COALESCE(?, source_estimate_id)
     WHERE id = ? AND tenant_id = ?
   `).run(
-    data.job_name || null,
-    data.job_code || null,
-    data.client_name || null,
-    data.contract_amount || null,
-    data.retainage_percent || null,
-    data.start_date || null,
+    data.job_name ?? null,
+    data.job_code ?? null,
+    data.client_name ?? null,
+    data.contract_amount ?? null,
+    data.retainage_percent ?? null,
+    data.start_date ?? null,
     data.status || 'Active',
+    data.source_estimate_id ?? null,
     jobId,
-    tenantId
+    tenantId,
   );
 }
 
@@ -220,6 +284,7 @@ export default {
   listByTenantSorted,
   findById,
   findByCode,
+  findBySourceEstimateId,
   create,
   update,
   archive,

@@ -27,6 +27,8 @@ import { invoiceRoutes } from './routes/invoices.js';
 import { paymentRoutes } from './routes/payments.js';
 import { settingsRoutes } from './routes/settings.js';
 import { billingRoutes } from './routes/billing.js';
+import { estimateRoutes } from './routes/estimates.js';
+import { publicEstimateRoutes } from './routes/public-estimate.js';
 import { stripeRoutes } from './routes/stripe.js';
 
 import { NotFoundPage } from './pages/errors/NotFoundPage.js';
@@ -94,6 +96,8 @@ app.route('/', adminSupportRoutes);
 app.route('/', supportRoutes);
 app.route('/', activityRoutes);
 app.route('/', billingRoutes);
+app.route('/', estimateRoutes);
+app.route('/', publicEstimateRoutes);
 app.route('/', dashboardRoutes);
 app.route('/', userRoutes);
 app.route('/', jobRoutes);

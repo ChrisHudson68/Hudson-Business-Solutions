@@ -645,6 +645,12 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       visible: hasPermission(permissions, 'jobs.view'),
     },
     {
+      label: 'Estimates',
+      href: '/estimates',
+      patterns: ['/estimates', '/estimate/'],
+      visible: hasPermission(permissions, 'jobs.view'),
+    },
+    {
       label: 'Reports',
       href: '/reports',
       patterns: ['/reports', '/profit', '/job_costs'],

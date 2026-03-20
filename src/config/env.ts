@@ -19,6 +19,15 @@ export interface AppConfig {
   platformAdminEmail: string;
   platformAdminPassword: string;
 
+  smtpEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFromEmail: string;
+  smtpFromName: string;
+
   stripeEnabled: boolean;
   stripeSecretKey: string;
   stripePublishableKey: string;
@@ -131,10 +140,26 @@ function requireStringWhenEnabled(
   const parsed = String(value ?? '').trim();
 
   if (!parsed && enabled) {
-    throw new Error(`${fieldName} is required when STRIPE_ENABLED=true.`);
+    throw new Error(`${fieldName} is required when the feature is enabled.`);
   }
 
   return parsed || fallback;
+}
+
+function parseEmailLike(value: string | undefined, fieldName: string, enabled: boolean, fallback = ''): string {
+  const parsed = String(value ?? '').trim();
+  if (!parsed) {
+    if (enabled) {
+      throw new Error(`${fieldName} is required when the feature is enabled.`);
+    }
+    return fallback;
+  }
+
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(parsed)) {
+    throw new Error(`${fieldName} must be a valid email address.`);
+  }
+
+  return parsed;
 }
 
 export function getEnv(): AppConfig {
@@ -143,6 +168,7 @@ export function getEnv(): AppConfig {
   const nodeEnv = normalizeNodeEnv(process.env.NODE_ENV);
   const isProduction = nodeEnv === 'production';
   const stripeEnabled = parseBooleanEnv(process.env.STRIPE_ENABLED, false);
+  const smtpEnabled = parseBooleanEnv(process.env.SMTP_ENABLED, false);
 
   cachedConfig = {
     nodeEnv,
@@ -188,6 +214,15 @@ export function getEnv(): AppConfig {
     launchCode: String(process.env.LAUNCH_CODE ?? '').trim(),
     platformAdminEmail: String(process.env.PLATFORM_ADMIN_EMAIL ?? '').trim().toLowerCase(),
     platformAdminPassword: String(process.env.PLATFORM_ADMIN_PASSWORD ?? '').trim(),
+
+    smtpEnabled,
+    smtpHost: requireStringWhenEnabled(process.env.SMTP_HOST, 'SMTP_HOST', smtpEnabled),
+    smtpPort: parseIntegerEnv(process.env.SMTP_PORT, 587, 'SMTP_PORT', 1, 65535),
+    smtpSecure: parseBooleanEnv(process.env.SMTP_SECURE, false),
+    smtpUser: requireStringWhenEnabled(process.env.SMTP_USER, 'SMTP_USER', smtpEnabled),
+    smtpPass: requireStringWhenEnabled(process.env.SMTP_PASS, 'SMTP_PASS', smtpEnabled),
+    smtpFromEmail: parseEmailLike(process.env.SMTP_FROM_EMAIL, 'SMTP_FROM_EMAIL', smtpEnabled),
+    smtpFromName: String(process.env.SMTP_FROM_NAME ?? 'Hudson Business Solutions').trim() || 'Hudson Business Solutions',
 
     stripeEnabled,
     stripeSecretKey: requireStringWhenEnabled(

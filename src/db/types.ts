@@ -74,6 +74,11 @@ export interface Job {
   start_date: string | null;
   status: string | null;
   tenant_id: number;
+  archived_at?: string | null;
+  archived_by_user_id?: number | null;
+  source_estimate_id?: number | null;
+  source_estimate_number?: string | null;
+  source_estimate_customer_name?: string | null;
 }
 
 export interface Estimate {
@@ -111,6 +116,7 @@ export interface EstimateLineItem {
   tenant_id: number;
   description: string;
   quantity: number;
+  unit: string;
   unit_price: number;
   line_total: number;
   sort_order: number;

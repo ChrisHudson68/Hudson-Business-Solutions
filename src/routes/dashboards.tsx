@@ -77,10 +77,15 @@ function buildReportFilename(prefix: string, startDate: string, endDate: string)
   return `${prefix}_${startDate}_to_${endDate}`;
 }
 
+function canManageWorkflow(user: any): boolean {
+  return user?.role === 'Admin' || user?.role === 'Manager';
+}
+
 export const dashboardRoutes = new Hono<AppEnv>();
 
 dashboardRoutes.get('/dashboard', loginRequired, (c) => {
   const tenant = c.get('tenant');
+  const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const db = getDb();
 
@@ -191,6 +196,62 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
   const totalCostAll = totalBaseExpensesAll + totalLaborAll;
   const totalProfitAll = totalIncomeAll - totalCostAll;
 
+  const jobsCountRow = db
+    .prepare(`SELECT COUNT(*) AS count FROM jobs WHERE tenant_id = ?`)
+    .get(tenantId) as { count: number };
+  const employeesCountRow = db
+    .prepare(`SELECT COUNT(*) AS count FROM employees WHERE tenant_id = ? AND archived_at IS NULL`)
+    .get(tenantId) as { count: number };
+  const invoicesCountRow = db
+    .prepare(`SELECT COUNT(*) AS count FROM invoices WHERE tenant_id = ? AND archived_at IS NULL`)
+    .get(tenantId) as { count: number };
+
+  const estimateStatsRow = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END), 0) AS draft_count,
+      COALESCE(SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END), 0) AS ready_count,
+      COALESCE(SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END), 0) AS awaiting_response_count,
+      COALESCE(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count,
+      COALESCE(SUM(CASE WHEN status = 'converted' THEN 1 ELSE 0 END), 0) AS converted_count,
+      COALESCE(SUM(CASE WHEN status IN ('draft', 'ready', 'sent') THEN total ELSE 0 END), 0) AS estimate_pipeline_value
+    FROM estimates
+    WHERE tenant_id = ?
+  `).get(tenantId) as {
+    draft_count: number;
+    ready_count: number;
+    awaiting_response_count: number;
+    rejected_count: number;
+    converted_count: number;
+    estimate_pipeline_value: number;
+  };
+
+  const recentEstimates = db.prepare(`
+    SELECT
+      id,
+      estimate_number,
+      customer_name,
+      total,
+      status,
+      created_at,
+      sent_at,
+      responded_at,
+      converted_job_id
+    FROM estimates
+    WHERE tenant_id = ?
+    ORDER BY updated_at DESC, id DESC
+    LIMIT 6
+  `).all(tenantId) as Array<{
+    id: number;
+    estimate_number: string;
+    customer_name: string;
+    total: number;
+    status: string;
+    created_at: string;
+    sent_at: string | null;
+    responded_at: string | null;
+    converted_job_id: number | null;
+  }>;
+
   const stats = {
     active_jobs: activeJobsAll.length,
     on_hold_jobs: onHoldJobsAll.length,
@@ -207,17 +268,36 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
     overdue_invoice_count: overdueInvoiceCount,
     overdue_invoice_total: overdueInvoiceTotal,
     total_profit_all: totalProfitAll,
+    jobs_count: Number(jobsCountRow?.count || 0),
+    employees_count: Number(employeesCountRow?.count || 0),
+    invoices_count: Number(invoicesCountRow?.count || 0),
   };
+
+  const companyConfigured =
+    Boolean(String(tenant?.company_address || '').trim()) ||
+    Boolean(String(tenant?.company_email || '').trim()) ||
+    Boolean(String(tenant?.company_phone || '').trim());
 
   return renderApp(
     c,
     'Overview',
     <DashboardPage
       stats={stats}
+      estimateStats={{
+        draft_count: Number(estimateStatsRow?.draft_count || 0),
+        ready_count: Number(estimateStatsRow?.ready_count || 0),
+        awaiting_response_count: Number(estimateStatsRow?.awaiting_response_count || 0),
+        rejected_count: Number(estimateStatsRow?.rejected_count || 0),
+        converted_count: Number(estimateStatsRow?.converted_count || 0),
+        estimate_pipeline_value: Number(estimateStatsRow?.estimate_pipeline_value || 0),
+      }}
       activeJobs={activeJobs}
       invoicesDue={invoicesDue.slice(0, 6)}
       recentTime={recentTime}
+      recentEstimates={recentEstimates}
+      companyConfigured={companyConfigured}
       csrfToken={c.get('csrfToken')}
+      canManageWorkflow={canManageWorkflow(currentUser)}
     />,
   );
 });

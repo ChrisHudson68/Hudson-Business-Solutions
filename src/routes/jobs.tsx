@@ -208,6 +208,8 @@ function buildJobListData(rows: any[]) {
       retainage_held: retainageHeld,
       unpaid_invoice_balance: unpaidInvoiceBalance,
       archived_at: row.archived_at || null,
+      source_estimate_id: row.source_estimate_id ?? null,
+      source_estimate_number: row.source_estimate_number ?? null,
     });
   }
 
@@ -245,15 +247,21 @@ function ensureUniqueJobCode(db: any, tenantId: number, jobCode?: string, ignore
   }
 }
 
+function canManageJobs(user: any): boolean {
+  return user?.role === 'Admin' || user?.role === 'Manager';
+}
+
 export const jobRoutes = new Hono<AppEnv>();
 
 jobRoutes.get('/', loginRequired, (c) => c.redirect('/dashboard'));
 
 jobRoutes.get('/jobs', loginRequired, (c) => {
   const tenant = c.get('tenant');
+  const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const db = getDb();
   const showArchived = c.req.query('show_archived') === '1';
+  const canManage = canManageJobs(currentUser);
 
   const rows = jobs.listWithFinancials(db, tenantId, showArchived);
   const summary = buildJobListData(rows);
@@ -273,6 +281,9 @@ jobRoutes.get('/jobs', loginRequired, (c) => {
       totalUnpaidInvoiceBalance={summary.totalUnpaidInvoiceBalance}
       csrfToken={c.get('csrfToken')}
       showArchived={showArchived}
+      canCreateJobs={canManage}
+      canEditJobs={canManage}
+      canArchiveJobs={canManage}
     />,
   );
 });
@@ -431,7 +442,19 @@ jobRoutes.get('/edit_job/:id', roleRequired('Admin', 'Manager'), (c) => {
   return renderApp(
     c,
     'Edit Job',
-    <EditJobPage job={job} csrfToken={c.get('csrfToken')} />,
+    <EditJobPage
+      jobId={job.id}
+      formData={{
+        job_name: job.job_name || '',
+        job_code: job.job_code || '',
+        client_name: job.client_name || '',
+        contract_amount: String(Number(job.contract_amount || 0)),
+        retainage_percent: String(Number(job.retainage_percent || 0)),
+        start_date: job.start_date || '',
+        status: job.status || 'Active',
+      }}
+      csrfToken={c.get('csrfToken')}
+    />,
   );
 });
 
@@ -446,8 +469,8 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
     return c.text('Job not found', 404);
   }
 
-  const job = jobs.findById(db, jobId, tenantId);
-  if (!job) {
+  const existingJob = jobs.findById(db, jobId, tenantId);
+  if (!existingJob) {
     return c.text('Job not found', 404);
   }
 
@@ -464,16 +487,6 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
     const status = parseStatus(body.status);
 
     ensureUniqueJobCode(db, tenantId, jobCode, jobId);
-
-    const previousValues = {
-      job_name: job.job_name ?? null,
-      job_code: job.job_code ?? null,
-      client_name: job.client_name ?? null,
-      contract_amount: Number(job.contract_amount || 0),
-      retainage_percent: Number(job.retainage_percent || 0),
-      start_date: job.start_date ?? null,
-      status: job.status ?? null,
-    };
 
     jobs.update(db, jobId, tenantId, {
       job_name: jobName,
@@ -494,37 +507,27 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
         entityId: jobId,
         description: `${currentUser.name} updated job ${jobName}.`,
         metadata: {
-          before: previousValues,
-          after: {
-            job_name: jobName,
-            job_code: jobCode ?? null,
-            client_name: clientName,
-            contract_amount: contractAmount,
-            retainage_percent: retainagePercent,
-            start_date: startDate ?? null,
-            status,
-          },
+          job_name: jobName,
+          job_code: jobCode ?? null,
+          client_name: clientName,
+          contract_amount: contractAmount,
+          retainage_percent: retainagePercent,
+          start_date: startDate ?? null,
+          status,
         },
         ipAddress: resolveRequestIp(c),
       });
     }
 
-    return c.redirect('/jobs');
+    return c.redirect(`/job/${jobId}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update job.';
     return renderApp(
       c,
       'Edit Job',
       <EditJobPage
-        job={{
-          ...job,
-          ...formData,
-          job_code: formData.job_code,
-          contract_amount: formData.contract_amount,
-          retainage_percent: formData.retainage_percent,
-          start_date: formData.start_date,
-          status: formData.status,
-        }}
+        jobId={jobId}
+        formData={formData}
         error={message}
         csrfToken={c.get('csrfToken')}
       />,
@@ -533,41 +536,35 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
   }
 });
 
-jobRoutes.post('/archive_job/:id', roleRequired('Admin'), (c) => {
+jobRoutes.post('/archive_job/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
 
-  if (!jobId || !currentUser) {
+  if (!jobId) {
     return c.text('Job not found', 404);
   }
 
-  const job = jobs.findById(db, jobId, tenantId);
-  if (!job) {
+  const existingJob = jobs.findById(db, jobId, tenantId);
+  if (!existingJob) {
     return c.text('Job not found', 404);
   }
 
-  if (job.archived_at) {
-    return c.redirect('/jobs?show_archived=1');
-  }
-
-  jobs.archive(db, jobId, tenantId, currentUser.id);
+  jobs.archive(db, jobId, tenantId, currentUser!.id);
 
   logActivity(db, {
     tenantId,
-    actorUserId: currentUser.id,
+    actorUserId: currentUser?.id,
     eventType: 'job.archived',
     entityType: 'job',
     entityId: jobId,
-    description: `${currentUser.name} archived job ${job.job_name}.`,
+    description: `${currentUser?.name || 'User'} archived job ${existingJob.job_name}.`,
     metadata: {
-      job_name: job.job_name,
-      job_code: job.job_code ?? null,
-      client_name: job.client_name ?? null,
-      contract_amount: Number(job.contract_amount || 0),
-      status: job.status ?? null,
+      job_name: existingJob.job_name,
+      job_code: existingJob.job_code ?? null,
+      client_name: existingJob.client_name ?? null,
     },
     ipAddress: resolveRequestIp(c),
   });
@@ -575,19 +572,19 @@ jobRoutes.post('/archive_job/:id', roleRequired('Admin'), (c) => {
   return c.redirect('/jobs');
 });
 
-jobRoutes.post('/restore_job/:id', roleRequired('Admin'), (c) => {
+jobRoutes.post('/restore_job/:id', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const jobId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
 
-  if (!jobId || !currentUser) {
+  if (!jobId) {
     return c.text('Job not found', 404);
   }
 
-  const job = jobs.findById(db, jobId, tenantId);
-  if (!job) {
+  const existingJob = jobs.findById(db, jobId, tenantId);
+  if (!existingJob) {
     return c.text('Job not found', 404);
   }
 
@@ -595,17 +592,15 @@ jobRoutes.post('/restore_job/:id', roleRequired('Admin'), (c) => {
 
   logActivity(db, {
     tenantId,
-    actorUserId: currentUser.id,
+    actorUserId: currentUser?.id,
     eventType: 'job.restored',
     entityType: 'job',
     entityId: jobId,
-    description: `${currentUser.name} restored job ${job.job_name}.`,
+    description: `${currentUser?.name || 'User'} restored job ${existingJob.job_name}.`,
     metadata: {
-      job_name: job.job_name,
-      job_code: job.job_code ?? null,
-      client_name: job.client_name ?? null,
-      contract_amount: Number(job.contract_amount || 0),
-      status: job.status ?? null,
+      job_name: existingJob.job_name,
+      job_code: existingJob.job_code ?? null,
+      client_name: existingJob.client_name ?? null,
     },
     ipAddress: resolveRequestIp(c),
   });

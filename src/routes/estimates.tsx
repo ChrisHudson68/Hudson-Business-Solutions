@@ -1,0 +1,768 @@
+import { Hono } from 'hono';
+import type { AppEnv } from '../app-env.js';
+import { getDb } from '../db/connection.js';
+import * as estimates from '../db/queries/estimates.js';
+import { loginRequired, roleRequired } from '../middleware/auth.js';
+import { AppLayout } from '../pages/layouts/AppLayout.js';
+import { EstimatesListPage } from '../pages/estimates/EstimatesListPage.js';
+import { EstimateFormPage } from '../pages/estimates/EstimateFormPage.js';
+import { EstimateDetailPage } from '../pages/estimates/EstimateDetailPage.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import { generateNextEstimateNumber } from '../services/estimate-number.js';
+import { sendEstimateToCustomer } from '../services/send-estimate.js';
+import type { EstimateStatus } from '../db/types.js';
+
+function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
+  return c.html(
+    <AppLayout
+      currentTenant={c.get('tenant')}
+      currentSubdomain={c.get('subdomain')}
+      currentUser={c.get('user')}
+      appName={process.env.APP_NAME || 'Hudson Business Solutions'}
+      appLogo={process.env.APP_LOGO || '/static/brand/hudson-business-solutions-logo.png'}
+      path={c.req.path}
+      csrfToken={c.get('csrfToken')}
+      subtitle={subtitle}
+    >
+      {content}
+    </AppLayout>,
+    status as any,
+  );
+}
+
+const ALL_STATUSES = [
+  'draft',
+  'ready',
+  'sent',
+  'approved',
+  'rejected',
+  'expired',
+  'converted',
+] as const;
+
+const EDITABLE_STATUSES = ['draft', 'ready'] as const;
+const SENDABLE_STATUSES = ['draft', 'ready', 'sent'] as const;
+
+type EditableEstimateStatus = (typeof EDITABLE_STATUSES)[number];
+type SendableEstimateStatus = (typeof SENDABLE_STATUSES)[number];
+
+type EstimateLineItemFormValue = {
+  description: string;
+  quantity: string;
+  unit: string;
+  unit_price: string;
+};
+
+function parsePositiveInt(value: string): number | null {
+  if (!/^\d+$/.test(String(value || '').trim())) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function isRealIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const [year, month, day] = value.split('-').map((part) => Number.parseInt(part, 10));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() + 1 === month &&
+    date.getUTCDate() === day
+  );
+}
+
+function normalizeOptionalDate(value: unknown, fieldLabel: string): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+
+  if (!isRealIsoDate(raw)) {
+    throw new Error(`${fieldLabel} must be a valid date.`);
+  }
+
+  return raw;
+}
+
+function requireText(value: unknown, fieldLabel: string, maxLength: number): string {
+  const parsed = String(value ?? '').trim();
+
+  if (!parsed) {
+    throw new Error(`${fieldLabel} is required.`);
+  }
+
+  if (parsed.length > maxLength) {
+    throw new Error(`${fieldLabel} must be ${maxLength} characters or less.`);
+  }
+
+  return parsed;
+}
+
+function normalizeOptionalText(value: unknown, maxLength: number, fieldLabel: string): string | undefined {
+  const parsed = String(value ?? '').trim();
+  if (!parsed) return undefined;
+
+  if (parsed.length > maxLength) {
+    throw new Error(`${fieldLabel} must be ${maxLength} characters or less.`);
+  }
+
+  return parsed;
+}
+
+function parseNonNegativeMoney(value: unknown, fieldLabel: string): number {
+  const raw = String(value ?? '').trim();
+
+  if (!raw) return 0;
+
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
+    throw new Error(`${fieldLabel} must be a valid non-negative number with up to 2 decimal places.`);
+  }
+
+  const parsed = Number.parseFloat(raw);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${fieldLabel} must be a valid non-negative number.`);
+  }
+
+  return Number(parsed.toFixed(2));
+}
+
+function parsePercent(value: unknown, fieldLabel: string): number {
+  const raw = String(value ?? '').trim();
+
+  if (!raw) return 0;
+
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
+    throw new Error(`${fieldLabel} must be a valid percentage.`);
+  }
+
+  const parsed = Number.parseFloat(raw);
+
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    throw new Error(`${fieldLabel} must be between 0 and 100.`);
+  }
+
+  return Number(parsed.toFixed(2));
+}
+
+function parseEditableStatus(value: unknown): EditableEstimateStatus {
+  const parsed = String(value ?? 'draft').trim().toLowerCase() as EditableEstimateStatus;
+
+  if (!EDITABLE_STATUSES.includes(parsed)) {
+    throw new Error('Please select a valid estimate status.');
+  }
+
+  return parsed;
+}
+
+function parseFilterStatus(value: unknown): EstimateStatus | undefined {
+  const parsed = String(value ?? '').trim().toLowerCase() as EstimateStatus;
+  if (!parsed) return undefined;
+  return (ALL_STATUSES as readonly string[]).includes(parsed) ? parsed : undefined;
+}
+
+function roundMoney(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function buildBlankLineItems(count = 1): EstimateLineItemFormValue[] {
+  return Array.from({ length: count }, () => ({
+    description: '',
+    quantity: '',
+    unit: '',
+    unit_price: '',
+  }));
+}
+
+function parseLineCount(value: unknown): number {
+  const parsed = Number.parseInt(String(value ?? '0').trim(), 10);
+  if (!Number.isInteger(parsed) || parsed < 1) return 1;
+  return Math.min(parsed, 250);
+}
+
+function extractLineItemsFromBody(body: Record<string, unknown>): EstimateLineItemFormValue[] {
+  const rows: EstimateLineItemFormValue[] = [];
+  const lineCount = parseLineCount(body.line_count);
+
+  for (let i = 0; i < lineCount; i += 1) {
+    rows.push({
+      description: String(body[`line_description_${i}`] ?? '').trim(),
+      quantity: String(body[`line_quantity_${i}`] ?? '').trim(),
+      unit: String(body[`line_unit_${i}`] ?? '').trim(),
+      unit_price: String(body[`line_unit_price_${i}`] ?? '').trim(),
+    });
+  }
+
+  return rows;
+}
+
+function normalizeLineItems(formRows: EstimateLineItemFormValue[]) {
+  const lineItems = formRows
+    .map((row, index) => {
+      const description = row.description.trim();
+      const quantity = parseNonNegativeMoney(row.quantity, `Line ${index + 1} quantity`);
+      const unitPrice = parseNonNegativeMoney(row.unit_price, `Line ${index + 1} unit price`);
+      const unit = String(row.unit || '').trim().slice(0, 40);
+
+      return {
+        description,
+        quantity,
+        unit,
+        unit_price: unitPrice,
+        line_total: roundMoney(quantity * unitPrice),
+        sort_order: index,
+      };
+    })
+    .filter((row) => row.description || row.quantity > 0 || row.unit_price > 0 || row.unit);
+
+  const invalidRow = lineItems.find((row) => !row.description);
+  if (invalidRow) {
+    throw new Error('Each estimate line with values must include a description.');
+  }
+
+  if (!lineItems.length) {
+    throw new Error('At least one line item is required.');
+  }
+
+  return lineItems;
+}
+
+function calculateTotals(lineItems: Array<{ line_total: number }>, taxRatePercent: number) {
+  const subtotal = roundMoney(lineItems.reduce((sum, row) => sum + Number(row.line_total || 0), 0));
+  const tax = roundMoney((subtotal * taxRatePercent) / 100);
+  const total = roundMoney(subtotal + tax);
+
+  return { subtotal, tax, total };
+}
+
+function buildEstimateFormData(
+  body: Record<string, unknown>,
+  fallbackTaxRate: number,
+): {
+  estimate_number: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  site_address: string;
+  scope_of_work: string;
+  status: string;
+  expiration_date: string;
+  tax_rate: string;
+  line_items: EstimateLineItemFormValue[];
+  subtotal: string;
+  tax: string;
+  total: string;
+} {
+  return {
+    estimate_number: String(body.estimate_number ?? '').trim(),
+    customer_name: String(body.customer_name ?? '').trim(),
+    customer_email: String(body.customer_email ?? '').trim(),
+    customer_phone: String(body.customer_phone ?? '').trim(),
+    site_address: String(body.site_address ?? '').trim(),
+    scope_of_work: String(body.scope_of_work ?? '').trim(),
+    status: String(body.status ?? 'draft').trim().toLowerCase(),
+    expiration_date: String(body.expiration_date ?? '').trim(),
+    tax_rate: String(body.tax_rate ?? String(fallbackTaxRate ?? 0)).trim(),
+    line_items: extractLineItemsFromBody(body),
+    subtotal: String(body.subtotal ?? '').trim(),
+    tax: String(body.tax ?? '').trim(),
+    total: String(body.total ?? '').trim(),
+  };
+}
+
+function buildEstimateFormDataFromRecord(
+  estimate: Awaited<ReturnType<typeof estimates.findWithLineItemsById>>,
+  fallbackTaxRate: number,
+) {
+  const lineItems = estimate?.line_items?.length
+    ? estimate.line_items.map((item) => ({
+        description: item.description ?? '',
+        quantity: String(Number(item.quantity || 0)),
+        unit: item.unit ?? '',
+        unit_price: String(Number(item.unit_price || 0)),
+      }))
+    : buildBlankLineItems(1);
+
+  const subtotal = Number(estimate?.subtotal || 0);
+  const tax = Number(estimate?.tax || 0);
+  const taxRate = subtotal > 0 ? roundMoney((tax / subtotal) * 100) : roundMoney(fallbackTaxRate || 0);
+
+  return {
+    estimate_number: estimate?.estimate_number ?? '',
+    customer_name: estimate?.customer_name ?? '',
+    customer_email: estimate?.customer_email ?? '',
+    customer_phone: estimate?.customer_phone ?? '',
+    site_address: estimate?.site_address ?? '',
+    scope_of_work: estimate?.scope_of_work ?? '',
+    status: estimate?.status ?? 'draft',
+    expiration_date: estimate?.expiration_date ?? '',
+    tax_rate: String(taxRate),
+    line_items: lineItems,
+    subtotal: subtotal.toFixed(2),
+    tax: tax.toFixed(2),
+    total: Number(estimate?.total || 0).toFixed(2),
+  };
+}
+
+function canEditEstimateStatus(status: string | null | undefined): boolean {
+  return EDITABLE_STATUSES.includes(String(status ?? '').trim().toLowerCase() as EditableEstimateStatus);
+}
+
+function canSendEstimateStatus(status: string | null | undefined): boolean {
+  return SENDABLE_STATUSES.includes(String(status ?? '').trim().toLowerCase() as SendableEstimateStatus);
+}
+
+function isManagerOrAdmin(user: any): boolean {
+  return user?.role === 'Admin' || user?.role === 'Manager';
+}
+
+function buildPublicEstimateUrl(c: any, token: string): string {
+  const requestUrl = new URL(c.req.url);
+  return `${requestUrl.origin}/estimate/view/${token}`;
+}
+
+function buildPublicBaseUrl(c: any): string {
+  const requestUrl = new URL(c.req.url);
+  return requestUrl.origin;
+}
+
+function buildDetailNotice(rawValue: string | undefined): { message?: string; tone?: 'info' | 'success' | 'danger' } {
+  const normalized = String(rawValue || '').trim().toLowerCase();
+
+  if (normalized === 'sent') {
+    return {
+      message: 'Estimate email sent successfully. The customer approval link is shown below as a backup.',
+      tone: 'success',
+    };
+  }
+
+  if (normalized === 'updated') {
+    return {
+      message: 'Estimate updated successfully.',
+      tone: 'success',
+    };
+  }
+
+  return {};
+}
+
+export const estimateRoutes = new Hono<AppEnv>();
+
+estimateRoutes.get('/estimates', loginRequired, (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const db = getDb();
+
+  const status = parseFilterStatus(c.req.query('status'));
+  const rows = estimates.listByTenant(db, tenantId, status);
+
+  const summary = rows.reduce(
+    (acc: { totalCount: number; totalValue: number; statusCounts: Record<string, number> }, row: any) => {
+      acc.totalCount += 1;
+      acc.totalValue += Number(row.total || 0);
+      const normalizedStatus = String(row.status || 'draft');
+      acc.statusCounts[normalizedStatus] = (acc.statusCounts[normalizedStatus] || 0) + 1;
+      return acc;
+    },
+    {
+      totalCount: 0,
+      totalValue: 0,
+      statusCounts: {} as Record<string, number>,
+    },
+  );
+
+  return renderApp(
+    c,
+    'Estimates',
+    <EstimatesListPage
+      estimates={rows}
+      selectedStatus={status ?? ''}
+      totalCount={summary.totalCount}
+      totalValue={Number(summary.totalValue.toFixed(2))}
+      draftCount={summary.statusCounts.draft || 0}
+      readyCount={summary.statusCounts.ready || 0}
+      sentCount={summary.statusCounts.sent || 0}
+      approvedCount={summary.statusCounts.approved || 0}
+      rejectedCount={summary.statusCounts.rejected || 0}
+      canCreateEstimates={isManagerOrAdmin(currentUser)}
+    />,
+  );
+});
+
+estimateRoutes.get('/estimates/new', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const tenantDefaults = tenant as any;
+  const db = getDb();
+  const taxRate = Number(tenantDefaults?.default_tax_rate || 0);
+  const estimateNumber = generateNextEstimateNumber(db, tenant!.id);
+
+  return renderApp(
+    c,
+    'New Estimate',
+    <EstimateFormPage
+      mode="create"
+      estimateNumber={estimateNumber}
+      formData={{
+        estimate_number: estimateNumber,
+        customer_name: '',
+        customer_email: '',
+        customer_phone: '',
+        site_address: '',
+        scope_of_work: '',
+        status: 'draft',
+        expiration_date: '',
+        tax_rate: String(taxRate),
+        line_items: buildBlankLineItems(1),
+        subtotal: '0.00',
+        tax: '0.00',
+        total: '0.00',
+      }}
+      csrfToken={c.get('csrfToken')}
+    />,
+  );
+});
+
+estimateRoutes.post('/estimates/new', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const tenantDefaults = tenant as any;
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const db = getDb();
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const fallbackTaxRate = Number(tenantDefaults?.default_tax_rate || 0);
+  const formData = buildEstimateFormData(body, fallbackTaxRate);
+
+  try {
+    const customerName = requireText(body.customer_name, 'Customer name', 120);
+    const customerEmail = normalizeOptionalText(body.customer_email, 160, 'Customer email');
+    const customerPhone = normalizeOptionalText(body.customer_phone, 40, 'Customer phone');
+    const siteAddress = normalizeOptionalText(body.site_address, 240, 'Site address');
+    const scopeOfWork = normalizeOptionalText(body.scope_of_work, 5000, 'Scope of work');
+    const expirationDate = normalizeOptionalDate(body.expiration_date, 'Expiration date');
+    const taxRate = parsePercent(body.tax_rate, 'Tax rate');
+    const status = parseEditableStatus(body.status);
+    const lineItems = normalizeLineItems(formData.line_items);
+    const totals = calculateTotals(lineItems, taxRate);
+    const estimateNumber = generateNextEstimateNumber(db, tenantId);
+
+    const estimateId = estimates.create(db, tenantId, {
+      estimate_number: estimateNumber,
+      customer_name: customerName,
+      customer_email: customerEmail ?? null,
+      customer_phone: customerPhone ?? null,
+      site_address: siteAddress ?? null,
+      scope_of_work: scopeOfWork ?? null,
+      subtotal: totals.subtotal,
+      tax: totals.tax,
+      total: totals.total,
+      status,
+      created_by_user_id: currentUser!.id,
+      updated_by_user_id: currentUser!.id,
+      expiration_date: expirationDate ?? null,
+      line_items: lineItems,
+    });
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser?.id,
+      eventType: 'estimate.created',
+      entityType: 'estimate',
+      entityId: estimateId,
+      description: `${currentUser?.name || 'User'} created estimate ${estimateNumber}.`,
+      metadata: {
+        estimate_number: estimateNumber,
+        customer_name: customerName,
+        status,
+        subtotal: totals.subtotal,
+        tax: totals.tax,
+        total: totals.total,
+        line_item_count: lineItems.length,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.redirect(`/estimate/${estimateId}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to create estimate.';
+    return renderApp(
+      c,
+      'New Estimate',
+      <EstimateFormPage
+        mode="create"
+        estimateNumber={formData.estimate_number || generateNextEstimateNumber(db, tenantId)}
+        formData={formData}
+        error={message}
+        csrfToken={c.get('csrfToken')}
+      />,
+      400,
+    );
+  }
+});
+
+estimateRoutes.get('/estimate/:id', loginRequired, (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!estimateId) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const estimate = estimates.findWithLineItemsById(db, estimateId, tenantId);
+
+  if (!estimate) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const publicUrl = estimate.public_token
+    ? buildPublicEstimateUrl(c, estimate.public_token)
+    : null;
+
+  const detailNotice = buildDetailNotice(c.req.query('notice'));
+
+  return renderApp(
+    c,
+    'Estimate Detail',
+    <EstimateDetailPage
+      estimate={estimate}
+      canEditEstimate={isManagerOrAdmin(currentUser) && canEditEstimateStatus(estimate.status)}
+      canSendEstimate={isManagerOrAdmin(currentUser) && canSendEstimateStatus(estimate.status)}
+      csrfToken={c.get('csrfToken')}
+      publicUrl={publicUrl}
+      notice={detailNotice.message}
+      noticeTone={detailNotice.tone}
+    />,
+  );
+});
+
+estimateRoutes.post('/estimate/:id/send', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!estimateId) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const estimate = estimates.findWithLineItemsById(db, estimateId, tenantId);
+
+  if (!estimate) {
+    return c.text('Estimate not found', 404);
+  }
+
+  if (!canSendEstimateStatus(estimate.status)) {
+    return c.redirect(`/estimate/${estimateId}`);
+  }
+
+  try {
+    const delivery = await sendEstimateToCustomer(
+      db,
+      estimateId,
+      tenantId,
+      currentUser!.id,
+      buildPublicBaseUrl(c),
+    );
+
+    const refreshed = estimates.findById(db, estimateId, tenantId);
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser?.id,
+      eventType: 'estimate.sent',
+      entityType: 'estimate',
+      entityId: estimateId,
+      description: `${currentUser?.name || 'User'} emailed estimate ${estimate.estimate_number} to the customer.`,
+      metadata: {
+        estimate_number: estimate.estimate_number,
+        customer_name: estimate.customer_name,
+        customer_email: delivery.recipientEmail,
+        public_url: delivery.publicUrl,
+        smtp_message_id: delivery.messageId,
+        status_before: estimate.status,
+        status_after: refreshed?.status || 'sent',
+        sent_at: refreshed?.sent_at || null,
+        has_public_token: Boolean(refreshed?.public_token),
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.redirect(`/estimate/${estimateId}?notice=sent`);
+  } catch (error) {
+    const refreshed = estimates.findWithLineItemsById(db, estimateId, tenantId);
+    const message = error instanceof Error ? error.message : 'Unable to send estimate email.';
+    const publicUrl = refreshed?.public_token ? buildPublicEstimateUrl(c, refreshed.public_token) : null;
+
+    return renderApp(
+      c,
+      'Estimate Detail',
+      <EstimateDetailPage
+        estimate={refreshed || estimate}
+        canEditEstimate={isManagerOrAdmin(currentUser) && canEditEstimateStatus((refreshed || estimate).status)}
+        canSendEstimate={isManagerOrAdmin(currentUser) && canSendEstimateStatus((refreshed || estimate).status)}
+        csrfToken={c.get('csrfToken')}
+        publicUrl={publicUrl}
+        notice={`Email send failed: ${message}`}
+        noticeTone="danger"
+      />,
+      400,
+    );
+  }
+});
+
+estimateRoutes.get('/estimate/:id/edit', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const tenantDefaults = tenant as any;
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!estimateId) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const estimate = estimates.findWithLineItemsById(db, estimateId, tenantId);
+
+  if (!estimate) {
+    return c.text('Estimate not found', 404);
+  }
+
+  if (!canEditEstimateStatus(estimate.status)) {
+    return renderApp(
+      c,
+      'Estimate Detail',
+      <EstimateDetailPage
+        estimate={estimate}
+        canEditEstimate={false}
+        canSendEstimate={isManagerOrAdmin(c.get('user')) && canSendEstimateStatus(estimate.status)}
+        csrfToken={c.get('csrfToken')}
+        publicUrl={estimate.public_token ? buildPublicEstimateUrl(c, estimate.public_token) : null}
+        notice="Only draft and ready estimates can be edited at this stage."
+        noticeTone="info"
+      />,
+    );
+  }
+
+  return renderApp(
+    c,
+    'Edit Estimate',
+    <EstimateFormPage
+      mode="edit"
+      estimateId={estimate.id}
+      estimateNumber={estimate.estimate_number}
+      formData={buildEstimateFormDataFromRecord(estimate, Number(tenantDefaults?.default_tax_rate || 0))}
+      csrfToken={c.get('csrfToken')}
+    />,
+  );
+});
+
+estimateRoutes.post('/estimate/:id/edit', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const tenantDefaults = tenant as any;
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const fallbackTaxRate = Number(tenantDefaults?.default_tax_rate || 0);
+  const formData = buildEstimateFormData(body, fallbackTaxRate);
+
+  if (!estimateId) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const existingEstimate = estimates.findWithLineItemsById(db, estimateId, tenantId);
+
+  if (!existingEstimate) {
+    return c.text('Estimate not found', 404);
+  }
+
+  if (!canEditEstimateStatus(existingEstimate.status)) {
+    return renderApp(
+      c,
+      'Estimate Detail',
+      <EstimateDetailPage
+        estimate={existingEstimate}
+        canEditEstimate={false}
+        canSendEstimate={isManagerOrAdmin(currentUser) && canSendEstimateStatus(existingEstimate.status)}
+        csrfToken={c.get('csrfToken')}
+        publicUrl={existingEstimate.public_token ? buildPublicEstimateUrl(c, existingEstimate.public_token) : null}
+        notice="Only draft and ready estimates can be edited at this stage."
+        noticeTone="info"
+      />,
+    );
+  }
+
+  try {
+    const customerName = requireText(body.customer_name, 'Customer name', 120);
+    const customerEmail = normalizeOptionalText(body.customer_email, 160, 'Customer email');
+    const customerPhone = normalizeOptionalText(body.customer_phone, 40, 'Customer phone');
+    const siteAddress = normalizeOptionalText(body.site_address, 240, 'Site address');
+    const scopeOfWork = normalizeOptionalText(body.scope_of_work, 5000, 'Scope of work');
+    const expirationDate = normalizeOptionalDate(body.expiration_date, 'Expiration date');
+    const taxRate = parsePercent(body.tax_rate, 'Tax rate');
+    const status = parseEditableStatus(body.status);
+    const lineItems = normalizeLineItems(formData.line_items);
+    const totals = calculateTotals(lineItems, taxRate);
+
+    estimates.update(db, estimateId, tenantId, {
+      customer_name: customerName,
+      customer_email: customerEmail ?? null,
+      customer_phone: customerPhone ?? null,
+      site_address: siteAddress ?? null,
+      scope_of_work: scopeOfWork ?? null,
+      subtotal: totals.subtotal,
+      tax: totals.tax,
+      total: totals.total,
+      status,
+      updated_by_user_id: currentUser!.id,
+      expiration_date: expirationDate ?? null,
+    });
+
+    estimates.replaceLineItems(db, estimateId, tenantId, lineItems);
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser?.id,
+      eventType: 'estimate.updated',
+      entityType: 'estimate',
+      entityId: estimateId,
+      description: `${currentUser?.name || 'User'} updated estimate ${existingEstimate.estimate_number}.`,
+      metadata: {
+        estimate_number: existingEstimate.estimate_number,
+        customer_name: customerName,
+        status,
+        subtotal: totals.subtotal,
+        tax: totals.tax,
+        total: totals.total,
+        line_item_count: lineItems.length,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.redirect(`/estimate/${estimateId}?notice=updated`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to update estimate.';
+    return renderApp(
+      c,
+      'Edit Estimate',
+      <EstimateFormPage
+        mode="edit"
+        estimateId={estimateId}
+        estimateNumber={existingEstimate.estimate_number}
+        formData={{
+          ...formData,
+          estimate_number: existingEstimate.estimate_number,
+        }}
+        error={message}
+        csrfToken={c.get('csrfToken')}
+      />,
+      400,
+    );
+  }
+});
+
+export default estimateRoutes;

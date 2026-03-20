@@ -10,6 +10,8 @@ interface Job {
   start_date: string | null;
   status: string | null;
   archived_at?: string | null;
+  source_estimate_id?: number | null;
+  source_estimate_number?: string | null;
 }
 
 interface IncomeRow {
@@ -103,6 +105,22 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
       </div>
 
+      {job.source_estimate_id ? (
+        <div
+          class="card"
+          style="margin-bottom:14px; border-color:#BFDBFE; background:#EFF6FF; color:#1E3A8A;"
+        >
+          <div style="font-weight:800; margin-bottom:6px;">Created from approved estimate</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <span>
+              This job was created automatically from{' '}
+              <b>{job.source_estimate_number || `Estimate #${job.source_estimate_id}`}</b>.
+            </span>
+            <a class="btn" href={`/estimate/${job.source_estimate_id}`}>Open Estimate</a>
+          </div>
+        </div>
+      ) : null}
+
       {job.archived_at ? (
         <div
           class="card"
@@ -174,6 +192,12 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
             <div class="mobile-info-row">
               <span class="mobile-info-label">Retainage %</span>
               <span class="mobile-info-value">{Number(job.retainage_percent || 0).toFixed(2)}%</span>
+            </div>
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Source Estimate</span>
+              <span class="mobile-info-value">
+                {job.source_estimate_number || (job.source_estimate_id ? `Estimate #${job.source_estimate_id}` : '—')}
+              </span>
             </div>
           </div>
         </div>
@@ -266,16 +290,11 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                       <td>{row.vendor || '—'}</td>
                       <td>
                         {row.receipt_filename ? (
-                          <a
-                            class="btn"
-                            href={`/expense-receipts/${row.id}`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            View Receipt
+                          <a href={`/uploads/receipts/${row.receipt_filename}`} target="_blank" rel="noreferrer">
+                            View
                           </a>
                         ) : (
-                          <span class="muted">No receipt</span>
+                          '—'
                         )}
                       </td>
                       <td class="right">${formatMoney(Number(row.amount || 0))}</td>
@@ -283,18 +302,15 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                         {job.archived_at ? (
                           <span class="muted">Locked</span>
                         ) : (
-                          <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
-                            <a class="btn" href={`/edit_expense/${row.id}`}>Edit</a>
-                            <form
-                              method="post"
-                              action={`/archive_expense/${row.id}`}
-                              class="inline-form"
-                              onsubmit="return confirm('Archive this expense entry?');"
-                            >
-                              <input type="hidden" name="csrf_token" value={csrfToken} />
-                              <button class="btn" type="submit">Archive</button>
-                            </form>
-                          </div>
+                          <form
+                            method="post"
+                            action={`/archive_expense/${row.id}`}
+                            class="inline-form"
+                            onsubmit="return confirm('Archive this expense entry?');"
+                          >
+                            <input type="hidden" name="csrf_token" value={csrfToken} />
+                            <button class="btn" type="submit">Archive</button>
+                          </form>
                         )}
                       </td>
                     </tr>
@@ -310,114 +326,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
       </div>
 
-      {(archivedIncomes.length > 0 || archivedExpenses.length > 0) ? (
-        <div class="grid grid-2 mobile-section-gap" style="margin-top:14px;">
-          <div class="card">
-            <b>Archived Income</b>
-            <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Archived</th>
-                    <th class="right">Amount</th>
-                    <th class="right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {archivedIncomes.length > 0 ? (
-                    archivedIncomes.map((row) => (
-                      <tr>
-                        <td>{row.date || '—'}</td>
-                        <td>{row.description || '—'}</td>
-                        <td>{row.archived_at || '—'}</td>
-                        <td class="right">${formatMoney(Number(row.amount || 0))}</td>
-                        <td class="right">
-                          {job.archived_at ? (
-                            <span class="muted">Locked</span>
-                          ) : (
-                            <form method="post" action={`/restore_income/${row.id}`} class="inline-form">
-                              <input type="hidden" name="csrf_token" value={csrfToken} />
-                              <button class="btn" type="submit">Restore</button>
-                            </form>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colspan={5} class="muted">No archived income records.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="card">
-            <b>Archived Expenses</b>
-            <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Category</th>
-                    <th>Vendor</th>
-                    <th>Receipt</th>
-                    <th>Archived</th>
-                    <th class="right">Amount</th>
-                    <th class="right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {archivedExpenses.length > 0 ? (
-                    archivedExpenses.map((row) => (
-                      <tr>
-                        <td>{row.date || '—'}</td>
-                        <td>{row.category || '—'}</td>
-                        <td>{row.vendor || '—'}</td>
-                        <td>
-                          {row.receipt_filename ? (
-                            <a
-                              class="btn"
-                              href={`/expense-receipts/${row.id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              View Receipt
-                            </a>
-                          ) : (
-                            <span class="muted">No receipt</span>
-                          )}
-                        </td>
-                        <td>{row.archived_at || '—'}</td>
-                        <td class="right">${formatMoney(Number(row.amount || 0))}</td>
-                        <td class="right">
-                          {job.archived_at ? (
-                            <span class="muted">Locked</span>
-                          ) : (
-                            <form method="post" action={`/restore_expense/${row.id}`} class="inline-form">
-                              <input type="hidden" name="csrf_token" value={csrfToken} />
-                              <button class="btn" type="submit">Restore</button>
-                            </form>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colspan={7} class="muted">No archived expense records.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <div class="card mobile-section-gap">
+      <div class="card" style="margin-top:14px;">
         <b>Labor Entries</b>
         <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
           <table class="table">
@@ -450,6 +359,72 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
           </table>
         </div>
       </div>
+
+      {(archivedIncomes.length > 0 || archivedExpenses.length > 0) ? (
+        <div class="grid grid-2 mobile-section-gap" style="margin-top:14px;">
+          <div class="card">
+            <b>Archived Income</b>
+            <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th class="right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archivedIncomes.length > 0 ? (
+                    archivedIncomes.map((row) => (
+                      <tr>
+                        <td>{row.date || '—'}</td>
+                        <td>{row.description || '—'}</td>
+                        <td class="right">${formatMoney(Number(row.amount || 0))}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colspan={3} class="muted">No archived income entries.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <b>Archived Expenses</b>
+            <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Vendor</th>
+                    <th class="right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {archivedExpenses.length > 0 ? (
+                    archivedExpenses.map((row) => (
+                      <tr>
+                        <td>{row.date || '—'}</td>
+                        <td>{row.category || '—'}</td>
+                        <td>{row.vendor || '—'}</td>
+                        <td class="right">${formatMoney(Number(row.amount || 0))}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colspan={4} class="muted">No archived expense entries.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
