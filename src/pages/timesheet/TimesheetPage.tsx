@@ -66,6 +66,7 @@ interface TimesheetPageProps {
   canRequestEdits: boolean;
   canManageTimeEntries: boolean;
   canApproveEditRequests: boolean;
+  canRequestOwnEntryEdits: boolean;
   csrfToken: string;
   error?: string;
   success?: string;
@@ -98,6 +99,23 @@ document.addEventListener('DOMContentLoaded', function () {
     ].join('');
   }
 
+  function fillHiddenUtcInput(localInput, utcInput) {
+    if (!localInput || !utcInput) return;
+    const raw = localInput.value;
+    if (!raw) {
+      utcInput.value = '';
+      return;
+    }
+
+    const dt = new Date(raw);
+    if (Number.isNaN(dt.getTime())) {
+      utcInput.value = '';
+      return;
+    }
+
+    utcInput.value = dt.toISOString();
+  }
+
   document.querySelectorAll('[data-utc-display]').forEach((node) => {
     const value = node.getAttribute('data-utc-display') || '';
     node.textContent = toLocalDisplay(value);
@@ -110,29 +128,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
   document.querySelectorAll('form[data-time-submit]').forEach((form) => {
     form.addEventListener('submit', function () {
-      const pairs = [
-        ['clock_in_local', 'clock_in_utc'],
-        ['clock_out_local', 'clock_out_utc'],
-      ];
-
-      pairs.forEach(([localName, utcName]) => {
-        const localInput = form.querySelector('[name="' + localName + '"]');
-        const utcInput = form.querySelector('[name="' + utcName + '"]');
-        if (!localInput || !utcInput) return;
-
-        const raw = localInput.value;
-        if (!raw) {
-          utcInput.value = '';
-          return;
-        }
-
-        const dt = new Date(raw);
-        if (Number.isNaN(dt.getTime())) {
-          utcInput.value = '';
-          return;
-        }
-
-        utcInput.value = dt.toISOString();
+      form.querySelectorAll('[data-utc-target]').forEach((localInput) => {
+        const targetName = localInput.getAttribute('data-utc-target') || '';
+        if (!targetName) return;
+        const utcInput = form.querySelector('[name="' + targetName + '"]');
+        fillHiddenUtcInput(localInput, utcInput);
       });
     });
   });
@@ -168,6 +168,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 `;
 
+
 export const TimesheetPage: FC<TimesheetPageProps> = ({
   employees,
   jobs,
@@ -183,6 +184,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
   canRequestEdits,
   canManageTimeEntries,
   canApproveEditRequests,
+  canRequestOwnEntryEdits,
   csrfToken,
   error,
   success,
@@ -402,9 +404,9 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                     </td>
                     <td class="muted">{t.note || ''}</td>
                     <td class="right">
-                      {isEmployeeUser ? (
-                        canRequestEdits && t.clock_in_at && t.clock_out_at ? (
-                          <details style="display:inline-block; text-align:left; width:100%;">
+                      {canRequestOwnEntryEdits && t.clock_in_at && t.clock_out_at ? (
+                        <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
+                          <details style="display:inline-block; text-align:left; width:100%; max-width:420px;">
                             <summary class="btn edit-request-summary">Request Edit</summary>
                             <div class="card details-card" style="min-width:420px;">
                               <form
@@ -420,6 +422,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                                     id={`clock-in-local-${t.id}`}
                                     type="datetime-local"
                                     name="clock_in_local"
+                                    data-utc-target="clock_in_utc"
                                     data-initial-utc={t.clock_in_at || ''}
                                     required
                                   />
@@ -439,6 +442,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                                     id={`clock-out-local-${t.id}`}
                                     type="datetime-local"
                                     name="clock_out_local"
+                                    data-utc-target="clock_out_utc"
                                     data-initial-utc={t.clock_out_at || ''}
                                     required
                                   />
@@ -470,10 +474,15 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                               </form>
                             </div>
                           </details>
-                        ) : (
-                          <span class="muted">View only</span>
-                        )
-                      ) : canManageTimeEntries ? (
+
+                          {!isEmployeeUser && canManageTimeEntries ? (
+                            <form method="post" action={`/delete_time/${t.id}`} style="display:inline;">
+                              <input type="hidden" name="csrf_token" value={csrfToken} />
+                              <button class="btn" type="submit">Delete</button>
+                            </form>
+                          ) : null}
+                        </div>
+                      ) : !isEmployeeUser && canManageTimeEntries ? (
                         <form method="post" action={`/delete_time/${t.id}`} style="display:inline;">
                           <input type="hidden" name="csrf_token" value={csrfToken} />
                           <button class="btn" type="submit">Delete</button>
@@ -502,46 +511,67 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
               You currently have view-only access for weekly timesheet entry management.
             </div>
           ) : null}
-          <form method="post" action="/timesheet" style="margin-top:10px;">
+          <form method="post" action="/timesheet" style="margin-top:10px;" data-time-submit>
             <input type="hidden" name="csrf_token" value={csrfToken} />
             <input type="hidden" name="employee_id" value={String(employeeId || '')} />
             <input type="hidden" name="start" value={start} />
+
+            <div class="muted small" style="margin:0 0 12px;">
+              Add manual entries using actual time in and time out. Job assignment is optional for general labor time.
+            </div>
 
             <div class="table-wrap table-wrap-tight">
               <table class="table">
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Job</th>
-                    <th>Hours</th>
+                    <th>Clock In</th>
+                    <th>Clock Out</th>
+                    <th>Job (optional)</th>
                     <th>Note</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {dates.map((d) => (
+                  {Array.from({ length: 7 }).map((_, index) => (
                     <tr>
                       <td>
-                        <input type="date" name="row_date" value={d} readonly style="min-width:130px;" disabled={!canManageTimeEntries} />
+                        <input
+                          id={`manual-clock-in-${index}`}
+                          type="datetime-local"
+                          name="row_clock_in_local"
+                          data-utc-target="row_clock_in_utc"
+                          style="min-width:190px;"
+                          disabled={!canManageTimeEntries}
+                        />
+                        <input type="hidden" name="row_clock_in_utc" value="" />
                       </td>
                       <td>
-                        <select name="row_job_id" style="min-width:160px;" disabled={!canManageTimeEntries}>
-                          <option value="">--</option>
+                        <div class="edit-request-actions">
+                          <input
+                            id={`manual-clock-out-${index}`}
+                            type="datetime-local"
+                            name="row_clock_out_local"
+                            data-utc-target="row_clock_out_utc"
+                            style="min-width:190px;"
+                            disabled={!canManageTimeEntries}
+                          />
+                          <button
+                            type="button"
+                            class="btn"
+                            data-fill-now={`manual-clock-out-${index}`}
+                            disabled={!canManageTimeEntries}
+                          >
+                            Now
+                          </button>
+                        </div>
+                        <input type="hidden" name="row_clock_out_utc" value="" />
+                      </td>
+                      <td>
+                        <select name="row_job_id" style="min-width:180px;" disabled={!canManageTimeEntries}>
+                          <option value="">Unassigned / General Time</option>
                           {jobs.map((j) => (
                             <option value={String(j.id)}>{j.job_name}</option>
                           ))}
                         </select>
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          name="row_hours"
-                          step="0.25"
-                          min="0"
-                          max="24"
-                          value="0"
-                          style="width:80px;"
-                          disabled={!canManageTimeEntries}
-                        />
                       </td>
                       <td>
                         <input name="row_note" placeholder="Optional" maxLength={500} disabled={!canManageTimeEntries} />
@@ -553,7 +583,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
             </div>
 
             <div class="actions actions-mobile-stack" style="margin-top:16px;">
-              <button class="btn btn-primary" type="submit" disabled={!canManageTimeEntries || employees.length === 0 || jobs.length === 0}>
+              <button class="btn btn-primary" type="submit" disabled={!canManageTimeEntries || employees.length === 0}>
                 Save Entries
               </button>
             </div>
