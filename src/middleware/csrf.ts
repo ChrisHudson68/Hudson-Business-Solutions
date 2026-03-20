@@ -82,8 +82,14 @@ async function readFormCsrfToken(c: any): Promise<string> {
       contentType.includes('application/x-www-form-urlencoded') ||
       contentType.includes('multipart/form-data')
     ) {
-      const body = await c.req.parseBody();
-      return typeof body.csrf_token === 'string' ? body.csrf_token : '';
+      const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+      const tokenValue = body.csrf_token;
+      if (typeof tokenValue === 'string') return tokenValue;
+      if (Array.isArray(tokenValue)) {
+        const first = tokenValue.find((value) => typeof value === 'string');
+        return typeof first === 'string' ? first : '';
+      }
+      return '';
     }
 
     return '';
