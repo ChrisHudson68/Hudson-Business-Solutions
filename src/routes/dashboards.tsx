@@ -81,6 +81,7 @@ function canManageWorkflow(user: any): boolean {
   return user?.role === 'Admin' || user?.role === 'Manager';
 }
 
+
 function hasValue(value: unknown): boolean {
   return String(value ?? '').trim().length > 0;
 }
@@ -109,6 +110,14 @@ export const dashboardRoutes = new Hono<AppEnv>();
 dashboardRoutes.get('/dashboard', loginRequired, (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
+
+  if (!currentUser) {
+    return c.redirect('/login');
+  }
+
+  if (currentUser.role === 'Employee' || !canManageWorkflow(currentUser)) {
+    return c.redirect('/timesheet');
+  }
   const tenantId = tenant!.id;
   const db = getDb();
 
