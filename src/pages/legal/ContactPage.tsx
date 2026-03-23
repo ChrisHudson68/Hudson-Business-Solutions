@@ -340,8 +340,8 @@ export const ContactPage: FC<ContactPageProps> = ({ appName }) => {
               <div class="contact-card-copy">
                 Best for general questions, early conversations, and non-urgent contact.
               </div>
-              <a class="contact-card-link" href="mailto:Christopher.Hudson.Work@gmail.com">
-                Christopher.Hudson.Work@gmail.com
+              <a class="contact-card-link" href="mailto:Christopher.Hudson@hudson-business-solutions.com">
+                Christopher.Hudson@hudson-business-solutions.com
               </a>
             </div>
 
