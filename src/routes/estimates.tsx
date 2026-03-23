@@ -437,7 +437,7 @@ estimateRoutes.post('/estimates/new', roleRequired('Admin', 'Manager'), async (c
     const customerEmail = normalizeOptionalText(body.customer_email, 160, 'Customer email');
     const customerPhone = normalizeOptionalText(body.customer_phone, 40, 'Customer phone');
     const siteAddress = normalizeOptionalText(body.site_address, 240, 'Site address');
-    const scopeOfWork = normalizeOptionalText(body.scope_of_work, 5000, 'Scope of work');
+    const scopeOfWork = normalizeOptionalText(body.scope_of_work, 5000, 'Job description');
     const expirationDate = normalizeOptionalDate(body.expiration_date, 'Expiration date');
     const taxRate = parsePercent(body.tax_rate, 'Tax rate');
     const status = parseEditableStatus(body.status);
@@ -701,7 +701,7 @@ estimateRoutes.post('/estimate/:id/edit', roleRequired('Admin', 'Manager'), asyn
     const customerEmail = normalizeOptionalText(body.customer_email, 160, 'Customer email');
     const customerPhone = normalizeOptionalText(body.customer_phone, 40, 'Customer phone');
     const siteAddress = normalizeOptionalText(body.site_address, 240, 'Site address');
-    const scopeOfWork = normalizeOptionalText(body.scope_of_work, 5000, 'Scope of work');
+    const scopeOfWork = normalizeOptionalText(body.scope_of_work, 5000, 'Job description');
     const expirationDate = normalizeOptionalDate(body.expiration_date, 'Expiration date');
     const taxRate = parsePercent(body.tax_rate, 'Tax rate');
     const status = parseEditableStatus(body.status);

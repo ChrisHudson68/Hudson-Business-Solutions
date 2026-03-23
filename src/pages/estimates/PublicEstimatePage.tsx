@@ -94,9 +94,9 @@ export const PublicEstimatePage: FC<PublicEstimatePageProps> = ({
         </div>
 
         <div>
-          <div class="muted" style="text-align:left;">Scope of Work</div>
+          <div class="muted" style="text-align:left;">Job Description</div>
           <div style="margin-top:8px; white-space:pre-wrap;">
-            {estimate.scope_of_work || 'No scope of work entered.'}
+            {estimate.scope_of_work || 'No job description entered.'}
           </div>
         </div>
 

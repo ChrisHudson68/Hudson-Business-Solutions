@@ -1,39 +1,37 @@
 import type { FC } from 'hono/jsx';
 
-interface JobRecord {
-  id: number;
-  job_name: string;
-  job_code: string | null;
-  client_name: string;
-  contract_amount: number | string | null;
-  retainage_percent: number | string | null;
-  start_date: string | null;
-  status: string | null;
-}
-
 interface EditJobPageProps {
-  job: JobRecord;
+  jobId: number;
+  formData: {
+    job_name?: string;
+    job_code?: string;
+    client_name?: string;
+    job_description?: string;
+    contract_amount?: string;
+    retainage_percent?: string;
+    start_date?: string;
+    status?: string;
+  };
   error?: string;
   csrfToken: string;
 }
 
 export const EditJobPage: FC<EditJobPageProps> = ({
-  job,
+  jobId,
+  formData,
   error,
   csrfToken,
 }) => {
-  const contractAmount =
-    job.contract_amount === null || job.contract_amount === undefined
-      ? ''
-      : String(job.contract_amount);
-
-  const retainagePercent =
-    job.retainage_percent === null || job.retainage_percent === undefined
-      ? '0'
-      : String(job.retainage_percent);
-
-  const startDate = job.start_date ?? '';
-  const status = job.status ?? 'Active';
+  const values = {
+    job_name: formData?.job_name ?? '',
+    job_code: formData?.job_code ?? '',
+    client_name: formData?.client_name ?? '',
+    job_description: formData?.job_description ?? '',
+    contract_amount: formData?.contract_amount ?? '',
+    retainage_percent: formData?.retainage_percent ?? '0',
+    start_date: formData?.start_date ?? '',
+    status: formData?.status ?? 'Active',
+  };
 
   return (
     <div>
@@ -57,21 +55,30 @@ export const EditJobPage: FC<EditJobPageProps> = ({
           </div>
         ) : null}
 
-        <form method="post" action={`/edit_job/${job.id}`}>
+        <form method="post" action={`/edit_job/${jobId}`}>
           <input type="hidden" name="csrf_token" value={csrfToken} />
 
           <label>Job Name</label>
-          <input name="job_name" value={job.job_name ?? ''} required />
+          <input name="job_name" value={values.job_name} required />
 
           <label>Job Code</label>
           <input
             name="job_code"
-            value={job.job_code ?? ''}
+            value={values.job_code}
             placeholder="Optional (example: HVAC-102)"
           />
 
           <label>Client Name</label>
-          <input name="client_name" value={job.client_name ?? ''} required />
+          <input name="client_name" value={values.client_name} required />
+
+          <label>Job Description</label>
+          <textarea
+            name="job_description"
+            rows={6}
+            placeholder="Describe the work for this job"
+          >
+            {values.job_description}
+          </textarea>
 
           <div class="row">
             <div>
@@ -81,7 +88,7 @@ export const EditJobPage: FC<EditJobPageProps> = ({
                 type="number"
                 step="0.01"
                 min="0"
-                value={contractAmount}
+                value={values.contract_amount}
               />
             </div>
 
@@ -93,7 +100,7 @@ export const EditJobPage: FC<EditJobPageProps> = ({
                 step="0.01"
                 min="0"
                 max="100"
-                value={retainagePercent}
+                value={values.retainage_percent}
               />
             </div>
           </div>
@@ -104,17 +111,17 @@ export const EditJobPage: FC<EditJobPageProps> = ({
               <input
                 name="start_date"
                 type="date"
-                value={startDate}
+                value={values.start_date}
               />
             </div>
 
             <div>
               <label>Status</label>
               <select name="status">
-                <option value="Active" selected={status === 'Active'}>Active</option>
-                <option value="Completed" selected={status === 'Completed'}>Completed</option>
-                <option value="On Hold" selected={status === 'On Hold'}>On Hold</option>
-                <option value="Cancelled" selected={status === 'Cancelled'}>Cancelled</option>
+                <option value="Active" selected={values.status === 'Active'}>Active</option>
+                <option value="Completed" selected={values.status === 'Completed'}>Completed</option>
+                <option value="On Hold" selected={values.status === 'On Hold'}>On Hold</option>
+                <option value="Cancelled" selected={values.status === 'Cancelled'}>Cancelled</option>
               </select>
             </div>
           </div>

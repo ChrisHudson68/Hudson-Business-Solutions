@@ -5,6 +5,7 @@ interface AddJobPageProps {
     job_name?: string;
     job_code?: string;
     client_name?: string;
+    job_description?: string;
     contract_amount?: string;
     retainage_percent?: string;
     start_date?: string;
@@ -23,6 +24,7 @@ export const AddJobPage: FC<AddJobPageProps> = ({
     job_name: formData?.job_name ?? '',
     job_code: formData?.job_code ?? '',
     client_name: formData?.client_name ?? '',
+    job_description: formData?.job_description ?? '',
     contract_amount: formData?.contract_amount ?? '',
     retainage_percent: formData?.retainage_percent ?? '0',
     start_date: formData?.start_date ?? '',
@@ -66,6 +68,15 @@ export const AddJobPage: FC<AddJobPageProps> = ({
 
           <label>Client Name</label>
           <input name="client_name" value={values.client_name} required />
+
+          <label>Job Description</label>
+          <textarea
+            name="job_description"
+            rows={6}
+            placeholder="Describe the work for this job"
+          >
+            {values.job_description}
+          </textarea>
 
           <div class="row">
             <div>

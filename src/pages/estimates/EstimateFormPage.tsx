@@ -172,8 +172,8 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
             </div>
 
             <div class="card">
-              <h3 style="margin-top:0;">Scope of Work</h3>
-              <label for="scope_of_work">Description</label>
+              <h3 style="margin-top:0;">Job Description</h3>
+              <label for="scope_of_work">Job Description</label>
               <textarea
                 id="scope_of_work"
                 name="scope_of_work"

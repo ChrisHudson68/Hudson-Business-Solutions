@@ -141,11 +141,24 @@ function parseStatus(value: unknown): JobStatus {
   return parsed;
 }
 
+function normalizeOptionalText(value: unknown, fieldLabel: string, maxLength: number): string | undefined {
+  const parsed = String(value ?? '').trim();
+
+  if (!parsed) return undefined;
+
+  if (parsed.length > maxLength) {
+    throw new Error(`${fieldLabel} must be ${maxLength} characters or less.`);
+  }
+
+  return parsed;
+}
+
 function buildJobFormData(source: Record<string, unknown>) {
   return {
     job_name: String(source.job_name ?? ''),
     job_code: String(source.job_code ?? ''),
     client_name: String(source.client_name ?? ''),
+    job_description: String(source.job_description ?? ''),
     contract_amount: String(source.contract_amount ?? ''),
     retainage_percent: String(source.retainage_percent ?? '0'),
     start_date: String(source.start_date ?? ''),
@@ -348,6 +361,7 @@ jobRoutes.get('/add_job', roleRequired('Admin', 'Manager'), (c) => {
         job_name: '',
         job_code: '',
         client_name: '',
+        job_description: '',
         contract_amount: '',
         retainage_percent: '0',
         start_date: '',
@@ -370,6 +384,7 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
     const jobName = requireText(body.job_name, 'Job name', 120);
     const jobCode = normalizeOptionalJobCode(body.job_code);
     const clientName = requireText(body.client_name, 'Client name', 120);
+    const jobDescription = normalizeOptionalText(body.job_description, 'Job description', 5000);
     const contractAmount = parseNonNegativeMoney(body.contract_amount, 'Contract amount');
     const retainagePercent = parsePercent(body.retainage_percent, 'Retainage percent');
     const startDate = normalizeOptionalDate(body.start_date, 'Start date');
@@ -381,6 +396,7 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
       job_name: jobName,
       job_code: jobCode,
       client_name: clientName,
+      job_description: jobDescription ?? null,
       contract_amount: contractAmount,
       retainage_percent: retainagePercent,
       start_date: startDate,
@@ -399,6 +415,7 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
           job_name: jobName,
           job_code: jobCode ?? null,
           client_name: clientName,
+          job_description: jobDescription ?? null,
           contract_amount: contractAmount,
           retainage_percent: retainagePercent,
           start_date: startDate ?? null,
@@ -448,6 +465,7 @@ jobRoutes.get('/edit_job/:id', roleRequired('Admin', 'Manager'), (c) => {
         job_name: job.job_name || '',
         job_code: job.job_code || '',
         client_name: job.client_name || '',
+        job_description: job.job_description || '',
         contract_amount: String(Number(job.contract_amount || 0)),
         retainage_percent: String(Number(job.retainage_percent || 0)),
         start_date: job.start_date || '',
@@ -481,6 +499,7 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
     const jobName = requireText(body.job_name, 'Job name', 120);
     const jobCode = normalizeOptionalJobCode(body.job_code);
     const clientName = requireText(body.client_name, 'Client name', 120);
+    const jobDescription = normalizeOptionalText(body.job_description, 'Job description', 5000);
     const contractAmount = parseNonNegativeMoney(body.contract_amount, 'Contract amount');
     const retainagePercent = parsePercent(body.retainage_percent, 'Retainage percent');
     const startDate = normalizeOptionalDate(body.start_date, 'Start date');
@@ -492,6 +511,7 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
       job_name: jobName,
       job_code: jobCode,
       client_name: clientName,
+      job_description: jobDescription ?? null,
       contract_amount: contractAmount,
       retainage_percent: retainagePercent,
       start_date: startDate,
@@ -510,6 +530,7 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
           job_name: jobName,
           job_code: jobCode ?? null,
           client_name: clientName,
+          job_description: jobDescription ?? null,
           contract_amount: contractAmount,
           retainage_percent: retainagePercent,
           start_date: startDate ?? null,

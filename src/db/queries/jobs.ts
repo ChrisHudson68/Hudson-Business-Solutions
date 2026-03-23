@@ -10,6 +10,7 @@ function baseJobColumns(alias = 'j'): string {
     ${alias}.id,
     ${alias}.job_name,
     ${alias}.job_code,
+    ${alias}.job_description,
     ${alias}.client_name,
     ${alias}.contract_amount,
     ${alias}.retainage_percent,
@@ -172,6 +173,7 @@ export function create(db: DB, tenantId: number, data: {
   job_name: string;
   job_code?: string | null;
   client_name?: string | null;
+  job_description?: string | null;
   contract_amount?: number | null;
   retainage_percent?: number | null;
   start_date?: string | null;
@@ -183,6 +185,7 @@ export function create(db: DB, tenantId: number, data: {
       job_name,
       job_code,
       client_name,
+      job_description,
       contract_amount,
       retainage_percent,
       start_date,
@@ -196,6 +199,7 @@ export function create(db: DB, tenantId: number, data: {
     data.job_name,
     data.job_code || null,
     data.client_name || null,
+    data.job_description || null,
     data.contract_amount ?? null,
     data.retainage_percent ?? null,
     data.start_date ?? null,
@@ -210,6 +214,7 @@ export function update(db: DB, jobId: number, tenantId: number, data: {
   job_name?: string | null;
   job_code?: string | null;
   client_name?: string | null;
+  job_description?: string | null;
   contract_amount?: number | null;
   retainage_percent?: number | null;
   start_date?: string | null;
@@ -221,6 +226,7 @@ export function update(db: DB, jobId: number, tenantId: number, data: {
     SET job_name = ?,
         job_code = ?,
         client_name = ?,
+        job_description = ?,
         contract_amount = ?,
         retainage_percent = ?,
         start_date = ?,
@@ -231,6 +237,7 @@ export function update(db: DB, jobId: number, tenantId: number, data: {
     data.job_name ?? null,
     data.job_code ?? null,
     data.client_name ?? null,
+    data.job_description ?? null,
     data.contract_amount ?? null,
     data.retainage_percent ?? null,
     data.start_date ?? null,

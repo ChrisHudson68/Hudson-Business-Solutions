@@ -4,6 +4,7 @@ interface Job {
   id: number;
   job_name: string;
   job_code: string | null;
+  job_description: string | null;
   client_name: string | null;
   contract_amount: number | null;
   retainage_percent: number | null;
@@ -203,63 +204,57 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
 
         <div class="card">
-          <b>Actions</b>
-          <div class="actions actions-mobile-stack" style="margin-top:12px;">
-            {job.archived_at ? (
-              <span class="muted">Restore this job to add new income or expenses.</span>
-            ) : (
-              <>
-                <a class="btn btn-primary" href={`/add_income/${job.id}`}>Add Income</a>
-                <a class="btn" href={`/add_expense/${job.id}`}>Add Expense</a>
-              </>
-            )}
+          <b>Job Description</b>
+          <div class="muted" style="white-space:pre-wrap; margin-top:12px;">
+            {job.job_description || 'No job description entered yet.'}
           </div>
-          <p class="muted" style="margin-top:10px;">
-            Use these to keep job costing and cash flow accurate.
-          </p>
         </div>
       </div>
 
-      <div class="grid grid-2 mobile-section-gap">
+      <div class="card">
+        <b>Actions</b>
+        <div class="actions actions-mobile-stack" style="margin-top:12px;">
+          {job.archived_at ? (
+            <span class="muted">Restore this job to add new income or expenses.</span>
+          ) : (
+            <>
+              <a class="btn btn-primary" href={`/add_income/${job.id}`}>Add Income</a>
+              <a class="btn" href={`/add_expense/${job.id}`}>Add Expense</a>
+            </>
+          )}
+        </div>
+        <p class="muted" style="margin-top:10px;">
+          Use these to keep job costing and cash flow accurate.
+        </p>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:14px; align-items:start;">
         <div class="card">
-          <b>Income</b>
-          <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
-            <table class="table">
+          <div class="page-head" style="margin-bottom:10px;">
+            <div>
+              <b>Income</b>
+            </div>
+            {!job.archived_at ? <a class="btn" href={`/add_income/${job.id}`}>Add Income</a> : null}
+          </div>
+          <div class="table-wrap">
+            <table>
               <thead>
                 <tr>
                   <th>Date</th>
                   <th>Description</th>
-                  <th class="right">Amount</th>
-                  <th class="right">Action</th>
+                  <th>Amount</th>
                 </tr>
               </thead>
               <tbody>
-                {incomes.length > 0 ? (
-                  incomes.map((row) => (
-                    <tr>
-                      <td>{row.date || '—'}</td>
-                      <td>{row.description || '—'}</td>
-                      <td class="right">${formatMoney(Number(row.amount || 0))}</td>
-                      <td class="right">
-                        {job.archived_at ? (
-                          <span class="muted">Locked</span>
-                        ) : (
-                          <form
-                            method="post"
-                            action={`/archive_income/${row.id}`}
-                            class="inline-form"
-                            onsubmit="return confirm('Archive this income entry?');"
-                          >
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Archive</button>
-                          </form>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
+                {incomes.length ? incomes.map((row) => (
                   <tr>
-                    <td colspan={4} class="muted">No active income records yet.</td>
+                    <td>{row.date || '—'}</td>
+                    <td>{row.description || '—'}</td>
+                    <td>${formatMoney(Number(row.amount || 0))}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colspan={3} class="muted">No income recorded yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -268,56 +263,33 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
 
         <div class="card">
-          <b>Expenses</b>
-          <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
-            <table class="table">
+          <div class="page-head" style="margin-bottom:10px;">
+            <div>
+              <b>Expenses</b>
+            </div>
+            {!job.archived_at ? <a class="btn" href={`/add_expense/${job.id}`}>Add Expense</a> : null}
+          </div>
+          <div class="table-wrap">
+            <table>
               <thead>
                 <tr>
                   <th>Date</th>
                   <th>Category</th>
                   <th>Vendor</th>
-                  <th>Receipt</th>
-                  <th class="right">Amount</th>
-                  <th class="right">Action</th>
+                  <th>Amount</th>
                 </tr>
               </thead>
               <tbody>
-                {expenses.length > 0 ? (
-                  expenses.map((row) => (
-                    <tr>
-                      <td>{row.date || '—'}</td>
-                      <td>{row.category || '—'}</td>
-                      <td>{row.vendor || '—'}</td>
-                      <td>
-                        {row.receipt_filename ? (
-                          <a href={`/uploads/receipts/${row.receipt_filename}`} target="_blank" rel="noreferrer">
-                            View
-                          </a>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td class="right">${formatMoney(Number(row.amount || 0))}</td>
-                      <td class="right">
-                        {job.archived_at ? (
-                          <span class="muted">Locked</span>
-                        ) : (
-                          <form
-                            method="post"
-                            action={`/archive_expense/${row.id}`}
-                            class="inline-form"
-                            onsubmit="return confirm('Archive this expense entry?');"
-                          >
-                            <input type="hidden" name="csrf_token" value={csrfToken} />
-                            <button class="btn" type="submit">Archive</button>
-                          </form>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
+                {expenses.length ? expenses.map((row) => (
                   <tr>
-                    <td colspan={6} class="muted">No active expense records yet.</td>
+                    <td>{row.date || '—'}</td>
+                    <td>{row.category || '—'}</td>
+                    <td>{row.vendor || '—'}</td>
+                    <td>${formatMoney(Number(row.amount || 0))}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colspan={4} class="muted">No expenses recorded yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -327,32 +299,30 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
       </div>
 
       <div class="card" style="margin-top:14px;">
-        <b>Labor Entries</b>
-        <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
-          <table class="table">
+        <b>Labor Time</b>
+        <div class="table-wrap" style="margin-top:10px;">
+          <table>
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Employee</th>
-                <th class="right">Hours</th>
-                <th class="right">Labor Cost</th>
+                <th>Hours</th>
+                <th>Labor Cost</th>
                 <th>Note</th>
               </tr>
             </thead>
             <tbody>
-              {timeEntries.length > 0 ? (
-                timeEntries.map((row) => (
-                  <tr>
-                    <td>{row.date}</td>
-                    <td>{row.employee_name}</td>
-                    <td class="right">{Number(row.hours || 0).toFixed(2)}</td>
-                    <td class="right">${formatMoney(Number(row.labor_cost || 0))}</td>
-                    <td>{row.note || '—'}</td>
-                  </tr>
-                ))
-              ) : (
+              {timeEntries.length ? timeEntries.map((row) => (
                 <tr>
-                  <td colspan={5} class="muted">No labor entries yet.</td>
+                  <td>{row.date}</td>
+                  <td>{row.employee_name}</td>
+                  <td>{Number(row.hours || 0).toFixed(2)}</td>
+                  <td>${formatMoney(Number(row.labor_cost || 0))}</td>
+                  <td>{row.note || '—'}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colspan={5} class="muted">No labor time recorded yet.</td>
                 </tr>
               )}
             </tbody>
@@ -360,31 +330,29 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
       </div>
 
-      {(archivedIncomes.length > 0 || archivedExpenses.length > 0) ? (
-        <div class="grid grid-2 mobile-section-gap" style="margin-top:14px;">
+      {(archivedIncomes.length || archivedExpenses.length) ? (
+        <div class="grid grid-2" style="margin-top:14px; align-items:start;">
           <div class="card">
             <b>Archived Income</b>
-            <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
-              <table class="table">
+            <div class="table-wrap" style="margin-top:10px;">
+              <table>
                 <thead>
                   <tr>
                     <th>Date</th>
                     <th>Description</th>
-                    <th class="right">Amount</th>
+                    <th>Amount</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {archivedIncomes.length > 0 ? (
-                    archivedIncomes.map((row) => (
-                      <tr>
-                        <td>{row.date || '—'}</td>
-                        <td>{row.description || '—'}</td>
-                        <td class="right">${formatMoney(Number(row.amount || 0))}</td>
-                      </tr>
-                    ))
-                  ) : (
+                  {archivedIncomes.length ? archivedIncomes.map((row) => (
                     <tr>
-                      <td colspan={3} class="muted">No archived income entries.</td>
+                      <td>{row.date || '—'}</td>
+                      <td>{row.description || '—'}</td>
+                      <td>${formatMoney(Number(row.amount || 0))}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colspan={3} class="muted">No archived income.</td>
                     </tr>
                   )}
                 </tbody>
@@ -394,29 +362,27 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
 
           <div class="card">
             <b>Archived Expenses</b>
-            <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
-              <table class="table">
+            <div class="table-wrap" style="margin-top:10px;">
+              <table>
                 <thead>
                   <tr>
                     <th>Date</th>
                     <th>Category</th>
                     <th>Vendor</th>
-                    <th class="right">Amount</th>
+                    <th>Amount</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {archivedExpenses.length > 0 ? (
-                    archivedExpenses.map((row) => (
-                      <tr>
-                        <td>{row.date || '—'}</td>
-                        <td>{row.category || '—'}</td>
-                        <td>{row.vendor || '—'}</td>
-                        <td class="right">${formatMoney(Number(row.amount || 0))}</td>
-                      </tr>
-                    ))
-                  ) : (
+                  {archivedExpenses.length ? archivedExpenses.map((row) => (
                     <tr>
-                      <td colspan={4} class="muted">No archived expense entries.</td>
+                      <td>{row.date || '—'}</td>
+                      <td>{row.category || '—'}</td>
+                      <td>{row.vendor || '—'}</td>
+                      <td>${formatMoney(Number(row.amount || 0))}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colspan={4} class="muted">No archived expenses.</td>
                     </tr>
                   )}
                 </tbody>

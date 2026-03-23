@@ -36,6 +36,7 @@ export function convertApprovedEstimateToJob(
     const jobId = jobs.create(db, tenantId, {
       job_name: buildJobName(estimate.customer_name, estimate.site_address),
       client_name: estimate.customer_name,
+      job_description: estimate.scope_of_work ?? null,
       contract_amount: Number(estimate.total || 0),
       retainage_percent: 0,
       start_date: null,
