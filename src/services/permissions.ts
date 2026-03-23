@@ -61,12 +61,8 @@ const ROLE_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
     'billing.view',
   ],
   Employee: [
-    'jobs.view',
     'time.view',
     'time.clock',
-    'time.edit_requests',
-    'invoices.view',
-    'reports.view',
   ],
 };
 
@@ -91,7 +87,7 @@ export function hasPermission(
   if (Array.isArray(roleOrPermissions)) {
     return roleOrPermissions.includes(permission);
   }
-  return getRolePermissions(roleOrPermissions).includes(permission);
+  return getRolePermissions(typeof roleOrPermissions === 'string' ? roleOrPermissions : null).includes(permission);
 }
 
 export function hasAnyPermission(
@@ -112,7 +108,7 @@ export function describeRole(role: string | null | undefined): string {
   const normalized = normalizeUserRole(role);
   if (normalized === 'Admin') return 'Full tenant control';
   if (normalized === 'Manager') return 'Operational access without full company control';
-  return 'Limited self-service workspace access';
+  return 'Time clock only with self-service account access';
 }
 
 export function getPermissionGroups(): Array<{
@@ -211,16 +207,16 @@ export function getRoleHighlights(role: string | null | undefined): string[] {
   if (normalized === 'Manager') {
     return [
       'Daily operations management',
-      'Create and edit jobs, employees, and invoices',
+      'Create and edit jobs, employees, invoices, and estimates',
       'Approve time and manage financial entries',
       'View settings and billing without full control',
     ];
   }
   return [
-    'Self-service time clock access',
-    'Submit time edit requests',
-    'View assigned operational data',
-      'No billing, settings, or user admin access',
+    'Clock in and clock out',
+    'Open the timesheet workspace',
+    'Manage their own password from My Account',
+    'No job, invoice, financial, report, billing, or user admin access',
   ];
 }
 

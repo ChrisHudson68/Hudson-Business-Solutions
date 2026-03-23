@@ -5,6 +5,7 @@ interface EstimateDetailPageProps {
   estimate: EstimateWithLineItems;
   canEditEstimate?: boolean;
   canSendEstimate?: boolean;
+  canArchiveEstimate?: boolean;
   csrfToken?: string;
   publicUrl?: string | null;
   notice?: string;
@@ -45,6 +46,7 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
   estimate,
   canEditEstimate,
   canSendEstimate,
+  canArchiveEstimate,
   csrfToken,
   publicUrl,
   notice,
@@ -62,6 +64,19 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
           {canEditEstimate ? (
             <a class="btn btn-primary" href={`/estimate/${estimate.id}/edit`}>Edit Estimate</a>
           ) : null}
+          {canArchiveEstimate && csrfToken ? (
+            estimate.archived_at ? (
+              <form method="post" action={`/estimate/${estimate.id}/restore`} class="inline-form">
+                <input type="hidden" name="csrf_token" value={csrfToken || ''} />
+                <button class="btn" type="submit">Restore</button>
+              </form>
+            ) : (
+              <form method="post" action={`/estimate/${estimate.id}/archive`} class="inline-form">
+                <input type="hidden" name="csrf_token" value={csrfToken || ''} />
+                <button class="btn" type="submit">Archive</button>
+              </form>
+            )
+          ) : null}
         </div>
       </div>
 
@@ -71,11 +86,21 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
         </div>
       ) : null}
 
+      {estimate.archived_at ? (
+        <div class="card" style="margin-bottom:14px; border-color:#FDE68A; background:#FFFBEB; color:#92400E;">
+          This estimate is archived. It remains available for history and can be restored at any time.
+        </div>
+      ) : null}
+
       <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
         <div class="card mobile-kpi-card">
           <div class="metric-label">Status</div>
           <div style="margin-top:8px;">
-            <span class={statusBadgeClass(estimate.status)}>{statusLabel(estimate.status)}</span>
+            {estimate.archived_at ? (
+              <span class="badge badge-warn">Archived</span>
+            ) : (
+              <span class={statusBadgeClass(estimate.status)}>{statusLabel(estimate.status)}</span>
+            )}
           </div>
         </div>
         <div class="card mobile-kpi-card">
@@ -92,7 +117,7 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
         </div>
       </div>
 
-      {(canSendEstimate || publicUrl) ? (
+      {(canSendEstimate || publicUrl) && !estimate.archived_at ? (
         <div class="card" style="margin-bottom:14px;">
           <div class="page-head" style="margin-bottom:12px;">
             <div>

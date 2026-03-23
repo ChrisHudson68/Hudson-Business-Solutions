@@ -342,6 +342,20 @@ function buildDetailNotice(rawValue: string | undefined): { message?: string; to
     };
   }
 
+  if (normalized === 'archived') {
+    return {
+      message: 'Estimate archived successfully.',
+      tone: 'success',
+    };
+  }
+
+  if (normalized === 'restored') {
+    return {
+      message: 'Estimate restored successfully.',
+      tone: 'success',
+    };
+  }
+
   return {};
 }
 
@@ -354,7 +368,8 @@ estimateRoutes.get('/estimates', loginRequired, (c) => {
   const db = getDb();
 
   const status = parseFilterStatus(c.req.query('status'));
-  const rows = estimates.listByTenant(db, tenantId, status);
+  const showArchived = c.req.query('show_archived') === '1';
+  const rows = estimates.listByTenant(db, tenantId, status, showArchived);
 
   const summary = rows.reduce(
     (acc: { totalCount: number; totalValue: number; statusCounts: Record<string, number> }, row: any) => {
@@ -385,6 +400,9 @@ estimateRoutes.get('/estimates', loginRequired, (c) => {
       approvedCount={summary.statusCounts.approved || 0}
       rejectedCount={summary.statusCounts.rejected || 0}
       canCreateEstimates={isManagerOrAdmin(currentUser)}
+      canManageEstimateArchive={isManagerOrAdmin(currentUser)}
+      showArchived={showArchived}
+      csrfToken={c.get('csrfToken')}
     />,
   );
 });
@@ -527,8 +545,9 @@ estimateRoutes.get('/estimate/:id', loginRequired, (c) => {
     'Estimate Detail',
     <EstimateDetailPage
       estimate={estimate}
-      canEditEstimate={isManagerOrAdmin(currentUser) && canEditEstimateStatus(estimate.status)}
-      canSendEstimate={isManagerOrAdmin(currentUser) && canSendEstimateStatus(estimate.status)}
+      canEditEstimate={isManagerOrAdmin(currentUser) && !estimate.archived_at && canEditEstimateStatus(estimate.status)}
+      canSendEstimate={isManagerOrAdmin(currentUser) && !estimate.archived_at && canSendEstimateStatus(estimate.status)}
+      canArchiveEstimate={isManagerOrAdmin(currentUser)}
       csrfToken={c.get('csrfToken')}
       publicUrl={publicUrl}
       notice={detailNotice.message}
@@ -554,7 +573,7 @@ estimateRoutes.post('/estimate/:id/send', roleRequired('Admin', 'Manager'), asyn
     return c.text('Estimate not found', 404);
   }
 
-  if (!canSendEstimateStatus(estimate.status)) {
+  if (estimate.archived_at || !canSendEstimateStatus(estimate.status)) {
     return c.redirect(`/estimate/${estimateId}`);
   }
 
@@ -601,8 +620,9 @@ estimateRoutes.post('/estimate/:id/send', roleRequired('Admin', 'Manager'), asyn
       'Estimate Detail',
       <EstimateDetailPage
         estimate={refreshed || estimate}
-        canEditEstimate={isManagerOrAdmin(currentUser) && canEditEstimateStatus((refreshed || estimate).status)}
-        canSendEstimate={isManagerOrAdmin(currentUser) && canSendEstimateStatus((refreshed || estimate).status)}
+        canEditEstimate={isManagerOrAdmin(currentUser) && !(refreshed || estimate).archived_at && canEditEstimateStatus((refreshed || estimate).status)}
+        canSendEstimate={isManagerOrAdmin(currentUser) && !(refreshed || estimate).archived_at && canSendEstimateStatus((refreshed || estimate).status)}
+        canArchiveEstimate={isManagerOrAdmin(currentUser)}
         csrfToken={c.get('csrfToken')}
         publicUrl={publicUrl}
         notice={`Email send failed: ${message}`}
@@ -763,6 +783,79 @@ estimateRoutes.post('/estimate/:id/edit', roleRequired('Admin', 'Manager'), asyn
       400,
     );
   }
+});
+
+
+estimateRoutes.post('/estimate/:id/archive', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!estimateId) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const existingEstimate = estimates.findById(db, estimateId, tenantId);
+  if (!existingEstimate) {
+    return c.text('Estimate not found', 404);
+  }
+
+  estimates.archive(db, estimateId, tenantId, currentUser!.id);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser?.id,
+    eventType: 'estimate.archived',
+    entityType: 'estimate',
+    entityId: estimateId,
+    description: `${currentUser?.name || 'User'} archived estimate ${existingEstimate.estimate_number}.`,
+    metadata: {
+      estimate_number: existingEstimate.estimate_number,
+      customer_name: existingEstimate.customer_name,
+      status: existingEstimate.status,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(`/estimate/${estimateId}?notice=archived`);
+});
+
+estimateRoutes.post('/estimate/:id/restore', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!estimateId) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const existingEstimate = estimates.findById(db, estimateId, tenantId);
+  if (!existingEstimate) {
+    return c.text('Estimate not found', 404);
+  }
+
+  estimates.restore(db, estimateId, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser?.id,
+    eventType: 'estimate.restored',
+    entityType: 'estimate',
+    entityId: estimateId,
+    description: `${currentUser?.name || 'User'} restored estimate ${existingEstimate.estimate_number}.`,
+    metadata: {
+      estimate_number: existingEstimate.estimate_number,
+      customer_name: existingEstimate.customer_name,
+      status: existingEstimate.status,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(`/estimate/${estimateId}?notice=restored`);
 });
 
 export default estimateRoutes;

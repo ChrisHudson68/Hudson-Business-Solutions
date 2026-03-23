@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
 import * as userQueries from '../db/queries/users.js';
-import { permissionRequired, userHasPermission } from '../middleware/auth.js';
+import { loginRequired, permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { hashPassword } from '../services/password.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
@@ -10,6 +10,7 @@ import { UsersPage } from '../pages/users/UsersPage.js';
 import { AddUserPage } from '../pages/users/AddUserPage.js';
 import { EditUserPage } from '../pages/users/EditUserPage.js';
 import { UserPermissionsPage } from '../pages/users/UserPermissionsPage.js';
+import { MyAccountPage } from '../pages/users/MyAccountPage.js';
 import { getPermissionGroups, getRolePresets, normalizeUserRole } from '../services/permissions.js';
 import {
   ValidationError,
@@ -513,3 +514,61 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
     return renderEditUserError(c, message, existingUser, employeeOptions, formData);
   }
 });
+
+userRoutes.get('/my-account', loginRequired, (c) => {
+  const currentUser = c.get('user');
+  if (!currentUser) return c.redirect('/login');
+
+  return renderAppLayout(
+    c,
+    'My Account',
+    <MyAccountPage
+      user={currentUser}
+      csrfToken={c.get('csrfToken')}
+      success={c.req.query('notice') === 'password-updated' ? 'Password updated successfully.' : undefined}
+    />,
+  );
+});
+
+userRoutes.post('/my-account/password', loginRequired, async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const newPassword = String(body['new_password'] ?? '');
+  const confirmPassword = String(body['confirm_password'] ?? '');
+  const db = getDb();
+
+  try {
+    if (newPassword !== confirmPassword) {
+      throw new ValidationError('New password and confirmation must match.');
+    }
+
+    const validatedPassword = validatePassword(newPassword, 'New password');
+    userQueries.updatePassword(db, currentUser.id, tenant.id, hashPassword(validatedPassword));
+
+    logActivity(db, {
+      tenantId: tenant.id,
+      actorUserId: currentUser.id,
+      eventType: 'user.password_changed_self',
+      entityType: 'user',
+      entityId: currentUser.id,
+      description: `${currentUser.name} changed their own password.`,
+      metadata: {},
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.redirect('/my-account?notice=password-updated');
+  } catch (error) {
+    const message = error instanceof ValidationError ? error.message : 'Unable to update your password right now.';
+    return renderAppLayout(
+      c,
+      'My Account',
+      <MyAccountPage user={currentUser} csrfToken={c.get('csrfToken')} error={message} />,
+      400,
+    );
+  }
+});
+
+export default userRoutes;

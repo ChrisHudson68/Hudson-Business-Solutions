@@ -110,6 +110,10 @@ export const dashboardRoutes = new Hono<AppEnv>();
 dashboardRoutes.get('/dashboard', loginRequired, (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
+
+  if (currentUser?.role === 'Employee') {
+    return c.redirect('/timesheet');
+  }
   const tenantId = tenant!.id;
   const db = getDb();
 

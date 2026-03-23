@@ -194,7 +194,7 @@ export function create(db: DB, tenantId: number, data: {
       archived_at,
       archived_by_user_id,
       source_estimate_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`
   ).run(
     data.job_name,
     data.job_code || null,

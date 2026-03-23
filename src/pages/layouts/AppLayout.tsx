@@ -637,7 +637,12 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
   const permissions = currentUser?.permissions ?? [];
 
   return [
-    { label: 'Dashboard', href: '/', patterns: ['/'], visible: true },
+    {
+      label: 'Dashboard',
+      href: '/',
+      patterns: ['/', '/dashboard'],
+      visible: !!currentUser && currentUser.role !== 'Employee',
+    },
     {
       label: 'Jobs',
       href: '/jobs',
@@ -679,6 +684,12 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       href: '/activity',
       patterns: ['/activity'],
       visible: hasPermission(permissions, 'activity.view'),
+    },
+    {
+      label: 'My Account',
+      href: '/my-account',
+      patterns: ['/my-account'],
+      visible: !!currentUser,
     },
     {
       label: 'Support',

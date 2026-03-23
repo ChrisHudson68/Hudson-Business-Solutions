@@ -94,6 +94,8 @@ function baseSelect(): string {
       e.converted_job_id,
       e.expiration_date,
       e.public_token,
+      e.archived_at,
+      e.archived_by_user_id,
       e.created_at,
       e.updated_at,
       creator.name AS created_by_name,
@@ -110,9 +112,13 @@ function baseSelect(): string {
   `;
 }
 
-export function listByTenant(db: DB, tenantId: number, status?: EstimateStatus): Estimate[] {
+export function listByTenant(db: DB, tenantId: number, status?: EstimateStatus, includeArchived = false): Estimate[] {
   const params: Array<number | string> = [tenantId];
   let whereSql = 'WHERE e.tenant_id = ?';
+
+  if (!includeArchived) {
+    whereSql += ' AND e.archived_at IS NULL';
+  }
 
   if (status) {
     whereSql += ' AND e.status = ?';
@@ -430,6 +436,27 @@ export function setStatus(
   });
 }
 
+
+export function archive(db: DB, estimateId: number, tenantId: number, archivedByUserId: number): void {
+  db.prepare(`
+    UPDATE estimates
+    SET archived_at = CURRENT_TIMESTAMP,
+        archived_by_user_id = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+  `).run(archivedByUserId, estimateId, tenantId);
+}
+
+export function restore(db: DB, estimateId: number, tenantId: number): void {
+  db.prepare(`
+    UPDATE estimates
+    SET archived_at = NULL,
+        archived_by_user_id = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ? AND archived_at IS NOT NULL
+  `).run(estimateId, tenantId);
+}
+
 export default {
   listByTenant,
   findById,
@@ -441,4 +468,6 @@ export default {
   create,
   update,
   setStatus,
+  archive,
+  restore,
 };
