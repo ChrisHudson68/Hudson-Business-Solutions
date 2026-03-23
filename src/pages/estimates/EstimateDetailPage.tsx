@@ -5,7 +5,6 @@ interface EstimateDetailPageProps {
   estimate: EstimateWithLineItems;
   canEditEstimate?: boolean;
   canSendEstimate?: boolean;
-  canArchiveEstimate?: boolean;
   csrfToken?: string;
   publicUrl?: string | null;
   notice?: string;
@@ -46,12 +45,14 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
   estimate,
   canEditEstimate,
   canSendEstimate,
-  canArchiveEstimate,
   csrfToken,
   publicUrl,
   notice,
   noticeTone = 'info',
 }) => {
+  const totalBaseCost = estimate.line_items.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0)), 0);
+  const grossMarkupValue = Number(estimate.subtotal || 0) - totalBaseCost;
+
   return (
     <div>
       <div class="page-head">
@@ -64,19 +65,6 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
           {canEditEstimate ? (
             <a class="btn btn-primary" href={`/estimate/${estimate.id}/edit`}>Edit Estimate</a>
           ) : null}
-          {canArchiveEstimate && csrfToken ? (
-            estimate.archived_at ? (
-              <form method="post" action={`/estimate/${estimate.id}/restore`} class="inline-form">
-                <input type="hidden" name="csrf_token" value={csrfToken || ''} />
-                <button class="btn" type="submit">Restore</button>
-              </form>
-            ) : (
-              <form method="post" action={`/estimate/${estimate.id}/archive`} class="inline-form">
-                <input type="hidden" name="csrf_token" value={csrfToken || ''} />
-                <button class="btn" type="submit">Archive</button>
-              </form>
-            )
-          ) : null}
         </div>
       </div>
 
@@ -86,38 +74,28 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
         </div>
       ) : null}
 
-      {estimate.archived_at ? (
-        <div class="card" style="margin-bottom:14px; border-color:#FDE68A; background:#FFFBEB; color:#92400E;">
-          This estimate is archived. It remains available for history and can be restored at any time.
-        </div>
-      ) : null}
-
       <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
         <div class="card mobile-kpi-card">
           <div class="metric-label">Status</div>
           <div style="margin-top:8px;">
-            {estimate.archived_at ? (
-              <span class="badge badge-warn">Archived</span>
-            ) : (
-              <span class={statusBadgeClass(estimate.status)}>{statusLabel(estimate.status)}</span>
-            )}
+            <span class={statusBadgeClass(estimate.status)}>{statusLabel(estimate.status)}</span>
           </div>
+        </div>
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Base Cost</div>
+          <div class="metric-value">${formatMoney(totalBaseCost)}</div>
         </div>
         <div class="card mobile-kpi-card">
           <div class="metric-label">Subtotal</div>
           <div class="metric-value">${formatMoney(estimate.subtotal)}</div>
         </div>
         <div class="card mobile-kpi-card">
-          <div class="metric-label">Tax</div>
-          <div class="metric-value">${formatMoney(estimate.tax)}</div>
-        </div>
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Total</div>
-          <div class="metric-value">${formatMoney(estimate.total)}</div>
+          <div class="metric-label">Markup Value</div>
+          <div class="metric-value">${formatMoney(grossMarkupValue)}</div>
         </div>
       </div>
 
-      {(canSendEstimate || publicUrl) && !estimate.archived_at ? (
+      {(canSendEstimate || publicUrl) ? (
         <div class="card" style="margin-bottom:14px;">
           <div class="page-head" style="margin-bottom:12px;">
             <div>
@@ -239,7 +217,15 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
                     <div>{item.unit || '—'}</div>
                   </div>
                   <div>
-                    <div class="small muted">Unit Price</div>
+                    <div class="small muted">Base Cost</div>
+                    <div>${formatMoney(item.unit_cost)}</div>
+                  </div>
+                  <div>
+                    <div class="small muted">Upcharge</div>
+                    <div>{item.apply_upcharge ? `${Number(item.upcharge_percent || 0).toFixed(2)}%` : 'Not applied'}</div>
+                  </div>
+                  <div>
+                    <div class="small muted">Sell Unit Price</div>
                     <div>${formatMoney(item.unit_price)}</div>
                   </div>
                   <div>

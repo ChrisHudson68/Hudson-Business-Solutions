@@ -4,6 +4,9 @@ type EstimateLineItemFormValue = {
   description: string;
   quantity: string;
   unit: string;
+  unit_cost: string;
+  upcharge_percent: string;
+  apply_upcharge: boolean;
   unit_price: string;
 };
 
@@ -23,6 +26,7 @@ interface EstimateFormPageProps {
     status: string;
     expiration_date: string;
     tax_rate: string;
+    default_upcharge_percent: string;
     line_items: EstimateLineItemFormValue[];
     subtotal: string;
     tax: string;
@@ -60,14 +64,6 @@ const UNIT_SUGGESTIONS = [
   'pallet',
 ];
 
-function escapeAttr(value: string | null | undefined): string {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
-}
-
 export const EstimateFormPage: FC<EstimateFormPageProps> = ({
   mode,
   estimateId,
@@ -80,7 +76,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
   const title = mode === 'create' ? 'New Estimate' : `Edit ${estimateNumber}`;
   const initialRows = formData.line_items.length
     ? formData.line_items
-    : [{ description: '', quantity: '', unit: '', unit_price: '' }];
+    : [{ description: '', quantity: '', unit: '', unit_cost: '', upcharge_percent: '', apply_upcharge: false, unit_price: '' }];
 
   const rowsJson = JSON.stringify(initialRows);
 
@@ -90,7 +86,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
         <div>
           <h1>{title}</h1>
           <p class="muted">
-            Build a complete estimate with flexible line items, useful units, and automatic totals.
+            Build a complete estimate with base costs, upcharge control, and automatic sell pricing.
           </p>
         </div>
         <div class="actions actions-mobile-stack">
@@ -142,6 +138,17 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
                     placeholder="0.00"
                   />
                 </div>
+
+                <div>
+                  <label for="default_upcharge_percent">Default Upcharge %</label>
+                  <input
+                    id="default_upcharge_percent"
+                    name="default_upcharge_percent"
+                    value={formData.default_upcharge_percent || ''}
+                    inputmode="decimal"
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
             </div>
 
@@ -189,7 +196,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
                 <div>
                   <h3 style="margin:0;">Line Items</h3>
                   <p class="muted" style="margin-top:6px;">
-                    Add as many lines as you need. Quantity, unit, and pricing will total automatically.
+                    Add as many lines as you need. Base cost, upcharge, sell price, and totals recalculate automatically.
                   </p>
                 </div>
                 <div class="actions">
@@ -234,8 +241,25 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
                       </div>
 
                       <div>
-                        <label>Unit Price</label>
-                        <input class="line-unit-price" inputmode="decimal" placeholder="0.00" />
+                        <label>Base Cost</label>
+                        <input class="line-unit-cost" inputmode="decimal" placeholder="0.00" />
+                      </div>
+
+                      <div>
+                        <label>Upcharge %</label>
+                        <input class="line-upcharge-percent" inputmode="decimal" placeholder="0.00" />
+                      </div>
+                    </div>
+
+                    <div style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); align-items:end;">
+                      <div style="display:flex; align-items:center; gap:10px; min-height:44px;">
+                        <input class="line-apply-upcharge" type="checkbox" />
+                        <label style="margin:0;">Apply upcharge</label>
+                      </div>
+
+                      <div>
+                        <label>Sell Unit Price</label>
+                        <input class="line-unit-price" readonly />
                       </div>
 
                       <div>
@@ -278,9 +302,9 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
             <div class="card">
               <h3 style="margin-top:0;">Estimator Tips</h3>
               <div class="muted" style="display:grid; gap:10px;">
-                <div>Use units like <b>ea</b>, <b>ft</b>, <b>sq ft</b>, <b>hr</b>, or custom text when needed.</div>
-                <div>Line totals recalculate automatically from quantity × unit price.</div>
-                <div>Add as many lines as needed for labor, material, equipment, permits, and misc charges.</div>
+                <div>Enter the true <b>base cost</b>, then choose whether to apply an upcharge.</div>
+                <div>New lines can inherit the estimate-level default upcharge percentage.</div>
+                <div>Customer-facing views only show the sell price, not your internal cost and markup.</div>
               </div>
             </div>
 
@@ -306,6 +330,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
   const addButton = document.getElementById('add-line-item-btn');
   const lineCountInput = document.getElementById('line_count');
   const taxRateInput = document.getElementById('tax_rate');
+  const defaultUpchargeInput = document.getElementById('default_upcharge_percent');
   const subtotalInput = document.getElementById('subtotal');
   const taxInput = document.getElementById('tax');
   const totalInput = document.getElementById('total');
@@ -335,12 +360,21 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
       const desc = card.querySelector('.line-description');
       const qty = card.querySelector('.line-quantity');
       const unit = card.querySelector('.line-unit');
+      const unitCost = card.querySelector('.line-unit-cost');
+      const upchargePercent = card.querySelector('.line-upcharge-percent');
+      const applyUpcharge = card.querySelector('.line-apply-upcharge');
       const unitPrice = card.querySelector('.line-unit-price');
       const label = card.querySelector('.line-item-label');
 
       if (desc) desc.name = 'line_description_' + index;
       if (qty) qty.name = 'line_quantity_' + index;
       if (unit) unit.name = 'line_unit_' + index;
+      if (unitCost) unitCost.name = 'line_unit_cost_' + index;
+      if (upchargePercent) upchargePercent.name = 'line_upcharge_percent_' + index;
+      if (applyUpcharge) {
+        applyUpcharge.name = 'line_apply_upcharge_' + index;
+        applyUpcharge.value = '1';
+      }
       if (unitPrice) unitPrice.name = 'line_unit_price_' + index;
       if (label) label.textContent = 'Line Item ' + (index + 1);
     });
@@ -348,12 +382,26 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
     lineCountInput.value = String(getCards().length);
   }
 
+  function getDefaultUpcharge() {
+    return money(defaultUpchargeInput && defaultUpchargeInput.value);
+  }
+
   function updateCardTotal(card) {
     const qty = card.querySelector('.line-quantity');
+    const unitCost = card.querySelector('.line-unit-cost');
+    const upchargePercent = card.querySelector('.line-upcharge-percent');
+    const applyUpcharge = card.querySelector('.line-apply-upcharge');
     const unitPrice = card.querySelector('.line-unit-price');
     const totalDisplay = card.querySelector('.line-total-display');
 
-    const total = money(qty && qty.value) * money(unitPrice && unitPrice.value);
+    const quantity = money(qty && qty.value);
+    const cost = money(unitCost && unitCost.value);
+    const upcharge = money(upchargePercent && upchargePercent.value);
+    const useUpcharge = Boolean(applyUpcharge && applyUpcharge.checked);
+    const sellPrice = useUpcharge ? (cost * (1 + (upcharge / 100))) : cost;
+    const total = quantity * sellPrice;
+
+    if (unitPrice) unitPrice.value = formatMoney(sellPrice);
     if (totalDisplay) totalDisplay.value = '$' + formatMoney(total);
 
     return total;
@@ -376,13 +424,19 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
 
   function attachEvents(card) {
     const qty = card.querySelector('.line-quantity');
-    const unitPrice = card.querySelector('.line-unit-price');
+    const unitCost = card.querySelector('.line-unit-cost');
+    const upchargePercent = card.querySelector('.line-upcharge-percent');
+    const applyUpcharge = card.querySelector('.line-apply-upcharge');
     const removeBtn = card.querySelector('.remove-line-item-btn');
 
-    [qty, unitPrice].forEach((el) => {
+    [qty, unitCost, upchargePercent].forEach((el) => {
       if (!el) return;
       el.addEventListener('input', updateTotals);
     });
+
+    if (applyUpcharge) {
+      applyUpcharge.addEventListener('change', updateTotals);
+    }
 
     if (removeBtn) {
       removeBtn.addEventListener('click', function () {
@@ -405,12 +459,26 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
     const desc = card.querySelector('.line-description');
     const qty = card.querySelector('.line-quantity');
     const unit = card.querySelector('.line-unit');
-    const unitPrice = card.querySelector('.line-unit-price');
+    const unitCost = card.querySelector('.line-unit-cost');
+    const upchargePercent = card.querySelector('.line-upcharge-percent');
+    const applyUpcharge = card.querySelector('.line-apply-upcharge');
+
+    const inheritedUpcharge = getDefaultUpcharge();
 
     if (desc) desc.value = row && row.description ? row.description : '';
     if (qty) qty.value = row && row.quantity ? row.quantity : '';
     if (unit) unit.value = row && row.unit ? row.unit : '';
-    if (unitPrice) unitPrice.value = row && row.unit_price ? row.unit_price : '';
+    if (unitCost) unitCost.value = row && row.unit_cost ? row.unit_cost : '';
+    if (upchargePercent) {
+      upchargePercent.value = row && row.upcharge_percent !== undefined && row.upcharge_percent !== ''
+        ? row.upcharge_percent
+        : (inheritedUpcharge > 0 ? String(inheritedUpcharge) : '');
+    }
+    if (applyUpcharge) {
+      applyUpcharge.checked = row && typeof row.apply_upcharge === 'boolean'
+        ? row.apply_upcharge
+        : inheritedUpcharge > 0;
+    }
 
     container.appendChild(card);
     attachEvents(card);
@@ -419,7 +487,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
   }
 
   addButton.addEventListener('click', function () {
-    addLine({ description: '', quantity: '', unit: '', unit_price: '' });
+    addLine({ description: '', quantity: '', unit: '', unit_cost: '', upcharge_percent: '', apply_upcharge: false, unit_price: '' });
   });
 
   if (taxRateInput) {
@@ -429,7 +497,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
   if (Array.isArray(initialRows) && initialRows.length) {
     initialRows.forEach(addLine);
   } else {
-    addLine({ description: '', quantity: '', unit: '', unit_price: '' });
+    addLine({ description: '', quantity: '', unit: '', unit_cost: '', upcharge_percent: '', apply_upcharge: false, unit_price: '' });
   }
 
   setNames();

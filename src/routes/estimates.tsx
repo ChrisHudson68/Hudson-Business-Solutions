@@ -1,18 +1,19 @@
+import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
+import type { EstimateStatus } from '../db/types.js';
 import * as estimates from '../db/queries/estimates.js';
+import * as jobs from '../db/queries/jobs.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { EstimatesListPage } from '../pages/estimates/EstimatesListPage.js';
 import { EstimateFormPage } from '../pages/estimates/EstimateFormPage.js';
 import { EstimateDetailPage } from '../pages/estimates/EstimateDetailPage.js';
-import { logActivity, resolveRequestIp } from '../services/activity-log.js';
-import { generateNextEstimateNumber } from '../services/estimate-number.js';
 import { sendEstimateToCustomer } from '../services/send-estimate.js';
-import type { EstimateStatus } from '../db/types.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 
-function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
+function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 | 404 = 200) {
   return c.html(
     <AppLayout
       currentTenant={c.get('tenant')}
@@ -50,6 +51,9 @@ type EstimateLineItemFormValue = {
   description: string;
   quantity: string;
   unit: string;
+  unit_cost: string;
+  upcharge_percent: string;
+  apply_upcharge: boolean;
   unit_price: string;
 };
 
@@ -137,8 +141,8 @@ function parsePercent(value: unknown, fieldLabel: string): number {
 
   const parsed = Number.parseFloat(raw);
 
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
-    throw new Error(`${fieldLabel} must be between 0 and 100.`);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1000) {
+    throw new Error(`${fieldLabel} must be between 0 and 1000.`);
   }
 
   return Number(parsed.toFixed(2));
@@ -164,11 +168,19 @@ function roundMoney(value: number): number {
   return Number(value.toFixed(2));
 }
 
-function buildBlankLineItems(count = 1): EstimateLineItemFormValue[] {
+function calculateUnitPrice(unitCost: number, upchargePercent: number, applyUpcharge: boolean): number {
+  if (!applyUpcharge) return roundMoney(unitCost);
+  return roundMoney(unitCost * (1 + upchargePercent / 100));
+}
+
+function buildBlankLineItems(count = 1, defaultUpchargePercent = 0): EstimateLineItemFormValue[] {
   return Array.from({ length: count }, () => ({
     description: '',
     quantity: '',
     unit: '',
+    unit_cost: '',
+    upcharge_percent: defaultUpchargePercent > 0 ? String(defaultUpchargePercent) : '',
+    apply_upcharge: defaultUpchargePercent > 0,
     unit_price: '',
   }));
 }
@@ -188,6 +200,9 @@ function extractLineItemsFromBody(body: Record<string, unknown>): EstimateLineIt
       description: String(body[`line_description_${i}`] ?? '').trim(),
       quantity: String(body[`line_quantity_${i}`] ?? '').trim(),
       unit: String(body[`line_unit_${i}`] ?? '').trim(),
+      unit_cost: String(body[`line_unit_cost_${i}`] ?? '').trim(),
+      upcharge_percent: String(body[`line_upcharge_percent_${i}`] ?? '').trim(),
+      apply_upcharge: String(body[`line_apply_upcharge_${i}`] ?? '').trim() === '1',
       unit_price: String(body[`line_unit_price_${i}`] ?? '').trim(),
     });
   }
@@ -200,19 +215,32 @@ function normalizeLineItems(formRows: EstimateLineItemFormValue[]) {
     .map((row, index) => {
       const description = row.description.trim();
       const quantity = parseNonNegativeMoney(row.quantity, `Line ${index + 1} quantity`);
-      const unitPrice = parseNonNegativeMoney(row.unit_price, `Line ${index + 1} unit price`);
+      const unitCost = parseNonNegativeMoney(row.unit_cost, `Line ${index + 1} base cost`);
+      const upchargePercent = parsePercent(row.upcharge_percent, `Line ${index + 1} upcharge percent`);
+      const applyUpcharge = Boolean(row.apply_upcharge);
+      const unitPrice = calculateUnitPrice(unitCost, upchargePercent, applyUpcharge);
       const unit = String(row.unit || '').trim().slice(0, 40);
 
       return {
         description,
         quantity,
         unit,
+        unit_cost: unitCost,
+        upcharge_percent: upchargePercent,
+        apply_upcharge: applyUpcharge,
         unit_price: unitPrice,
         line_total: roundMoney(quantity * unitPrice),
         sort_order: index,
       };
     })
-    .filter((row) => row.description || row.quantity > 0 || row.unit_price > 0 || row.unit);
+    .filter((row) => (
+      row.description ||
+      row.quantity > 0 ||
+      row.unit_cost > 0 ||
+      row.upcharge_percent > 0 ||
+      row.unit ||
+      row.apply_upcharge
+    ));
 
   const invalidRow = lineItems.find((row) => !row.description);
   if (invalidRow) {
@@ -247,6 +275,7 @@ function buildEstimateFormData(
   status: string;
   expiration_date: string;
   tax_rate: string;
+  default_upcharge_percent: string;
   line_items: EstimateLineItemFormValue[];
   subtotal: string;
   tax: string;
@@ -262,6 +291,7 @@ function buildEstimateFormData(
     status: String(body.status ?? 'draft').trim().toLowerCase(),
     expiration_date: String(body.expiration_date ?? '').trim(),
     tax_rate: String(body.tax_rate ?? String(fallbackTaxRate ?? 0)).trim(),
+    default_upcharge_percent: String(body.default_upcharge_percent ?? '').trim(),
     line_items: extractLineItemsFromBody(body),
     subtotal: String(body.subtotal ?? '').trim(),
     tax: String(body.tax ?? '').trim(),
@@ -278,6 +308,9 @@ function buildEstimateFormDataFromRecord(
         description: item.description ?? '',
         quantity: String(Number(item.quantity || 0)),
         unit: item.unit ?? '',
+        unit_cost: String(Number(item.unit_cost || 0)),
+        upcharge_percent: String(Number(item.upcharge_percent || 0)),
+        apply_upcharge: Boolean(item.apply_upcharge),
         unit_price: String(Number(item.unit_price || 0)),
       }))
     : buildBlankLineItems(1);
@@ -285,6 +318,7 @@ function buildEstimateFormDataFromRecord(
   const subtotal = Number(estimate?.subtotal || 0);
   const tax = Number(estimate?.tax || 0);
   const taxRate = subtotal > 0 ? roundMoney((tax / subtotal) * 100) : roundMoney(fallbackTaxRate || 0);
+  const defaultUpchargePercent = lineItems.find((item) => item.apply_upcharge && Number(item.upcharge_percent || 0) > 0)?.upcharge_percent || '';
 
   return {
     estimate_number: estimate?.estimate_number ?? '',
@@ -296,6 +330,7 @@ function buildEstimateFormDataFromRecord(
     status: estimate?.status ?? 'draft',
     expiration_date: estimate?.expiration_date ?? '',
     tax_rate: String(taxRate),
+    default_upcharge_percent: defaultUpchargePercent,
     line_items: lineItems,
     subtotal: subtotal.toFixed(2),
     tax: tax.toFixed(2),
@@ -342,21 +377,23 @@ function buildDetailNotice(rawValue: string | undefined): { message?: string; to
     };
   }
 
-  if (normalized === 'archived') {
-    return {
-      message: 'Estimate archived successfully.',
-      tone: 'success',
-    };
-  }
-
-  if (normalized === 'restored') {
-    return {
-      message: 'Estimate restored successfully.',
-      tone: 'success',
-    };
-  }
-
   return {};
+}
+
+function generateNextEstimateNumber(db: any, tenantId: number): string {
+  const year = new Date().getFullYear();
+  const prefix = `EST-${year}-`;
+  const row = db.prepare(`
+    SELECT estimate_number
+    FROM estimates
+    WHERE tenant_id = ? AND estimate_number LIKE ?
+    ORDER BY id DESC
+    LIMIT 1
+  `).get(tenantId, `${prefix}%`) as { estimate_number?: string } | undefined;
+
+  const lastSequence = row?.estimate_number ? Number.parseInt(row.estimate_number.slice(prefix.length), 10) : 0;
+  const nextSequence = Number.isInteger(lastSequence) ? lastSequence + 1 : 1;
+  return `${prefix}${String(nextSequence).padStart(4, '0')}`;
 }
 
 export const estimateRoutes = new Hono<AppEnv>();
@@ -368,8 +405,7 @@ estimateRoutes.get('/estimates', loginRequired, (c) => {
   const db = getDb();
 
   const status = parseFilterStatus(c.req.query('status'));
-  const showArchived = c.req.query('show_archived') === '1';
-  const rows = estimates.listByTenant(db, tenantId, status, showArchived);
+  const rows = estimates.listByTenant(db, tenantId, status);
 
   const summary = rows.reduce(
     (acc: { totalCount: number; totalValue: number; statusCounts: Record<string, number> }, row: any) => {
@@ -400,9 +436,6 @@ estimateRoutes.get('/estimates', loginRequired, (c) => {
       approvedCount={summary.statusCounts.approved || 0}
       rejectedCount={summary.statusCounts.rejected || 0}
       canCreateEstimates={isManagerOrAdmin(currentUser)}
-      canManageEstimateArchive={isManagerOrAdmin(currentUser)}
-      showArchived={showArchived}
-      csrfToken={c.get('csrfToken')}
     />,
   );
 });
@@ -430,6 +463,7 @@ estimateRoutes.get('/estimates/new', roleRequired('Admin', 'Manager'), (c) => {
         status: 'draft',
         expiration_date: '',
         tax_rate: String(taxRate),
+        default_upcharge_percent: '',
         line_items: buildBlankLineItems(1),
         subtotal: '0.00',
         tax: '0.00',
@@ -495,6 +529,7 @@ estimateRoutes.post('/estimates/new', roleRequired('Admin', 'Manager'), async (c
         tax: totals.tax,
         total: totals.total,
         line_item_count: lineItems.length,
+        total_base_cost: roundMoney(lineItems.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0)),
       },
       ipAddress: resolveRequestIp(c),
     });
@@ -545,9 +580,8 @@ estimateRoutes.get('/estimate/:id', loginRequired, (c) => {
     'Estimate Detail',
     <EstimateDetailPage
       estimate={estimate}
-      canEditEstimate={isManagerOrAdmin(currentUser) && !estimate.archived_at && canEditEstimateStatus(estimate.status)}
-      canSendEstimate={isManagerOrAdmin(currentUser) && !estimate.archived_at && canSendEstimateStatus(estimate.status)}
-      canArchiveEstimate={isManagerOrAdmin(currentUser)}
+      canEditEstimate={isManagerOrAdmin(currentUser) && canEditEstimateStatus(estimate.status)}
+      canSendEstimate={isManagerOrAdmin(currentUser) && canSendEstimateStatus(estimate.status)}
       csrfToken={c.get('csrfToken')}
       publicUrl={publicUrl}
       notice={detailNotice.message}
@@ -573,7 +607,7 @@ estimateRoutes.post('/estimate/:id/send', roleRequired('Admin', 'Manager'), asyn
     return c.text('Estimate not found', 404);
   }
 
-  if (estimate.archived_at || !canSendEstimateStatus(estimate.status)) {
+  if (!canSendEstimateStatus(estimate.status)) {
     return c.redirect(`/estimate/${estimateId}`);
   }
 
@@ -620,9 +654,8 @@ estimateRoutes.post('/estimate/:id/send', roleRequired('Admin', 'Manager'), asyn
       'Estimate Detail',
       <EstimateDetailPage
         estimate={refreshed || estimate}
-        canEditEstimate={isManagerOrAdmin(currentUser) && !(refreshed || estimate).archived_at && canEditEstimateStatus((refreshed || estimate).status)}
-        canSendEstimate={isManagerOrAdmin(currentUser) && !(refreshed || estimate).archived_at && canSendEstimateStatus((refreshed || estimate).status)}
-        canArchiveEstimate={isManagerOrAdmin(currentUser)}
+        canEditEstimate={isManagerOrAdmin(currentUser) && canEditEstimateStatus((refreshed || estimate).status)}
+        canSendEstimate={isManagerOrAdmin(currentUser) && canSendEstimateStatus((refreshed || estimate).status)}
         csrfToken={c.get('csrfToken')}
         publicUrl={publicUrl}
         notice={`Email send failed: ${message}`}
@@ -671,7 +704,7 @@ estimateRoutes.get('/estimate/:id/edit', roleRequired('Admin', 'Manager'), (c) =
     'Edit Estimate',
     <EstimateFormPage
       mode="edit"
-      estimateId={estimate.id}
+      estimateId={estimateId}
       estimateNumber={estimate.estimate_number}
       formData={buildEstimateFormDataFromRecord(estimate, Number(tenantDefaults?.default_tax_rate || 0))}
       csrfToken={c.get('csrfToken')}
@@ -759,6 +792,7 @@ estimateRoutes.post('/estimate/:id/edit', roleRequired('Admin', 'Manager'), asyn
         tax: totals.tax,
         total: totals.total,
         line_item_count: lineItems.length,
+        total_base_cost: roundMoney(lineItems.reduce((sum, item) => sum + (item.quantity * item.unit_cost), 0)),
       },
       ipAddress: resolveRequestIp(c),
     });
@@ -785,77 +819,64 @@ estimateRoutes.post('/estimate/:id/edit', roleRequired('Admin', 'Manager'), asyn
   }
 });
 
+function buildConvertedJobName(estimate: any): string {
+  return `${estimate.customer_name} - ${estimate.estimate_number}`.slice(0, 120);
+}
 
-estimateRoutes.post('/estimate/:id/archive', roleRequired('Admin', 'Manager'), (c) => {
+estimateRoutes.post('/estimate/:id/convert', roleRequired('Admin', 'Manager'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   const tenantId = tenant!.id;
   const estimateId = parsePositiveInt(c.req.param('id'));
   const db = getDb();
 
-  if (!estimateId) {
-    return c.text('Estimate not found', 404);
-  }
+  if (!estimateId) return c.text('Estimate not found', 404);
 
-  const existingEstimate = estimates.findById(db, estimateId, tenantId);
-  if (!existingEstimate) {
-    return c.text('Estimate not found', 404);
-  }
+  const estimate = estimates.findWithLineItemsById(db, estimateId, tenantId);
+  if (!estimate) return c.text('Estimate not found', 404);
+  if (estimate.converted_job_id) return c.redirect(`/estimate/${estimateId}`);
 
-  estimates.archive(db, estimateId, tenantId, currentUser!.id);
+  const txn = db.transaction(() => {
+    const jobId = jobs.create(db, tenantId, {
+      job_name: buildConvertedJobName(estimate),
+      client_name: estimate.customer_name,
+      contract_amount: estimate.total,
+      status: 'Active',
+      job_description: estimate.scope_of_work ?? null,
+      source_estimate_id: estimate.id,
+      source_estimate_number: estimate.estimate_number,
+      source_estimate_customer_name: estimate.customer_name,
+    } as any);
+
+    estimates.setStatus(db, estimateId, tenantId, 'converted', {
+      updated_by_user_id: currentUser?.id,
+      responded_at: estimate.responded_at ?? new Date().toISOString(),
+      approval_notes: estimate.approval_notes,
+      rejection_reason: null,
+      converted_job_id: jobId,
+      public_token: estimate.public_token,
+    });
+
+    return jobId;
+  });
+
+  const jobId = txn();
 
   logActivity(db, {
     tenantId,
     actorUserId: currentUser?.id,
-    eventType: 'estimate.archived',
+    eventType: 'estimate.converted',
     entityType: 'estimate',
     entityId: estimateId,
-    description: `${currentUser?.name || 'User'} archived estimate ${existingEstimate.estimate_number}.`,
+    description: `${currentUser?.name || 'User'} converted estimate ${estimate.estimate_number} into an active job.`,
     metadata: {
-      estimate_number: existingEstimate.estimate_number,
-      customer_name: existingEstimate.customer_name,
-      status: existingEstimate.status,
+      estimate_number: estimate.estimate_number,
+      converted_job_id: jobId,
     },
     ipAddress: resolveRequestIp(c),
   });
 
-  return c.redirect(`/estimate/${estimateId}?notice=archived`);
-});
-
-estimateRoutes.post('/estimate/:id/restore', roleRequired('Admin', 'Manager'), (c) => {
-  const tenant = c.get('tenant');
-  const currentUser = c.get('user');
-  const tenantId = tenant!.id;
-  const estimateId = parsePositiveInt(c.req.param('id'));
-  const db = getDb();
-
-  if (!estimateId) {
-    return c.text('Estimate not found', 404);
-  }
-
-  const existingEstimate = estimates.findById(db, estimateId, tenantId);
-  if (!existingEstimate) {
-    return c.text('Estimate not found', 404);
-  }
-
-  estimates.restore(db, estimateId, tenantId);
-
-  logActivity(db, {
-    tenantId,
-    actorUserId: currentUser?.id,
-    eventType: 'estimate.restored',
-    entityType: 'estimate',
-    entityId: estimateId,
-    description: `${currentUser?.name || 'User'} restored estimate ${existingEstimate.estimate_number}.`,
-    metadata: {
-      estimate_number: existingEstimate.estimate_number,
-      customer_name: existingEstimate.customer_name,
-      status: existingEstimate.status,
-    },
-    ipAddress: resolveRequestIp(c),
-  });
-
-  return c.redirect(`/estimate/${estimateId}?notice=restored`);
+  return c.redirect(`/job/${jobId}`);
 });
 
 export default estimateRoutes;

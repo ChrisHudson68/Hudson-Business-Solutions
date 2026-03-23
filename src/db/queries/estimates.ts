@@ -5,6 +5,9 @@ export interface EstimateLineItemInput {
   description: string;
   quantity: number;
   unit?: string | null;
+  unit_cost?: number;
+  upcharge_percent?: number;
+  apply_upcharge?: boolean | number;
   unit_price: number;
   line_total: number;
   sort_order?: number;
@@ -59,11 +62,18 @@ function normalizeMoney(value: number | null | undefined): number {
   return Number(parsed.toFixed(2));
 }
 
+function normalizeFlag(value: boolean | number | undefined): number {
+  return value === false || value === 0 ? 0 : 1;
+}
+
 function normalizeLineItem(input: EstimateLineItemInput, index: number): EstimateLineItemInput {
   return {
     description: String(input.description ?? '').trim(),
     quantity: normalizeMoney(input.quantity),
     unit: String(input.unit ?? '').trim().slice(0, 40),
+    unit_cost: normalizeMoney(input.unit_cost),
+    upcharge_percent: normalizeMoney(input.upcharge_percent),
+    apply_upcharge: normalizeFlag(input.apply_upcharge),
     unit_price: normalizeMoney(input.unit_price),
     line_total: normalizeMoney(input.line_total),
     sort_order: Number.isInteger(input.sort_order) ? Number(input.sort_order) : index,
@@ -94,8 +104,6 @@ function baseSelect(): string {
       e.converted_job_id,
       e.expiration_date,
       e.public_token,
-      e.archived_at,
-      e.archived_by_user_id,
       e.created_at,
       e.updated_at,
       creator.name AS created_by_name,
@@ -112,13 +120,9 @@ function baseSelect(): string {
   `;
 }
 
-export function listByTenant(db: DB, tenantId: number, status?: EstimateStatus, includeArchived = false): Estimate[] {
+export function listByTenant(db: DB, tenantId: number, status?: EstimateStatus): Estimate[] {
   const params: Array<number | string> = [tenantId];
   let whereSql = 'WHERE e.tenant_id = ?';
-
-  if (!includeArchived) {
-    whereSql += ' AND e.archived_at IS NULL';
-  }
 
   if (status) {
     whereSql += ' AND e.status = ?';
@@ -177,6 +181,9 @@ export function getLineItems(db: DB, estimateId: number, tenantId: number): Esti
       description,
       quantity,
       unit,
+      unit_cost,
+      upcharge_percent,
+      apply_upcharge,
       unit_price,
       line_total,
       sort_order,
@@ -220,12 +227,15 @@ export function replaceLineItems(
       description,
       quantity,
       unit,
+      unit_cost,
+      upcharge_percent,
+      apply_upcharge,
       unit_price,
       line_total,
       sort_order,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `);
 
   lineItems
@@ -238,6 +248,9 @@ export function replaceLineItems(
         item.description,
         item.quantity,
         item.unit || '',
+        item.unit_cost ?? 0,
+        item.upcharge_percent ?? 0,
+        normalizeFlag(item.apply_upcharge),
         item.unit_price,
         item.line_total,
         Number.isInteger(item.sort_order) ? item.sort_order : index,
@@ -436,27 +449,6 @@ export function setStatus(
   });
 }
 
-
-export function archive(db: DB, estimateId: number, tenantId: number, archivedByUserId: number): void {
-  db.prepare(`
-    UPDATE estimates
-    SET archived_at = CURRENT_TIMESTAMP,
-        archived_by_user_id = ?,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
-  `).run(archivedByUserId, estimateId, tenantId);
-}
-
-export function restore(db: DB, estimateId: number, tenantId: number): void {
-  db.prepare(`
-    UPDATE estimates
-    SET archived_at = NULL,
-        archived_by_user_id = NULL,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND tenant_id = ? AND archived_at IS NOT NULL
-  `).run(estimateId, tenantId);
-}
-
 export default {
   listByTenant,
   findById,
@@ -468,6 +460,4 @@ export default {
   create,
   update,
   setStatus,
-  archive,
-  restore,
 };
