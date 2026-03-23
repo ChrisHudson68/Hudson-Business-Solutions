@@ -143,7 +143,7 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
 
   const invoiceMtdRow = db
     .prepare(
-      `SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE tenant_id = ? AND archived_at IS NULL AND substr(date_issued, 1, 7) = ?`,
+      `SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE tenant_id = ? AND substr(date_issued, 1, 7) = ?`,
     )
     .get(tenantId, yearMonth) as { total: number };
 
@@ -402,7 +402,7 @@ dashboardRoutes.get('/profit', roleRequired('Admin', 'Manager'), (c) => {
   const avgMargin = totalIncome > 0 ? (totalProfit / totalIncome) * 100 : 0;
   const topProfit = [...rows].sort((a, b) => b.profit - a.profit).slice(0, 5);
   const topMargin = [...rows].sort((a, b) => b.margin - a.margin).slice(0, 5);
-  const worstProfit = [...rows].sort((a, b) => a.profit - a.profit).slice(0, 5);
+  const worstProfit = [...rows].sort((a, b) => a.profit - b.profit).slice(0, 5);
 
   return renderApp(
     c,
@@ -423,40 +423,88 @@ dashboardRoutes.get('/profit', roleRequired('Admin', 'Manager'), (c) => {
   );
 });
 
-dashboardRoutes.get('/job-costing', roleRequired('Admin', 'Manager'), (c) => {
+dashboardRoutes.get('/job_costs', roleRequired('Admin', 'Manager'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();
 
   const allJobs = jobs.listByTenant(db, tenantId);
 
-  const rows = allJobs.map((job) => {
-    const incomeTotal = Number(income.sumByJob(db, job.id, tenantId) || 0);
-    const expenseTotal = Number(expenses.sumByJob(db, job.id, tenantId) || 0);
-    const laborTotal = Number(timeEntries.sumLaborByTenant(db, tenantId, job.id) || 0);
-    const totalCost = expenseTotal + laborTotal;
-    const contractAmount = Number(job.contract_amount || 0);
-    const remainingBudget = contractAmount - totalCost;
+  const selectedJobId = parsePositiveInt(c.req.query('job_id'));
 
-    return {
-      id: job.id,
+  function getBreakdown(jobId: number | null) {
+    const breakdown: Record<string, number> = {};
+
+    const catRows = expenses.sumByCategory(db, tenantId, jobId || undefined);
+    for (const row of catRows) {
+      const cat = (row.category || 'Other').trim() || 'Other';
+      breakdown[cat] = (breakdown[cat] || 0) + Number(row.total || 0);
+    }
+
+    const labor = Number(timeEntries.sumLaborByTenant(db, tenantId, jobId || undefined) || 0);
+    breakdown['Labor'] = (breakdown['Labor'] || 0) + labor;
+
+    const totalCost = Object.values(breakdown).reduce((s, v) => s + v, 0);
+    return { breakdown, totalCost };
+  }
+
+  const { breakdown: overallBreakdown, totalCost: overallTotal } = getBreakdown(null);
+
+  let selectedJob: any = null;
+  let selectedTotal = 0;
+  let selectedLabels: string[] = [];
+  let selectedValues: number[] = [];
+
+  if (selectedJobId) {
+    selectedJob = jobs.findById(db, selectedJobId, tenantId);
+    if (selectedJob) {
+      const { breakdown: selBreakdown, totalCost: selTotal } = getBreakdown(selectedJobId);
+      selectedTotal = selTotal;
+      const selItems = Object.entries(selBreakdown).sort((a, b) => b[1] - a[1]);
+      selectedLabels = selItems.map(([k]) => k);
+      selectedValues = selItems.map(([, v]) => Math.round(v * 100) / 100);
+    }
+  }
+
+  const overallItems = Object.entries(overallBreakdown).sort((a, b) => b[1] - a[1]);
+  const overallLabels = overallItems.map(([k]) => k);
+  const overallValues = overallItems.map(([, v]) => Math.round(v * 100) / 100);
+
+  const rows: {
+    job_name: string | null;
+    income: number;
+    expenses: number;
+    labor: number;
+  }[] = [];
+
+  for (const job of allJobs) {
+    const incomeTotal = Number(income.sumByJob(db, job.id, tenantId) || 0);
+    const expTotal = Number(expenses.sumByJob(db, job.id, tenantId) || 0);
+    const laborTotal = Number(timeEntries.sumLaborByTenant(db, tenantId, job.id) || 0);
+
+    rows.push({
       job_name: job.job_name,
-      client: job.client_name,
-      status: job.status || 'Active',
-      contract_amount: contractAmount,
-      income_total: incomeTotal,
-      expense_total: expenseTotal,
-      labor_total: laborTotal,
-      total_cost: totalCost,
-      remaining_budget: remainingBudget,
-      progress_percent: contractAmount > 0 ? Math.min((totalCost / contractAmount) * 100, 100) : 0,
-    };
-  });
+      income: incomeTotal,
+      expenses: expTotal,
+      labor: laborTotal,
+    });
+  }
 
   return renderApp(
     c,
-    'Job Costing',
-    <JobCostDashboardPage rows={rows} />,
+    'Job Cost Breakdown',
+    <JobCostDashboardPage
+      jobs={allJobs}
+      selectedJobId={selectedJobId}
+      selectedJob={selectedJob}
+      overallTotal={overallTotal}
+      overallLabels={overallLabels}
+      overallValues={overallValues}
+      selectedTotal={selectedTotal}
+      selectedLabels={selectedLabels}
+      selectedValues={selectedValues}
+      rows={rows}
+    />,
   );
 });
 
@@ -465,34 +513,28 @@ dashboardRoutes.get('/reports', roleRequired('Admin', 'Manager'), (c) => {
   const tenantId = tenant!.id;
   const db = getDb();
 
-  const filter = parseReportFilter(c.req.query());
-  const report = buildAdvancedReports(db, tenantId, filter);
+  const filter = parseReportFilter({
+    range: c.req.query('range'),
+    start: c.req.query('start'),
+    end: c.req.query('end'),
+  });
+
+  const reportData = buildAdvancedReports(db, tenantId, filter);
 
   return renderApp(
     c,
     'Reports',
     <ReportsPage
-      filter={filter}
-      report={report}
-    />,
-  );
-});
-
-dashboardRoutes.get('/reports/print', roleRequired('Admin', 'Manager'), (c) => {
-  const tenant = c.get('tenant');
-  const tenantId = tenant!.id;
-  const db = getDb();
-
-  const filter = parseReportFilter(c.req.query());
-  const report = buildAdvancedReports(db, tenantId, filter);
-
-  return c.html(
-    <ReportsPrintPage
-      currentTenant={tenant}
-      appName={process.env.APP_NAME || 'Hudson Business Solutions'}
-      appLogo={process.env.APP_LOGO || '/static/brand/hudson-business-solutions-logo.png'}
-      filter={filter}
-      report={report}
+      filter={reportData.filter}
+      cash={reportData.cash}
+      aging={reportData.aging}
+      trend={reportData.trend}
+      expenseCategories={reportData.expenseCategories}
+      rows={reportData.rows}
+      topProfitJobs={reportData.topProfitJobs}
+      worstProfitJobs={reportData.worstProfitJobs}
+      topMarginJobs={reportData.topMarginJobs}
+      worstMarginJobs={reportData.worstMarginJobs}
     />,
   );
 });
@@ -502,15 +544,53 @@ dashboardRoutes.get('/reports/export.csv', roleRequired('Admin', 'Manager'), (c)
   const tenantId = tenant!.id;
   const db = getDb();
 
-  const filter = parseReportFilter(c.req.query());
-  const report = buildAdvancedReports(db, tenantId, filter);
-  const csv = buildReportsCsv(report);
+  const filter = parseReportFilter({
+    range: c.req.query('range'),
+    start: c.req.query('start'),
+    end: c.req.query('end'),
+  });
 
-  c.header('Content-Type', 'text/csv; charset=utf-8');
-  c.header(
-    'Content-Disposition',
-    `attachment; filename="${buildReportFilename('reports', filter.startDate, filter.endDate)}.csv"`,
-  );
+  const reportData = buildAdvancedReports(db, tenantId, filter);
+  const csv = buildReportsCsv(reportData);
+  const filename = `${buildReportFilename('advanced_reports', filter.startDate, filter.endDate)}.csv`;
 
-  return c.body(csv);
+  return new Response(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store',
+    },
+  });
 });
+
+dashboardRoutes.get('/reports/print', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const tenantId = tenant!.id;
+  const db = getDb();
+
+  const filter = parseReportFilter({
+    range: c.req.query('range'),
+    start: c.req.query('start'),
+    end: c.req.query('end'),
+  });
+
+  const reportData = buildAdvancedReports(db, tenantId, filter);
+
+  return c.html(
+    <ReportsPrintPage
+      tenantName={tenant?.name || 'Hudson Business Solutions'}
+      filter={reportData.filter}
+      cash={reportData.cash}
+      aging={reportData.aging}
+      trend={reportData.trend}
+      expenseCategories={reportData.expenseCategories}
+      rows={reportData.rows}
+      topProfitJobs={reportData.topProfitJobs}
+      worstProfitJobs={reportData.worstProfitJobs}
+      topMarginJobs={reportData.topMarginJobs}
+      worstMarginJobs={reportData.worstMarginJobs}
+    />,
+  );
+});
+
+export default dashboardRoutes;
