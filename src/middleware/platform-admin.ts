@@ -5,6 +5,7 @@ import {
   PLATFORM_ADMIN_COOKIE_NAME,
   getPlatformAdminEmail,
 } from '../services/platform-admin-session.js';
+import { isPlatformAdminConfigured } from '../services/platform-admin-auth.js';
 import type { TenantVariables } from './tenant.js';
 
 export type PlatformAdminVariables = {
@@ -32,7 +33,7 @@ export const platformAdminRequired = createMiddleware<{
     return c.text('Not found', 404);
   }
 
-  if (!env.platformAdminEmail || !env.platformAdminPassword) {
+  if (!isPlatformAdminConfigured(env)) {
     return c.text('Platform admin portal is not configured.', 503);
   }
 

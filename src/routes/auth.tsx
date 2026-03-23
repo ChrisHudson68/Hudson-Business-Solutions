@@ -158,22 +158,16 @@ authRoutes.get('/pick-tenant', (c) => {
     return c.redirect('/login');
   }
 
-  return c.html(
-    renderPublicLayout(
-      <PickTenantPage formData={{ subdomain: '' }} csrfToken={c.get('csrfToken')} />,
-    ),
-  );
-});
-
-authRoutes.post('/pick-tenant', async (c) => {
-  const tenant = c.get('tenant');
-  if (tenant) {
-    return c.redirect('/login');
-  }
-
-  const body = await c.req.parseBody();
-  const sub = (typeof body.subdomain === 'string' ? body.subdomain : '').trim().toLowerCase();
+  const sub = (c.req.query('subdomain') || '').trim().toLowerCase();
   const formData = { subdomain: sub };
+
+  if (!sub) {
+    return c.html(
+      renderPublicLayout(
+        <PickTenantPage formData={formData} csrfToken={c.get('csrfToken')} />,
+      ),
+    );
+  }
 
   if (!isValidSubdomain(sub)) {
     return c.html(
@@ -202,7 +196,35 @@ authRoutes.post('/pick-tenant', async (c) => {
     );
   }
 
-  return c.redirect(buildTenantLoginUrl(sub));
+  return c.redirect(buildTenantLoginUrl(sub), 303);
+});
+
+authRoutes.post('/pick-tenant', async (c) => {
+  const tenant = c.get('tenant');
+  if (tenant) {
+    return c.redirect('/login');
+  }
+
+  // Legacy fallback for older forms. CSRF middleware reads POST bodies first,
+  // so repeated or even single-use form fields can be unavailable here on a
+  // second parse. Redirect to the GET flow when possible.
+  const body = await c.req.parseBody({ all: true });
+  const raw = Array.isArray(body.subdomain) ? body.subdomain[0] : body.subdomain;
+  const sub = (typeof raw === 'string' ? raw : '').trim().toLowerCase();
+
+  if (!sub) {
+    return c.html(
+      renderPublicLayout(
+        <PickTenantPage
+          error="Please enter a valid company subdomain."
+          formData={{ subdomain: '' }}
+          csrfToken={c.get('csrfToken')}
+        />,
+      ),
+    );
+  }
+
+  return c.redirect(`/pick-tenant?subdomain=${encodeURIComponent(sub)}`, 303);
 });
 
 authRoutes.get('/login', (c) => {

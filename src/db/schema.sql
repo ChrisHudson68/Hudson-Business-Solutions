@@ -217,23 +217,6 @@ CREATE TABLE IF NOT EXISTS time_entry_edit_requests (
 CREATE INDEX IF NOT EXISTS idx_time_entry_edit_requests_status
 ON time_entry_edit_requests(tenant_id, status, created_at);
 
-CREATE TABLE IF NOT EXISTS time_entry_week_approvals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tenant_id INTEGER NOT NULL,
-    employee_id INTEGER NOT NULL,
-    week_start TEXT NOT NULL,
-    approved_by_user_id INTEGER NOT NULL,
-    approved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    note TEXT,
-    UNIQUE(tenant_id, employee_id, week_start),
-    FOREIGN KEY(tenant_id) REFERENCES tenants(id),
-    FOREIGN KEY(employee_id) REFERENCES employees(id),
-    FOREIGN KEY(approved_by_user_id) REFERENCES users(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_time_entry_week_approvals_lookup
-ON time_entry_week_approvals(tenant_id, employee_id, week_start);
-
 CREATE TABLE IF NOT EXISTS invoices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id INTEGER NOT NULL,
@@ -399,3 +382,16 @@ ON tenants(billing_exempt);
 
 CREATE INDEX IF NOT EXISTS idx_tenants_billing_state
 ON tenants(billing_state);
+
+CREATE TABLE IF NOT EXISTS request_rate_limits (
+    scope TEXT NOT NULL,
+    key TEXT NOT NULL,
+    window_started_at INTEGER NOT NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    blocked_until INTEGER,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (scope, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_request_rate_limits_updated_at
+ON request_rate_limits(updated_at);

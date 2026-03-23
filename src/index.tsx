@@ -7,6 +7,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 
 import { tenantMiddleware } from './middleware/tenant.js';
+import { securityHeadersMiddleware } from './middleware/security-headers.js';
 import { csrfMiddleware } from './middleware/csrf.js';
 import { noCacheMiddleware } from './middleware/no-cache.js';
 import { billingRequired } from './middleware/billing.js';
@@ -58,6 +59,8 @@ ensureStartupDirectories();
 getDb();
 
 const app = new Hono<{ Variables: AppVariables }>();
+
+app.use('*', securityHeadersMiddleware);
 
 app.use(
   '/static/*',

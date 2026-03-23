@@ -8,6 +8,52 @@ interface PickTenantPageProps {
   csrfToken: string;
 }
 
+const pickTenantLocalRedirectScript = `
+(function () {
+  function isLocalHostLike(hostname) {
+    if (!hostname) return false;
+    const host = String(hostname).toLowerCase();
+    return host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '0.0.0.0';
+  }
+
+  function isValidSubdomain(value) {
+    return /^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$/.test(value);
+  }
+
+  function attach() {
+    const form = document.querySelector('[data-pick-tenant-form]');
+    const input = document.querySelector('[data-pick-tenant-input]');
+    const error = document.querySelector('[data-pick-tenant-local-error]');
+    if (!(form instanceof HTMLFormElement) || !(input instanceof HTMLInputElement)) return;
+
+    form.addEventListener('submit', function (event) {
+      const hostname = window.location.hostname || '';
+      if (!isLocalHostLike(hostname)) return;
+
+      const subdomain = input.value.trim().toLowerCase();
+      if (!isValidSubdomain(subdomain)) return;
+
+      event.preventDefault();
+
+      if (error instanceof HTMLElement) {
+        error.style.display = 'none';
+        error.textContent = '';
+      }
+
+      const port = window.location.port ? ':' + window.location.port : '';
+      const target = window.location.protocol + '//' + subdomain + '.localhost' + port + '/login';
+      window.location.assign(target);
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
+`;
+
 export const PickTenantPage: FC<PickTenantPageProps> = ({
   error,
   formData,
@@ -197,6 +243,17 @@ export const PickTenantPage: FC<PickTenantPageProps> = ({
             font-size:24px;
           }
         }
+        .pick-local-error{
+          display:none;
+          margin-top:12px;
+          border:1px solid #FECACA;
+          background:#FEF2F2;
+          color:#991B1B;
+          border-radius:14px;
+          padding:12px 14px;
+          line-height:1.6;
+          font-weight:700;
+        }
       `}</style>
 
       <div class="pick-shell">
@@ -255,7 +312,7 @@ export const PickTenantPage: FC<PickTenantPageProps> = ({
             </div>
           ) : null}
 
-          <form method="post" action="/pick-tenant">
+          <form method="post" action="/pick-tenant" data-pick-tenant-form>
             <input type="hidden" name="csrf_token" value={csrfToken} />
 
             <label for="subdomain">Company Subdomain</label>
@@ -263,6 +320,7 @@ export const PickTenantPage: FC<PickTenantPageProps> = ({
               type="text"
               id="subdomain"
               name="subdomain"
+              data-pick-tenant-input
               required
               value={formData.subdomain || ''}
               placeholder="example: taylors"
@@ -277,6 +335,10 @@ export const PickTenantPage: FC<PickTenantPageProps> = ({
               <a class="btn" href="/signup">Create Workspace</a>
             </div>
           </form>
+
+          <div class="pick-local-error" data-pick-tenant-local-error></div>
+
+          <script dangerouslySetInnerHTML={{ __html: pickTenantLocalRedirectScript }} />
 
           <div class="pick-note">
             <strong>Tip:</strong> If your team normally signs in at something like

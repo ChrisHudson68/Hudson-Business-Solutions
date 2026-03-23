@@ -7,6 +7,7 @@ import { platformAdminRequired } from '../middleware/platform-admin.js';
 import * as tenantQueries from '../db/queries/tenants.js';
 import type { BillingStatus } from '../db/types.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import { checkRateLimit, clearRateLimit, pruneExpiredRateLimits, recordRateLimitFailure } from '../services/rate-limit.js';
 import { createImpersonationToken } from '../services/session.js';
 import {
   PLATFORM_ADMIN_COOKIE_NAME,
@@ -20,6 +21,7 @@ import { AdminDashboardPage } from '../pages/admin/AdminDashboardPage.js';
 import { AdminTenantsPage } from '../pages/admin/AdminTenantsPage.js';
 import { AdminTenantDetailPage } from '../pages/admin/AdminTenantDetailPage.js';
 import { AdminActivityPage } from '../pages/admin/AdminActivityPage.js';
+import { isPlatformAdminConfigured, verifyPlatformAdminCredentials } from '../services/platform-admin-auth.js';
 
 type AdvancedBillingState =
   | 'trialing'
@@ -653,27 +655,69 @@ platformAdminRoutes.post('/admin/login', async (c) => {
 
   const email = String(body['email'] ?? '').trim().toLowerCase();
   const password = String(body['password'] ?? '');
+  const db = getDb();
+  const clientIp = resolveRequestIp(c) || 'unknown';
+  const rateLimitKey = `platform-admin:ip:${clientIp}`;
+  const rateLimitScope = 'platform-admin-login';
 
-  let error = '';
+  pruneExpiredRateLimits(db);
 
-  if (!env.platformAdminEmail || !env.platformAdminPassword) {
-    error = 'Platform admin portal is not configured yet.';
-  } else if (email !== env.platformAdminEmail || password !== env.platformAdminPassword) {
-    error = 'Invalid platform admin login.';
-  }
+  const loginLimit = checkRateLimit(db, {
+    scope: rateLimitScope,
+    key: rateLimitKey,
+    windowSeconds: env.adminAuthRateLimitWindowSeconds,
+    maxAttempts: env.adminAuthRateLimitMaxAttempts,
+    blockSeconds: env.adminAuthRateLimitBlockSeconds,
+  });
 
-  if (error) {
+  if (!loginLimit.allowed) {
+    c.header('Retry-After', String(loginLimit.retryAfterSeconds));
     return c.html(
       renderPublicLayout(
         <AdminLoginPage
-          error={error}
+          error={`Too many platform admin login attempts. Please wait ${loginLimit.retryAfterSeconds} seconds and try again.`}
           prefillEmail={email}
           csrfToken={c.get('csrfToken')}
         />,
       ),
-      401,
+      429,
     );
   }
+
+  let error = '';
+
+  if (!isPlatformAdminConfigured(env)) {
+    error = 'Platform admin portal is not configured yet.';
+  } else if (!verifyPlatformAdminCredentials(env, email, password)) {
+    error = 'Invalid platform admin login.';
+  }
+
+  if (error) {
+    const attemptResult = recordRateLimitFailure(db, {
+      scope: rateLimitScope,
+      key: rateLimitKey,
+      windowSeconds: env.adminAuthRateLimitWindowSeconds,
+      maxAttempts: env.adminAuthRateLimitMaxAttempts,
+      blockSeconds: env.adminAuthRateLimitBlockSeconds,
+    });
+
+    if (!attemptResult.allowed) {
+      c.header('Retry-After', String(attemptResult.retryAfterSeconds));
+    }
+
+    return c.html(
+      renderPublicLayout(
+        <AdminLoginPage
+          error={attemptResult.allowed ? error : `Too many platform admin login attempts. Please wait ${attemptResult.retryAfterSeconds} seconds and try again.`}
+          prefillEmail={email}
+          csrfToken={c.get('csrfToken')}
+        />,
+      ),
+      attemptResult.allowed ? 401 : 429,
+    );
+  }
+
+  clearRateLimit(db, rateLimitScope, rateLimitKey);
 
   const cookie = createPlatformAdminCookie(email, env.secretKey, 60 * 60 * 12);
   setPlatformAdminCookie(c, cookie);

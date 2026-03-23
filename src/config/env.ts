@@ -18,6 +18,13 @@ export interface AppConfig {
   launchCode: string;
   platformAdminEmail: string;
   platformAdminPassword: string;
+  platformAdminPasswordHash: string;
+  authRateLimitWindowSeconds: number;
+  authRateLimitMaxAttempts: number;
+  authRateLimitBlockSeconds: number;
+  adminAuthRateLimitWindowSeconds: number;
+  adminAuthRateLimitMaxAttempts: number;
+  adminAuthRateLimitBlockSeconds: number;
 
   smtpEnabled: boolean;
   smtpHost: string;
@@ -214,6 +221,49 @@ export function getEnv(): AppConfig {
     launchCode: String(process.env.LAUNCH_CODE ?? '').trim(),
     platformAdminEmail: String(process.env.PLATFORM_ADMIN_EMAIL ?? '').trim().toLowerCase(),
     platformAdminPassword: String(process.env.PLATFORM_ADMIN_PASSWORD ?? '').trim(),
+    platformAdminPasswordHash: String(process.env.PLATFORM_ADMIN_PASSWORD_HASH ?? '').trim(),
+    authRateLimitWindowSeconds: parseIntegerEnv(
+      process.env.AUTH_RATE_LIMIT_WINDOW_SECONDS,
+      15 * 60,
+      'AUTH_RATE_LIMIT_WINDOW_SECONDS',
+      60,
+      24 * 60 * 60,
+    ),
+    authRateLimitMaxAttempts: parseIntegerEnv(
+      process.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+      10,
+      'AUTH_RATE_LIMIT_MAX_ATTEMPTS',
+      1,
+      100,
+    ),
+    authRateLimitBlockSeconds: parseIntegerEnv(
+      process.env.AUTH_RATE_LIMIT_BLOCK_SECONDS,
+      15 * 60,
+      'AUTH_RATE_LIMIT_BLOCK_SECONDS',
+      60,
+      24 * 60 * 60,
+    ),
+    adminAuthRateLimitWindowSeconds: parseIntegerEnv(
+      process.env.ADMIN_AUTH_RATE_LIMIT_WINDOW_SECONDS,
+      15 * 60,
+      'ADMIN_AUTH_RATE_LIMIT_WINDOW_SECONDS',
+      60,
+      24 * 60 * 60,
+    ),
+    adminAuthRateLimitMaxAttempts: parseIntegerEnv(
+      process.env.ADMIN_AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+      5,
+      'ADMIN_AUTH_RATE_LIMIT_MAX_ATTEMPTS',
+      1,
+      100,
+    ),
+    adminAuthRateLimitBlockSeconds: parseIntegerEnv(
+      process.env.ADMIN_AUTH_RATE_LIMIT_BLOCK_SECONDS,
+      30 * 60,
+      'ADMIN_AUTH_RATE_LIMIT_BLOCK_SECONDS',
+      60,
+      24 * 60 * 60,
+    ),
 
     smtpEnabled,
     smtpHost: requireStringWhenEnabled(process.env.SMTP_HOST, 'SMTP_HOST', smtpEnabled),
