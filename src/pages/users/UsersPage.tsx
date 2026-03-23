@@ -12,12 +12,14 @@ interface UsersPageProps {
   }>;
   canCreateUsers?: boolean;
   canEditUsers?: boolean;
+  canManagePermissions?: boolean;
   rolePresets: Array<{
     role: UserRole;
     label: string;
     description: string;
     permissionCount: number;
     highlights: string[];
+    customized?: boolean;
   }>;
 }
 
@@ -25,16 +27,22 @@ function countUsersByRole(users: UsersPageProps['users'], role: UserRole) {
   return users.filter((user) => user.role === role).length;
 }
 
-export const UsersPage: FC<UsersPageProps> = ({ users, canCreateUsers, canEditUsers, rolePresets }) => {
+export const UsersPage: FC<UsersPageProps> = ({
+  users,
+  canCreateUsers,
+  canEditUsers,
+  canManagePermissions,
+  rolePresets,
+}) => {
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>Users</h1>
-          <p class="muted">Manage tenant users, access roles, and employee links.</p>
+          <p class="muted">Manage tenant users, access roles, employee links, and role permissions.</p>
         </div>
         <div class="actions actions-mobile-stack">
-          <a class="btn" href="/users/permissions">Role Permissions</a>
+          {canManagePermissions ? <a class="btn" href="/users/permissions">Permissions</a> : null}
           {canCreateUsers ? <a class="btn btn-primary" href="/add_user">Add User</a> : null}
         </div>
       </div>
@@ -49,7 +57,10 @@ export const UsersPage: FC<UsersPageProps> = ({ users, canCreateUsers, canEditUs
                   <h3 style="margin:0 0 6px 0;">{preset.label}</h3>
                   <p class="muted" style="margin:0;">{preset.description}</p>
                 </div>
-                <span class="badge">{preset.permissionCount} perms</span>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+                  <span class="badge">{preset.permissionCount} perms</span>
+                  {preset.customized ? <span class="badge">Custom</span> : null}
+                </div>
               </div>
               <div class="muted" style="margin-top:8px;">Users assigned: {countUsersByRole(users, preset.role)}</div>
               <div style="margin-top:12px; display:grid; gap:8px;">

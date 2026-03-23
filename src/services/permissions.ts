@@ -1,3 +1,5 @@
+import { getDb, type DB } from '../db/connection.js';
+
 export const PERMISSIONS = [
   'jobs.view',
   'jobs.create',
@@ -34,8 +36,9 @@ export type PermissionKey = (typeof PERMISSIONS)[number];
 export type UserRole = 'Admin' | 'Manager' | 'Employee';
 
 export const ROLE_ORDER: readonly UserRole[] = ['Admin', 'Manager', 'Employee'] as const;
+export const CONFIGURABLE_ROLES: readonly UserRole[] = ['Manager', 'Employee'] as const;
 
-const ROLE_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
+const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
   Admin: PERMISSIONS,
   Manager: [
     'jobs.view',
@@ -63,10 +66,25 @@ const ROLE_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
   Employee: [
     'time.view',
     'time.clock',
+    'time.edit_requests',
   ],
 };
 
 const LEGACY_ROLE_FALLBACK: UserRole = 'Employee';
+
+export interface RolePreset {
+  role: UserRole;
+  label: UserRole;
+  description: string;
+  permissionCount: number;
+  permissions: PermissionKey[];
+  highlights: string[];
+  customized: boolean;
+}
+
+function isPermissionKey(value: string): value is PermissionKey {
+  return (PERMISSIONS as readonly string[]).includes(value);
+}
 
 export function normalizeUserRole(role: string | null | undefined): UserRole {
   const normalized = String(role ?? '').trim();
@@ -76,8 +94,105 @@ export function normalizeUserRole(role: string | null | undefined): UserRole {
   return LEGACY_ROLE_FALLBACK;
 }
 
-export function getRolePermissions(role: string | null | undefined): PermissionKey[] {
-  return [...ROLE_PERMISSIONS[normalizeUserRole(role)]];
+export function getDefaultRolePermissions(role: string | null | undefined): PermissionKey[] {
+  return [...DEFAULT_ROLE_PERMISSIONS[normalizeUserRole(role)]];
+}
+
+export function isConfigurableRole(role: string | null | undefined): boolean {
+  return CONFIGURABLE_ROLES.includes(normalizeUserRole(role));
+}
+
+type TenantRolePermissionRow = {
+  role: string;
+  permission_key: string;
+  allowed: number;
+};
+
+function getTenantRolePermissionRows(db: DB, tenantId: number): TenantRolePermissionRow[] {
+  return db.prepare(`
+    SELECT role, permission_key, allowed
+    FROM tenant_role_permissions
+    WHERE tenant_id = ?
+  `).all(tenantId) as TenantRolePermissionRow[];
+}
+
+export function getTenantRolePermissionMap(
+  tenantId: number,
+  db: DB = getDb(),
+): Record<UserRole, PermissionKey[]> {
+  const map: Record<UserRole, PermissionKey[]> = {
+    Admin: getDefaultRolePermissions('Admin'),
+    Manager: getDefaultRolePermissions('Manager'),
+    Employee: getDefaultRolePermissions('Employee'),
+  };
+
+  const rows = getTenantRolePermissionRows(db, tenantId);
+  if (rows.length === 0) {
+    return map;
+  }
+
+  for (const role of CONFIGURABLE_ROLES) {
+    const roleRows = rows.filter((row) => normalizeUserRole(row.role) === role);
+    if (roleRows.length === 0) continue;
+
+    map[role] = roleRows
+      .filter((row) => row.allowed === 1 && isPermissionKey(row.permission_key))
+      .map((row) => row.permission_key as PermissionKey);
+  }
+
+  return map;
+}
+
+export function getRolePermissions(
+  role: string | null | undefined,
+  tenantId?: number | null,
+  db: DB = getDb(),
+): PermissionKey[] {
+  const normalized = normalizeUserRole(role);
+  if (normalized === 'Admin' || !tenantId || !isConfigurableRole(normalized)) {
+    return getDefaultRolePermissions(normalized);
+  }
+
+  return getTenantRolePermissionMap(tenantId, db)[normalized];
+}
+
+export function saveTenantRolePermissions(
+  db: DB,
+  tenantId: number,
+  role: UserRole,
+  allowedPermissions: readonly PermissionKey[],
+): void {
+  const normalized = normalizeUserRole(role);
+  if (!isConfigurableRole(normalized)) {
+    throw new Error('Only Manager and Employee permissions can be customized.');
+  }
+
+  const allowedSet = new Set(allowedPermissions);
+  const insert = db.prepare(`
+    INSERT INTO tenant_role_permissions (tenant_id, role, permission_key, allowed, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(tenant_id, role, permission_key)
+    DO UPDATE SET allowed = excluded.allowed, updated_at = CURRENT_TIMESTAMP
+  `);
+  const clear = db.prepare(`DELETE FROM tenant_role_permissions WHERE tenant_id = ? AND role = ?`);
+
+  const transaction = db.transaction(() => {
+    clear.run(tenantId, normalized);
+    for (const permission of PERMISSIONS) {
+      insert.run(tenantId, normalized, permission, allowedSet.has(permission) ? 1 : 0);
+    }
+  });
+
+  transaction();
+}
+
+export function resetTenantRolePermissions(db: DB, tenantId: number, role: UserRole): void {
+  const normalized = normalizeUserRole(role);
+  if (!isConfigurableRole(normalized)) {
+    throw new Error('Only Manager and Employee permissions can be reset.');
+  }
+
+  db.prepare('DELETE FROM tenant_role_permissions WHERE tenant_id = ? AND role = ?').run(tenantId, normalized);
 }
 
 export function hasPermission(
@@ -87,7 +202,7 @@ export function hasPermission(
   if (Array.isArray(roleOrPermissions)) {
     return roleOrPermissions.includes(permission);
   }
-  return getRolePermissions(typeof roleOrPermissions === 'string' ? roleOrPermissions : null).includes(permission);
+  return getRolePermissions(roleOrPermissions as string | null | undefined).includes(permission);
 }
 
 export function hasAnyPermission(
@@ -108,7 +223,7 @@ export function describeRole(role: string | null | undefined): string {
   const normalized = normalizeUserRole(role);
   if (normalized === 'Admin') return 'Full tenant control';
   if (normalized === 'Manager') return 'Operational access without full company control';
-  return 'Time clock only with self-service account access';
+  return 'Limited self-service workspace access';
 }
 
 export function getPermissionGroups(): Array<{
@@ -207,33 +322,38 @@ export function getRoleHighlights(role: string | null | undefined): string[] {
   if (normalized === 'Manager') {
     return [
       'Daily operations management',
-      'Create and edit jobs, employees, invoices, and estimates',
+      'Create and edit jobs, employees, and invoices',
       'Approve time and manage financial entries',
       'View settings and billing without full control',
     ];
   }
   return [
-    'Clock in and clock out',
-    'Open the timesheet workspace',
-    'Manage their own password from My Account',
-    'No job, invoice, financial, report, billing, or user admin access',
+    'Self-service time clock access',
+    'Submit time edit requests',
+    'View personal workspace tools only',
+    'No billing, settings, or user admin access',
   ];
 }
 
-export function getRolePresets(): Array<{
-  role: UserRole;
-  label: UserRole;
-  description: string;
-  permissionCount: number;
-  permissions: PermissionKey[];
-  highlights: string[];
-}> {
-  return ROLE_ORDER.map((role) => ({
-    role,
-    label: role,
-    description: describeRole(role),
-    permissionCount: getRolePermissions(role).length,
-    permissions: getRolePermissions(role),
-    highlights: getRoleHighlights(role),
-  }));
+export function getRolePresets(tenantId?: number | null, db: DB = getDb()): RolePreset[] {
+  const tenantMap = tenantId ? getTenantRolePermissionMap(tenantId, db) : null;
+
+  return ROLE_ORDER.map((role) => {
+    const permissions = tenantMap ? tenantMap[role] : getDefaultRolePermissions(role);
+    const defaultPermissions = getDefaultRolePermissions(role);
+    const customized =
+      role !== 'Admin' &&
+      (permissions.length !== defaultPermissions.length ||
+        permissions.some((permission) => !defaultPermissions.includes(permission)));
+
+    return {
+      role,
+      label: role,
+      description: describeRole(role),
+      permissionCount: permissions.length,
+      permissions: [...permissions],
+      highlights: getRoleHighlights(role),
+      customized,
+    };
+  });
 }

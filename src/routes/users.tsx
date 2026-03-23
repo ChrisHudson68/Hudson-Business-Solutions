@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
 import * as userQueries from '../db/queries/users.js';
-import { loginRequired, permissionRequired, userHasPermission } from '../middleware/auth.js';
+import { permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
 import { hashPassword } from '../services/password.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
@@ -10,8 +10,18 @@ import { UsersPage } from '../pages/users/UsersPage.js';
 import { AddUserPage } from '../pages/users/AddUserPage.js';
 import { EditUserPage } from '../pages/users/EditUserPage.js';
 import { UserPermissionsPage } from '../pages/users/UserPermissionsPage.js';
-import { MyAccountPage } from '../pages/users/MyAccountPage.js';
-import { getPermissionGroups, getRolePresets, normalizeUserRole } from '../services/permissions.js';
+import {
+  CONFIGURABLE_ROLES,
+  PERMISSIONS,
+  getPermissionGroups,
+  getRolePresets,
+  getTenantRolePermissionMap,
+  normalizeUserRole,
+  resetTenantRolePermissions,
+  saveTenantRolePermissions,
+  type PermissionKey,
+  type UserRole,
+} from '../services/permissions.js';
 import {
   ValidationError,
   parsePositiveInt,
@@ -21,10 +31,6 @@ import {
   validatePassword,
 } from '../lib/validation.js';
 
-type UserRole = 'Admin' | 'Manager' | 'Employee';
-
-const ALLOWED_ROLES: readonly UserRole[] = ['Admin', 'Manager', 'Employee'] as const;
-
 type EditUserFormData = {
   name: string;
   email: string;
@@ -32,6 +38,8 @@ type EditUserFormData = {
   active: number;
   employee_id: string;
 };
+
+const ALLOWED_ROLES: readonly UserRole[] = ['Admin', 'Manager', 'Employee'] as const;
 
 function renderAppLayout(c: any, subtitle: string, children: any, status: 200 | 400 | 404 = 200) {
   return c.html(
@@ -115,6 +123,46 @@ function parseActiveFlag(value: unknown): number {
   return value === '0' ? 0 : 1;
 }
 
+function collectRolePermissions(body: Record<string, unknown>, role: UserRole): PermissionKey[] {
+  const normalizedRole = normalizeUserRole(role);
+  if (!CONFIGURABLE_ROLES.includes(normalizedRole)) {
+    return [];
+  }
+
+  return PERMISSIONS.filter((permission) => body[`perm_${normalizedRole}_${permission}`] === '1');
+}
+
+function summarizePermissionChanges(before: readonly PermissionKey[], after: readonly PermissionKey[]) {
+  const beforeSet = new Set(before);
+  const afterSet = new Set(after);
+
+  return {
+    added: after.filter((permission) => !beforeSet.has(permission)),
+    removed: before.filter((permission) => !afterSet.has(permission)),
+  };
+}
+
+function renderPermissionsPage(
+  c: any,
+  tenantId: number,
+  notice?: { type: 'success' | 'error'; text: string } | null,
+  status: 200 | 400 = 200,
+) {
+  const db = getDb();
+
+  return renderAppLayout(
+    c,
+    'Role Permissions',
+    <UserPermissionsPage
+      rolePresets={getRolePresets(tenantId, db)}
+      permissionGroups={getPermissionGroups()}
+      csrfToken={c.get('csrfToken')}
+      notice={notice}
+    />,
+    status,
+  );
+}
+
 function renderAddUserError(
   c: any,
   error: string,
@@ -128,7 +176,7 @@ function renderAddUserError(
       error={error}
       formData={formData}
       employeeOptions={employeeOptions}
-      rolePresets={getRolePresets()}
+      rolePresets={getRolePresets(c.get('tenant')?.id, getDb())}
       csrfToken={c.get('csrfToken')}
     />,
     400,
@@ -138,19 +186,19 @@ function renderAddUserError(
 function renderEditUserError(
   c: any,
   error: string,
-  user: { id: number; name: string; email: string; role: string; active: number; employee_id: number | null },
+  existingUser: { id: number; name: string; email: string; role: string; active: number; employee_id: number | null },
   employeeOptions: Array<{ id: number; name: string }>,
-  formData?: EditUserFormData,
+  formData: EditUserFormData,
 ) {
   return renderAppLayout(
     c,
     'Edit User',
     <EditUserPage
-      user={user}
+      error={error}
+      user={existingUser}
       formData={formData}
       employeeOptions={employeeOptions}
-      rolePresets={getRolePresets()}
-      error={error}
+      rolePresets={getRolePresets(c.get('tenant')?.id, getDb())}
       csrfToken={c.get('csrfToken')}
     />,
     400,
@@ -165,13 +213,11 @@ userRoutes.get('/users', permissionRequired('users.view'), (c) => {
 
   const db = getDb();
   const users = db.prepare(`
-    SELECT u.id, u.name, u.email, u.role, u.active, e.name AS employee_name
+    SELECT u.id, u.name, u.email, u.role, u.active, e.name as employee_name
     FROM users u
-    LEFT JOIN employees e
-      ON e.id = u.employee_id
-     AND e.tenant_id = u.tenant_id
+    LEFT JOIN employees e ON e.id = u.employee_id AND e.tenant_id = u.tenant_id
     WHERE u.tenant_id = ?
-    ORDER BY CASE u.role WHEN 'Admin' THEN 1 WHEN 'Manager' THEN 2 ELSE 3 END, u.name ASC
+    ORDER BY u.active DESC, u.name ASC
   `).all(tenant.id) as Array<{
     id: number;
     name: string;
@@ -190,23 +236,102 @@ userRoutes.get('/users', permissionRequired('users.view'), (c) => {
       users={users.map((user) => ({ ...user, role: normalizeUserRole(user.role) }))}
       canCreateUsers={userHasPermission(currentUser, 'users.create')}
       canEditUsers={userHasPermission(currentUser, 'users.edit')}
-      rolePresets={getRolePresets()}
+      canManagePermissions={normalizeUserRole(currentUser?.role) === 'Admin'}
+      rolePresets={getRolePresets(tenant.id, db)}
     />,
   );
 });
 
-userRoutes.get('/users/permissions', permissionRequired('users.view'), (c) => {
-  const currentUser = c.get('user');
+userRoutes.get('/users/permissions', roleRequired('Admin'), (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
 
-  return renderAppLayout(
-    c,
-    'Role Permissions',
-    <UserPermissionsPage
-      rolePresets={getRolePresets()}
-      permissionGroups={getPermissionGroups()}
-      canCreateUsers={userHasPermission(currentUser, 'users.create')}
-    />,
-  );
+  return renderPermissionsPage(c, tenant.id);
+});
+
+userRoutes.post('/users/permissions', roleRequired('Admin'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const action = String(body['action'] ?? 'save').trim();
+  const db = getDb();
+
+  try {
+    if (action === 'reset') {
+      const role = requireEnumValue(body['role'], CONFIGURABLE_ROLES, 'Role');
+      const beforeMap = getTenantRolePermissionMap(tenant.id, db);
+      const before = beforeMap[role];
+
+      resetTenantRolePermissions(db, tenant.id, role);
+
+      const afterMap = getTenantRolePermissionMap(tenant.id, db);
+      const after = afterMap[role];
+      const changes = summarizePermissionChanges(before, after);
+
+      logActivity(db, {
+        tenantId: tenant.id,
+        actorUserId: currentUser.id,
+        eventType: 'permissions.role_reset',
+        entityType: 'tenant_role_permissions',
+        description: `${currentUser.name} reset ${role} permissions to defaults.`,
+        metadata: {
+          role,
+          before,
+          after,
+          added: changes.added,
+          removed: changes.removed,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+
+      return renderPermissionsPage(c, tenant.id, {
+        type: 'success',
+        text: `${role} permissions were reset to the default HBS preset.`,
+      });
+    }
+
+    const beforeMap = getTenantRolePermissionMap(tenant.id, db);
+
+    for (const role of CONFIGURABLE_ROLES) {
+      const allowedPermissions = collectRolePermissions(body, role);
+      saveTenantRolePermissions(db, tenant.id, role, allowedPermissions);
+    }
+
+    const afterMap = getTenantRolePermissionMap(tenant.id, db);
+
+    for (const role of CONFIGURABLE_ROLES) {
+      const before = beforeMap[role];
+      const after = afterMap[role];
+      const changes = summarizePermissionChanges(before, after);
+      if (changes.added.length === 0 && changes.removed.length === 0) continue;
+
+      logActivity(db, {
+        tenantId: tenant.id,
+        actorUserId: currentUser.id,
+        eventType: 'permissions.role_updated',
+        entityType: 'tenant_role_permissions',
+        description: `${currentUser.name} updated ${role} role permissions.`,
+        metadata: {
+          role,
+          before,
+          after,
+          added: changes.added,
+          removed: changes.removed,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
+
+    return renderPermissionsPage(c, tenant.id, {
+      type: 'success',
+      text: 'Role permissions were saved successfully. Existing users in those roles will use the new access immediately on their next request.',
+    });
+  } catch (error) {
+    const message = error instanceof ValidationError ? error.message : 'Unable to save permission changes right now.';
+    return renderPermissionsPage(c, tenant.id, { type: 'error', text: message }, 400);
+  }
 });
 
 userRoutes.get('/add_user', permissionRequired('users.create'), (c) => {
@@ -222,7 +347,7 @@ userRoutes.get('/add_user', permissionRequired('users.create'), (c) => {
     <AddUserPage
       formData={{ name: '', email: '', role: 'Employee', employee_id: '' }}
       employeeOptions={employeeOptions}
-      rolePresets={getRolePresets()}
+      rolePresets={getRolePresets(tenant.id, db)}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -327,7 +452,7 @@ userRoutes.get('/edit_user/:id', permissionRequired('users.edit'), (c) => {
     <EditUserPage
       user={user}
       employeeOptions={employeeOptions}
-      rolePresets={getRolePresets()}
+      rolePresets={getRolePresets(tenant.id, db)}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -514,61 +639,3 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
     return renderEditUserError(c, message, existingUser, employeeOptions, formData);
   }
 });
-
-userRoutes.get('/my-account', loginRequired, (c) => {
-  const currentUser = c.get('user');
-  if (!currentUser) return c.redirect('/login');
-
-  return renderAppLayout(
-    c,
-    'My Account',
-    <MyAccountPage
-      user={currentUser}
-      csrfToken={c.get('csrfToken')}
-      success={c.req.query('notice') === 'password-updated' ? 'Password updated successfully.' : undefined}
-    />,
-  );
-});
-
-userRoutes.post('/my-account/password', loginRequired, async (c) => {
-  const tenant = c.get('tenant');
-  const currentUser = c.get('user');
-  if (!tenant || !currentUser) return c.redirect('/login');
-
-  const body = (await c.req.parseBody()) as Record<string, unknown>;
-  const newPassword = String(body['new_password'] ?? '');
-  const confirmPassword = String(body['confirm_password'] ?? '');
-  const db = getDb();
-
-  try {
-    if (newPassword !== confirmPassword) {
-      throw new ValidationError('New password and confirmation must match.');
-    }
-
-    const validatedPassword = validatePassword(newPassword, 'New password');
-    userQueries.updatePassword(db, currentUser.id, tenant.id, hashPassword(validatedPassword));
-
-    logActivity(db, {
-      tenantId: tenant.id,
-      actorUserId: currentUser.id,
-      eventType: 'user.password_changed_self',
-      entityType: 'user',
-      entityId: currentUser.id,
-      description: `${currentUser.name} changed their own password.`,
-      metadata: {},
-      ipAddress: resolveRequestIp(c),
-    });
-
-    return c.redirect('/my-account?notice=password-updated');
-  } catch (error) {
-    const message = error instanceof ValidationError ? error.message : 'Unable to update your password right now.';
-    return renderAppLayout(
-      c,
-      'My Account',
-      <MyAccountPage user={currentUser} csrfToken={c.get('csrfToken')} error={message} />,
-      400,
-    );
-  }
-});
-
-export default userRoutes;

@@ -53,7 +53,7 @@ function resolveUser(
     email: row.email,
     role: normalizedRole,
     tenant_id: row.tenant_id,
-    permissions: getRolePermissions(normalizedRole),
+    permissions: getRolePermissions(normalizedRole, row.tenant_id, db),
   };
 }
 
@@ -127,7 +127,7 @@ export function permissionRequired(...permissions: string[]) {
       return c.redirect('/login');
     }
 
-    if (!hasAllPermissions(user.permissions, permissions)) {
+    if (!hasAllPermissions(user.permissions, permissions as any)) {
       return c.text('Forbidden (insufficient permissions)', 403);
     }
 
@@ -143,7 +143,7 @@ export function anyPermissionRequired(...permissions: string[]) {
       return c.redirect('/login');
     }
 
-    if (!hasAnyPermission(user.permissions, permissions)) {
+    if (!hasAnyPermission(user.permissions, permissions as any)) {
       return c.text('Forbidden (insufficient permissions)', 403);
     }
 
