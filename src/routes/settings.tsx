@@ -34,6 +34,23 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function isValidWebsite(value: string): boolean {
+  if (!value) return true;
+  try {
+    const parsed = new URL(value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`);
+    return Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeWebsite(value: string): string {
+  const raw = value.trim();
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  return `https://${raw}`;
+}
+
 function normalizeInvoicePrefix(value: string): string {
   const cleaned = value.trim().toUpperCase().replace(/\s+/g, '');
   if (!cleaned) return '';
@@ -77,12 +94,23 @@ function parsePercent(value: unknown, fieldLabel: string): number {
   return parsed;
 }
 
+function normalizeTextarea(value: unknown, maxLength: number, fieldLabel: string): string {
+  const parsed = String(value ?? '').replace(/\r/g, '').trim();
+  if (!parsed) return '';
+  if (parsed.length > maxLength) {
+    throw new Error(`${fieldLabel} must be ${maxLength} characters or less.`);
+  }
+  return parsed;
+}
+
 function getTenantSettings(db: any, tenantId: number) {
   return db
     .prepare(
       `
     SELECT id, name, subdomain, logo_path, invoice_prefix,
            company_email, company_phone, company_address,
+           company_website, proposal_license_info,
+           proposal_default_terms, proposal_default_acknowledgment,
            default_tax_rate, default_labor_rate
     FROM tenants
     WHERE id = ?
@@ -101,6 +129,10 @@ function buildTenantFormValues(source: any) {
     company_email: source?.company_email ? String(source.company_email) : '',
     company_phone: source?.company_phone ? String(source.company_phone) : '',
     company_address: source?.company_address ? String(source.company_address) : '',
+    company_website: source?.company_website ? String(source.company_website) : '',
+    proposal_license_info: source?.proposal_license_info ? String(source.proposal_license_info) : '',
+    proposal_default_terms: source?.proposal_default_terms ? String(source.proposal_default_terms) : '',
+    proposal_default_acknowledgment: source?.proposal_default_acknowledgment ? String(source.proposal_default_acknowledgment) : '',
     default_tax_rate: Number(source?.default_tax_rate || 0),
     default_labor_rate: Number(source?.default_labor_rate || 0),
   };
@@ -147,20 +179,25 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
 
   const formTenant = buildTenantFormValues({
     ...tenantRow,
-    name: String(body['name'] ?? tenantRow.name ?? '').trim(),
-    invoice_prefix: String(body['invoice_prefix'] ?? tenantRow.invoice_prefix ?? '').trim(),
-    company_email: String(body['company_email'] ?? tenantRow.company_email ?? '').trim(),
-    company_phone: String(body['company_phone'] ?? tenantRow.company_phone ?? '').trim(),
-    company_address: String(body['company_address'] ?? tenantRow.company_address ?? '').trim(),
-    default_tax_rate: String(body['default_tax_rate'] ?? tenantRow.default_tax_rate ?? '0'),
-    default_labor_rate: String(body['default_labor_rate'] ?? tenantRow.default_labor_rate ?? '0'),
+    name: String(body.name ?? tenantRow.name ?? '').trim(),
+    invoice_prefix: String(body.invoice_prefix ?? tenantRow.invoice_prefix ?? '').trim(),
+    company_email: String(body.company_email ?? tenantRow.company_email ?? '').trim(),
+    company_phone: String(body.company_phone ?? tenantRow.company_phone ?? '').trim(),
+    company_address: String(body.company_address ?? tenantRow.company_address ?? '').trim(),
+    company_website: String(body.company_website ?? tenantRow.company_website ?? '').trim(),
+    proposal_license_info: String(body.proposal_license_info ?? tenantRow.proposal_license_info ?? '').trim(),
+    proposal_default_terms: String(body.proposal_default_terms ?? tenantRow.proposal_default_terms ?? '').trim(),
+    proposal_default_acknowledgment: String(body.proposal_default_acknowledgment ?? tenantRow.proposal_default_acknowledgment ?? '').trim(),
+    default_tax_rate: String(body.default_tax_rate ?? tenantRow.default_tax_rate ?? '0'),
+    default_labor_rate: String(body.default_labor_rate ?? tenantRow.default_labor_rate ?? '0'),
   });
 
   try {
-    const name = String(body['name'] ?? '').trim();
-    const companyEmail = String(body['company_email'] ?? '').trim();
-    const companyPhone = String(body['company_phone'] ?? '').trim();
-    const companyAddress = String(body['company_address'] ?? '').trim();
+    const name = String(body.name ?? '').trim();
+    const companyEmail = String(body.company_email ?? '').trim();
+    const companyPhone = String(body.company_phone ?? '').trim();
+    const companyAddress = String(body.company_address ?? '').trim();
+    const companyWebsiteRaw = String(body.company_website ?? '').trim();
 
     if (!name) {
       throw new Error('Company name is required.');
@@ -186,16 +223,24 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
       throw new Error('Company address must be 255 characters or less.');
     }
 
-    const invoicePrefix = normalizeInvoicePrefix(String(body['invoice_prefix'] ?? ''));
-    const defaultTaxRate = parsePercent(body['default_tax_rate'], 'Default tax rate');
+    if (companyWebsiteRaw && !isValidWebsite(companyWebsiteRaw)) {
+      throw new Error('Company website must be a valid URL or domain.');
+    }
+
+    const companyWebsite = normalizeWebsite(companyWebsiteRaw);
+    const proposalLicenseInfo = normalizeTextarea(body.proposal_license_info, 1200, 'License / certification footer text');
+    const proposalDefaultTerms = normalizeTextarea(body.proposal_default_terms, 8000, 'Default proposal terms');
+    const proposalDefaultAcknowledgment = normalizeTextarea(body.proposal_default_acknowledgment, 4000, 'Default acknowledgment text');
+    const invoicePrefix = normalizeInvoicePrefix(String(body.invoice_prefix ?? ''));
+    const defaultTaxRate = parsePercent(body.default_tax_rate, 'Default tax rate');
     const defaultLaborRate = parseNonNegativeNumber(
-      body['default_labor_rate'],
+      body.default_labor_rate,
       'Default labor rate',
     );
 
     let logoPath = tenantRow.logo_path;
 
-    const file = body['logo'];
+    const file = body.logo;
     if (file && file instanceof File && file.name) {
       const uploadDir = `${process.env.UPLOAD_DIR ?? './data'}/tenant_logos`;
       const filename = await saveUploadedFile(file, uploadDir, {
@@ -217,6 +262,10 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
           company_email = ?,
           company_phone = ?,
           company_address = ?,
+          company_website = ?,
+          proposal_license_info = ?,
+          proposal_default_terms = ?,
+          proposal_default_acknowledgment = ?,
           default_tax_rate = ?,
           default_labor_rate = ?
       WHERE id = ?
@@ -228,6 +277,10 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
       companyEmail || null,
       companyPhone || null,
       companyAddress || null,
+      companyWebsite || null,
+      proposalLicenseInfo || null,
+      proposalDefaultTerms || null,
+      proposalDefaultAcknowledgment || null,
       defaultTaxRate,
       defaultLaborRate,
       tenantId,

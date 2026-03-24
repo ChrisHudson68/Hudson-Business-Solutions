@@ -34,6 +34,10 @@ export interface Tenant {
   company_email: string | null;
   company_phone: string | null;
   company_address: string | null;
+  company_website?: string | null;
+  proposal_license_info?: string | null;
+  proposal_default_terms?: string | null;
+  proposal_default_acknowledgment?: string | null;
   default_tax_rate: number;
   default_labor_rate: number;
   billing_exempt: number;
@@ -91,6 +95,9 @@ export interface Estimate {
   customer_phone: string | null;
   site_address: string | null;
   scope_of_work: string | null;
+  proposal_title?: string | null;
+  payment_schedule?: string | null;
+  custom_terms?: string | null;
   subtotal: number;
   tax: number;
   total: number;
@@ -119,6 +126,9 @@ export interface EstimateLineItem {
   description: string;
   quantity: number;
   unit: string;
+  unit_cost?: number;
+  upcharge_percent?: number;
+  apply_upcharge?: number;
   unit_price: number;
   line_total: number;
   sort_order: number;

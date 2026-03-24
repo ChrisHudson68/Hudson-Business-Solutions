@@ -9,6 +9,10 @@ interface TenantInfo {
   company_email: string | null;
   company_phone: string | null;
   company_address: string | null;
+  company_website: string | null;
+  proposal_license_info: string | null;
+  proposal_default_terms: string | null;
+  proposal_default_acknowledgment: string | null;
   default_tax_rate: number;
   default_labor_rate: number;
 }
@@ -41,6 +45,8 @@ export const SettingsPage: FC<SettingsPageProps> = ({
     { label: 'Company phone added', done: isFilled(tenant.company_phone) },
     { label: 'Company address added', done: isFilled(tenant.company_address) },
     { label: 'Invoice prefix set', done: isFilled(tenant.invoice_prefix) },
+    { label: 'Website added', done: isFilled(tenant.company_website) },
+    { label: 'Proposal terms configured', done: isFilled(tenant.proposal_default_terms) },
   ];
 
   const completedCount = setupItems.filter((item) => item.done).length;
@@ -52,7 +58,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Company Settings</h1>
-          <p>Manage your workspace branding, invoice defaults, and company details.</p>
+          <p>Manage your workspace branding, invoice defaults, company details, and proposal template content.</p>
         </div>
       </div>
 
@@ -62,7 +68,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({
             <div>
               <b>Complete Your Company Setup</b>
               <div class="muted small" style="margin-top:4px;">
-                These details improve invoices, branding, customer communication, and first impressions.
+                These details improve invoices, proposals, branding, customer communication, and first impressions.
               </div>
             </div>
             <span class="badge">
@@ -94,26 +100,23 @@ export const SettingsPage: FC<SettingsPageProps> = ({
 
             <div class="card" style="padding:16px; background:#F8FAFC;">
               <h3 style="margin-top:0;">Recommended Next Steps</h3>
-              <div class="muted" style="line-height:1.75;">
-                Most teams should:
-              </div>
               <div class="list" style="margin-top:12px;">
                 <div class="list-item">
-                  <b>1. Add company contact details</b>
+                  <b>1. Add proposal footer details</b>
                   <div class="muted small" style="margin-top:4px;">
-                    These help your invoices and workspace feel complete and professional.
+                    Website, phone, address, and license text make proposal PDFs feel much more polished.
                   </div>
                 </div>
                 <div class="list-item">
-                  <b>2. Upload your company logo</b>
+                  <b>2. Set default proposal terms</b>
                   <div class="muted small" style="margin-top:4px;">
-                    Branding carries through to the workspace and creates a more polished customer experience.
+                    Your estimators can reuse these on every proposal without rewriting them each time.
                   </div>
                 </div>
                 <div class="list-item">
-                  <b>3. Set invoice and labor defaults</b>
+                  <b>3. Keep invoice and labor defaults current</b>
                   <div class="muted small" style="margin-top:4px;">
-                    Default values reduce repetitive setup and make daily operations faster.
+                    Default values reduce repetitive setup and keep daily operations faster.
                   </div>
                 </div>
               </div>
@@ -125,7 +128,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({
           class="card"
           style="margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;"
         >
-          Your company setup looks complete. Your workspace branding and defaults are in good shape.
+          Your company setup looks complete. Your workspace branding, defaults, and proposal template content are in good shape.
         </div>
       )}
 
@@ -163,7 +166,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({
           <div class="card">
             <h3 style="margin-top:0;">Branding</h3>
             <div class="muted small" style="margin-bottom:10px;">
-              These details shape how your workspace and outward-facing invoice identity appear.
+              These details shape how your workspace and outward-facing proposal identity appear.
             </div>
 
             <label>Company Name</label>
@@ -188,7 +191,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({
               </div>
             ) : (
               <div class="muted small" style="margin-top:10px;">
-                Uploading a logo helps your workspace feel complete and professional.
+                Uploading a logo helps your workspace and proposal PDFs feel complete and professional.
               </div>
             )}
           </div>
@@ -196,7 +199,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({
           <div class="card">
             <h3 style="margin-top:0;">Company Contact</h3>
             <div class="muted small" style="margin-bottom:10px;">
-              These details are helpful for invoices, internal reference, and customer communication.
+              These details are used for invoices, internal reference, and proposal footers.
             </div>
 
             <label>Company Email</label>
@@ -205,9 +208,17 @@ export const SettingsPage: FC<SettingsPageProps> = ({
             <label>Company Phone</label>
             <input name="company_phone" value={tenant.company_phone || ''} disabled={readOnly} />
 
+            <label>Company Website</label>
+            <input name="company_website" value={tenant.company_website || ''} disabled={readOnly} placeholder="https://example.com" />
+
             <label>Company Address</label>
-            <textarea name="company_address" rows={5} disabled={readOnly}>
+            <textarea name="company_address" rows={4} disabled={readOnly}>
               {tenant.company_address || ''}
+            </textarea>
+
+            <label>License / Certification Footer Text</label>
+            <textarea name="proposal_license_info" rows={4} disabled={readOnly} placeholder="Mechanical license number 33053&#10;Plumbing license number 35627">
+              {tenant.proposal_license_info || ''}
             </textarea>
           </div>
         </div>
@@ -255,6 +266,42 @@ export const SettingsPage: FC<SettingsPageProps> = ({
             <div class="muted small" style="margin-top:10px;">
               This can be used later for faster job costing and default employee setup.
             </div>
+          </div>
+        </div>
+
+        <div class="grid grid-2" style="margin-top:14px; align-items:start;">
+          <div class="card">
+            <h3 style="margin-top:0;">Proposal Template Defaults</h3>
+            <div class="muted small" style="margin-bottom:10px;">
+              These values are reused by proposal PDFs unless an individual estimate overrides them.
+            </div>
+
+            <label>Default Terms &amp; Conditions</label>
+            <textarea
+              name="proposal_default_terms"
+              rows={10}
+              disabled={readOnly}
+              placeholder="Enter one section per paragraph or use bullet lines starting with - or *"
+            >
+              {tenant.proposal_default_terms || ''}
+            </textarea>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-top:0;">Proposal Acknowledgment</h3>
+            <div class="muted small" style="margin-bottom:10px;">
+              This text appears near the end of the proposal PDF and is useful for acceptance language.
+            </div>
+
+            <label>Default Acknowledgment Text</label>
+            <textarea
+              name="proposal_default_acknowledgment"
+              rows={10}
+              disabled={readOnly}
+              placeholder="By accepting delivery of materials, allowing work to commence, or making any payments..."
+            >
+              {tenant.proposal_default_acknowledgment || ''}
+            </textarea>
           </div>
         </div>
 

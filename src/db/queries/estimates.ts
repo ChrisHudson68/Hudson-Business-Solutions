@@ -20,6 +20,9 @@ export interface CreateEstimateInput {
   customer_phone?: string | null;
   site_address?: string | null;
   scope_of_work?: string | null;
+  proposal_title?: string | null;
+  payment_schedule?: string | null;
+  custom_terms?: string | null;
   subtotal?: number;
   tax?: number;
   total?: number;
@@ -42,6 +45,9 @@ export interface UpdateEstimateInput {
   customer_phone?: string | null;
   site_address?: string | null;
   scope_of_work?: string | null;
+  proposal_title?: string | null;
+  payment_schedule?: string | null;
+  custom_terms?: string | null;
   subtotal?: number;
   tax?: number;
   total?: number;
@@ -91,6 +97,9 @@ function baseSelect(): string {
       e.customer_phone,
       e.site_address,
       e.scope_of_work,
+      e.proposal_title,
+      e.payment_schedule,
+      e.custom_terms,
       e.subtotal,
       e.tax,
       e.total,
@@ -282,6 +291,9 @@ export function create(db: DB, tenantId: number, input: CreateEstimateInput): nu
         customer_phone,
         site_address,
         scope_of_work,
+        proposal_title,
+        payment_schedule,
+        custom_terms,
         subtotal,
         tax,
         total,
@@ -297,7 +309,7 @@ export function create(db: DB, tenantId: number, input: CreateEstimateInput): nu
         public_token,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(
       tenantId,
       payload.estimate_number,
@@ -306,6 +318,9 @@ export function create(db: DB, tenantId: number, input: CreateEstimateInput): nu
       payload.customer_phone ?? null,
       payload.site_address ?? null,
       payload.scope_of_work ?? null,
+      payload.proposal_title ?? null,
+      payload.payment_schedule ?? null,
+      payload.custom_terms ?? null,
       normalizeMoney(payload.subtotal),
       normalizeMoney(payload.tax),
       normalizeMoney(payload.total),
@@ -360,6 +375,21 @@ export function update(db: DB, estimateId: number, tenantId: number, input: Upda
   if (Object.prototype.hasOwnProperty.call(input, 'scope_of_work')) {
     sets.push('scope_of_work = ?');
     params.push(input.scope_of_work ?? null);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'proposal_title')) {
+    sets.push('proposal_title = ?');
+    params.push(input.proposal_title ?? null);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'payment_schedule')) {
+    sets.push('payment_schedule = ?');
+    params.push(input.payment_schedule ?? null);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'custom_terms')) {
+    sets.push('custom_terms = ?');
+    params.push(input.custom_terms ?? null);
   }
 
   if (Object.prototype.hasOwnProperty.call(input, 'subtotal')) {
@@ -461,7 +491,6 @@ export function setStatus(
     public_token: options?.public_token ?? null,
   });
 }
-
 
 export function archive(db: DB, estimateId: number, tenantId: number, archivedByUserId: number | null = null): void {
   db.prepare(`

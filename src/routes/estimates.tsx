@@ -11,6 +11,7 @@ import { EstimatesListPage } from '../pages/estimates/EstimatesListPage.js';
 import { EstimateFormPage } from '../pages/estimates/EstimateFormPage.js';
 import { EstimateDetailPage } from '../pages/estimates/EstimateDetailPage.js';
 import { sendEstimateToCustomer } from '../services/send-estimate.js';
+import { generateEstimateProposalPdf } from '../services/estimate-pdf.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 | 404 = 200) {
@@ -272,6 +273,9 @@ function buildEstimateFormData(
   customer_phone: string;
   site_address: string;
   scope_of_work: string;
+  proposal_title: string;
+  payment_schedule: string;
+  custom_terms: string;
   status: string;
   expiration_date: string;
   tax_rate: string;
@@ -288,6 +292,9 @@ function buildEstimateFormData(
     customer_phone: String(body.customer_phone ?? '').trim(),
     site_address: String(body.site_address ?? '').trim(),
     scope_of_work: String(body.scope_of_work ?? '').trim(),
+    proposal_title: String(body.proposal_title ?? '').trim(),
+    payment_schedule: String(body.payment_schedule ?? '').trim(),
+    custom_terms: String(body.custom_terms ?? '').trim(),
     status: String(body.status ?? 'draft').trim().toLowerCase(),
     expiration_date: String(body.expiration_date ?? '').trim(),
     tax_rate: String(body.tax_rate ?? String(fallbackTaxRate ?? 0)).trim(),
@@ -327,6 +334,9 @@ function buildEstimateFormDataFromRecord(
     customer_phone: estimate?.customer_phone ?? '',
     site_address: estimate?.site_address ?? '',
     scope_of_work: estimate?.scope_of_work ?? '',
+    proposal_title: estimate?.proposal_title ?? '',
+    payment_schedule: estimate?.payment_schedule ?? '',
+    custom_terms: estimate?.custom_terms ?? '',
     status: estimate?.status ?? 'draft',
     expiration_date: estimate?.expiration_date ?? '',
     tax_rate: String(taxRate),
@@ -412,6 +422,14 @@ function generateNextEstimateNumber(db: any, tenantId: number): string {
 
 export const estimateRoutes = new Hono<AppEnv>();
 
+estimateRoutes.get('/estimates/archived', loginRequired, (c) => {
+  const url = new URL(c.req.url);
+  const params = new URLSearchParams(url.search);
+  params.set('show_archived', '1');
+  const query = params.toString();
+  return c.redirect(query ? `/estimates?${query}` : '/estimates?show_archived=1');
+});
+
 estimateRoutes.get('/estimates', loginRequired, (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
@@ -478,6 +496,9 @@ estimateRoutes.get('/estimates/new', roleRequired('Admin', 'Manager'), (c) => {
         customer_phone: '',
         site_address: '',
         scope_of_work: '',
+        proposal_title: '',
+        payment_schedule: '',
+        custom_terms: '',
         status: 'draft',
         expiration_date: '',
         tax_rate: String(taxRate),
@@ -508,6 +529,9 @@ estimateRoutes.post('/estimates/new', roleRequired('Admin', 'Manager'), async (c
     const customerPhone = normalizeOptionalText(body.customer_phone, 40, 'Customer phone');
     const siteAddress = normalizeOptionalText(body.site_address, 240, 'Site address');
     const scopeOfWork = normalizeOptionalText(body.scope_of_work, 5000, 'Job description');
+    const proposalTitle = normalizeOptionalText(body.proposal_title, 255, 'Proposal title');
+    const paymentSchedule = normalizeOptionalText(body.payment_schedule, 4000, 'Payment schedule');
+    const customTerms = normalizeOptionalText(body.custom_terms, 8000, 'Estimate-specific terms');
     const expirationDate = normalizeOptionalDate(body.expiration_date, 'Expiration date');
     const taxRate = parsePercent(body.tax_rate, 'Tax rate');
     const status = parseEditableStatus(body.status);
@@ -522,6 +546,9 @@ estimateRoutes.post('/estimates/new', roleRequired('Admin', 'Manager'), async (c
       customer_phone: customerPhone ?? null,
       site_address: siteAddress ?? null,
       scope_of_work: scopeOfWork ?? null,
+      proposal_title: proposalTitle ?? null,
+      payment_schedule: paymentSchedule ?? null,
+      custom_terms: customTerms ?? null,
       subtotal: totals.subtotal,
       tax: totals.tax,
       total: totals.total,
@@ -606,6 +633,102 @@ estimateRoutes.get('/estimate/:id', loginRequired, (c) => {
       noticeTone={detailNotice.tone}
     />,
   );
+});
+
+
+estimateRoutes.get('/estimate/:id/pdf', loginRequired, async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!estimateId) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const estimate = estimates.findWithLineItemsById(db, estimateId, tenantId);
+
+  if (!estimate) {
+    return c.text('Estimate not found', 404);
+  }
+
+  const tenantSettings = db.prepare(`
+    SELECT
+      id,
+      name,
+      subdomain,
+      logo_path,
+      company_email,
+      company_phone,
+      company_address,
+      company_website,
+      proposal_license_info,
+      proposal_default_terms,
+      proposal_default_acknowledgment
+    FROM tenants
+    WHERE id = ?
+    LIMIT 1
+  `).get(tenantId) as {
+    id: number;
+    name: string;
+    subdomain: string;
+    logo_path: string | null;
+    company_email: string | null;
+    company_phone: string | null;
+    company_address: string | null;
+    company_website: string | null;
+    proposal_license_info: string | null;
+    proposal_default_terms: string | null;
+    proposal_default_acknowledgment: string | null;
+  } | undefined;
+
+  if (!tenantSettings) {
+    return c.text('Tenant not found', 404);
+  }
+
+  const pdfBytes = await generateEstimateProposalPdf({
+    tenant: {
+      name: tenantSettings.name,
+      subdomain: tenantSettings.subdomain,
+      logo_path: tenantSettings.logo_path,
+      company_email: tenantSettings.company_email,
+      company_phone: tenantSettings.company_phone,
+      company_address: tenantSettings.company_address,
+      company_website: tenantSettings.company_website,
+      proposal_license_info: tenantSettings.proposal_license_info,
+      proposal_default_terms: tenantSettings.proposal_default_terms,
+      proposal_default_acknowledgment: tenantSettings.proposal_default_acknowledgment,
+    },
+    estimate,
+  });
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser?.id,
+    eventType: 'estimate.pdf_downloaded',
+    entityType: 'estimate',
+    entityId: estimateId,
+    description: `${currentUser?.name || 'User'} downloaded the proposal PDF for estimate ${estimate.estimate_number}.`,
+    metadata: {
+      estimate_number: estimate.estimate_number,
+      customer_name: estimate.customer_name,
+      status: estimate.status,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  const safeLabel = String(estimate.estimate_number || `estimate_${estimate.id}`)
+    .replace(/[^A-Za-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || `estimate_${estimate.id}`;
+
+  return new Response(Buffer.from(pdfBytes), {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${safeLabel}_proposal.pdf"`,
+      'Cache-Control': 'no-store',
+    },
+  });
 });
 
 estimateRoutes.post('/estimate/:id/send', roleRequired('Admin', 'Manager'), async (c) => {
@@ -773,6 +896,9 @@ estimateRoutes.post('/estimate/:id/edit', roleRequired('Admin', 'Manager'), asyn
     const customerPhone = normalizeOptionalText(body.customer_phone, 40, 'Customer phone');
     const siteAddress = normalizeOptionalText(body.site_address, 240, 'Site address');
     const scopeOfWork = normalizeOptionalText(body.scope_of_work, 5000, 'Job description');
+    const proposalTitle = normalizeOptionalText(body.proposal_title, 255, 'Proposal title');
+    const paymentSchedule = normalizeOptionalText(body.payment_schedule, 4000, 'Payment schedule');
+    const customTerms = normalizeOptionalText(body.custom_terms, 8000, 'Estimate-specific terms');
     const expirationDate = normalizeOptionalDate(body.expiration_date, 'Expiration date');
     const taxRate = parsePercent(body.tax_rate, 'Tax rate');
     const status = parseEditableStatus(body.status);
@@ -785,6 +911,9 @@ estimateRoutes.post('/estimate/:id/edit', roleRequired('Admin', 'Manager'), asyn
       customer_phone: customerPhone ?? null,
       site_address: siteAddress ?? null,
       scope_of_work: scopeOfWork ?? null,
+      proposal_title: proposalTitle ?? null,
+      payment_schedule: paymentSchedule ?? null,
+      custom_terms: customTerms ?? null,
       subtotal: totals.subtotal,
       tax: totals.tax,
       total: totals.total,

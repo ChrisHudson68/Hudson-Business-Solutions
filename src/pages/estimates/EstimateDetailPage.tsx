@@ -62,6 +62,7 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href={estimate.archived_at ? '/estimates?show_archived=1' : '/estimates'}>Back</a>
+          <a class="btn" href={`/estimate/${estimate.id}/pdf`}>Download Proposal PDF</a>
           {canEditEstimate ? (
             <a class="btn btn-primary" href={`/estimate/${estimate.id}/edit`}>Edit Estimate</a>
           ) : null}

@@ -23,6 +23,9 @@ interface EstimateFormPageProps {
     customer_phone: string;
     site_address: string;
     scope_of_work: string;
+    proposal_title: string;
+    payment_schedule: string;
+    custom_terms: string;
     status: string;
     expiration_date: string;
     tax_rate: string;
@@ -81,7 +84,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
   const rowsJson = JSON.stringify(initialRows);
 
   return (
-    <div style="display:grid; gap:14px;">
+    <div class="estimate-form-shell">
       <div class="page-head">
         <div>
           <h1>{title}</h1>
@@ -104,12 +107,12 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
         <input type="hidden" name="csrf_token" value={csrfToken} />
         <input type="hidden" name="line_count" id="line_count" value={String(initialRows.length)} />
 
-        <div class="grid" style="grid-template-columns:1.15fr .85fr; gap:14px; align-items:start;">
-          <div style="display:grid; gap:14px;">
+        <div class="estimate-form-layout">
+          <div class="estimate-form-main">
             <div class="card">
               <h3 style="margin-top:0;">Estimate Information</h3>
 
-              <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <div class="grid estimate-responsive-two-up">
                 <div>
                   <label for="estimate_number">Estimate Number</label>
                   <input id="estimate_number" name="estimate_number" value={formData.estimate_number || estimateNumber} readonly />
@@ -155,7 +158,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
             <div class="card">
               <h3 style="margin-top:0;">Customer Information</h3>
 
-              <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+              <div class="grid estimate-responsive-two-up">
                 <div>
                   <label for="customer_name">Customer Name</label>
                   <input id="customer_name" name="customer_name" value={formData.customer_name} required />
@@ -171,7 +174,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
                   <input id="customer_phone" name="customer_phone" value={formData.customer_phone} />
                 </div>
 
-                <div style="grid-column:1 / -1;">
+                <div class="estimate-span-full">
                   <label for="site_address">Site Address</label>
                   <input id="site_address" name="site_address" value={formData.site_address} />
                 </div>
@@ -192,14 +195,56 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
             </div>
 
             <div class="card">
-              <div class="page-head" style="margin-bottom:12px;">
+              <h3 style="margin-top:0;">Proposal Details</h3>
+              <div class="grid" style="grid-template-columns:1fr; gap:12px;">
+                <div>
+                  <label for="proposal_title">Proposal Title</label>
+                  <input
+                    id="proposal_title"
+                    name="proposal_title"
+                    value={formData.proposal_title}
+                    placeholder="Example: New Construction Home (2-Car Garage Included)"
+                  />
+                </div>
+
+                <div>
+                  <label for="payment_schedule">Payment Schedule</label>
+                  <textarea
+                    id="payment_schedule"
+                    name="payment_schedule"
+                    rows={6}
+                    placeholder="Use one line per milestone or bullet lines starting with - or *"
+                  >
+                    {formData.payment_schedule}
+                  </textarea>
+                  <div class="muted small" style="margin-top:6px;">
+                    Example: 50% Deposit: $100,000.00 (Due prior to start)
+                  </div>
+                </div>
+
+                <div>
+                  <label for="custom_terms">Estimate-Specific Terms &amp; Conditions</label>
+                  <textarea
+                    id="custom_terms"
+                    name="custom_terms"
+                    rows={8}
+                    placeholder="Leave blank to use the company default proposal terms from Settings"
+                  >
+                    {formData.custom_terms}
+                  </textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="estimate-line-toolbar">
                 <div>
                   <h3 style="margin:0;">Line Items</h3>
                   <p class="muted" style="margin-top:6px;">
                     Add as many lines as you need. Base cost, upcharge, sell price, and totals recalculate automatically.
                   </p>
                 </div>
-                <div class="actions">
+                <div class="actions actions-mobile-stack">
                   <button type="button" class="btn btn-primary" id="add-line-item-btn">Add Line</button>
                 </div>
               </div>
@@ -210,26 +255,26 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
                 ))}
               </datalist>
 
-              <div id="line-items-container" style="display:grid; gap:12px;" />
+              <div id="line-items-container" class="estimate-line-items-container" />
 
               <template id="line-item-template">
-                <div class="line-item-card" style="border:1px solid #E5EAF2; border-radius:16px; padding:14px; background:#FFF;">
-                  <div class="page-head" style="margin-bottom:10px;">
+                <div class="line-item-card estimate-line-item-card">
+                  <div class="estimate-line-item-head">
                     <div>
                       <div class="small muted line-item-label">Line Item</div>
                     </div>
-                    <div class="actions">
+                    <div class="actions actions-mobile-stack">
                       <button type="button" class="btn remove-line-item-btn">Remove</button>
                     </div>
                   </div>
 
-                  <div style="display:grid; gap:12px;">
+                  <div class="estimate-line-item-fields">
                     <div>
                       <label>Description</label>
                       <input class="line-description" placeholder="Material, labor, equipment, or service" />
                     </div>
 
-                    <div style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));">
+                    <div class="estimate-line-item-grid">
                       <div>
                         <label>Quantity</label>
                         <input class="line-quantity" inputmode="decimal" placeholder="0.00" />
@@ -251,11 +296,11 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
                       </div>
                     </div>
 
-                    <div style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); align-items:end;">
-                      <div style="display:flex; align-items:center; gap:10px; min-height:44px;">
+                    <div class="estimate-line-item-pricing-grid">
+                      <label class="estimate-checkbox-row">
                         <input class="line-apply-upcharge" type="checkbox" />
-                        <label style="margin:0;">Apply upcharge</label>
-                      </div>
+                        <span>Apply upcharge</span>
+                      </label>
 
                       <div>
                         <label>Sell Unit Price</label>
@@ -273,22 +318,22 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
             </div>
           </div>
 
-          <div style="display:grid; gap:14px;">
-            <div class="card">
+          <div class="estimate-form-side">
+            <div class="card estimate-summary-card">
               <h3 style="margin-top:0;">Estimate Summary</h3>
 
-              <div style="display:grid; gap:12px;">
-                <div style="display:flex; justify-content:space-between; gap:12px;">
+              <div class="estimate-summary-rows">
+                <div class="estimate-summary-row">
                   <span class="muted">Subtotal</span>
                   <strong id="summary-subtotal">${formData.subtotal || '0.00'}</strong>
                 </div>
 
-                <div style="display:flex; justify-content:space-between; gap:12px;">
+                <div class="estimate-summary-row">
                   <span class="muted">Tax</span>
                   <strong id="summary-tax">${formData.tax || '0.00'}</strong>
                 </div>
 
-                <div style="display:flex; justify-content:space-between; gap:12px; font-size:20px;">
+                <div class="estimate-summary-row estimate-summary-total">
                   <span><b>Total</b></span>
                   <strong id="summary-total">${formData.total || '0.00'}</strong>
                 </div>
@@ -308,8 +353,8 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
               </div>
             </div>
 
-            <div class="card">
-              <div class="actions actions-mobile-stack" style="justify-content:flex-start;">
+            <div class="card estimate-form-actions-card">
+              <div class="actions actions-mobile-stack estimate-form-actions">
                 <button class="btn btn-primary" type="submit">
                   {mode === 'create' ? 'Create Estimate' : 'Save Estimate'}
                 </button>
@@ -337,6 +382,10 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
   const subtotalLabel = document.getElementById('summary-subtotal');
   const taxLabel = document.getElementById('summary-tax');
   const totalLabel = document.getElementById('summary-total');
+
+  if (!container || !template || !addButton || !lineCountInput || !subtotalInput || !taxInput || !totalInput || !subtotalLabel || !taxLabel || !totalLabel) {
+    return;
+  }
 
   function money(value) {
     const num = Number.parseFloat(String(value || '').replace(/,/g, ''));
@@ -422,6 +471,25 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
     totalLabel.textContent = '$' + formatMoney(total);
   }
 
+  function applyDefaultUpchargeToBlankRows() {
+    const inheritedUpcharge = getDefaultUpcharge();
+
+    getCards().forEach((card) => {
+      const upchargePercent = card.querySelector('.line-upcharge-percent');
+      const applyUpcharge = card.querySelector('.line-apply-upcharge');
+
+      if (upchargePercent && !String(upchargePercent.value || '').trim() && inheritedUpcharge > 0) {
+        upchargePercent.value = String(inheritedUpcharge);
+      }
+
+      if (applyUpcharge && !applyUpcharge.checked && inheritedUpcharge > 0) {
+        applyUpcharge.checked = true;
+      }
+    });
+
+    updateTotals();
+  }
+
   function attachEvents(card) {
     const qty = card.querySelector('.line-quantity');
     const unitCost = card.querySelector('.line-unit-cost');
@@ -492,6 +560,10 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
 
   if (taxRateInput) {
     taxRateInput.addEventListener('input', updateTotals);
+  }
+
+  if (defaultUpchargeInput) {
+    defaultUpchargeInput.addEventListener('input', applyDefaultUpchargeToBlankRows);
   }
 
   if (Array.isArray(initialRows) && initialRows.length) {
