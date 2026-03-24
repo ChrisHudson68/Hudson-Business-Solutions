@@ -152,7 +152,7 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
 
   const invoiceMtdRow = db
     .prepare(
-      `SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE tenant_id = ? AND archived_at IS NULL AND substr(date_issued, 1, 7) = ?`,
+      `SELECT COALESCE(SUM(amount), 0) as total FROM invoices WHERE tenant_id = ? AND substr(date_issued, 1, 7) = ?`,
     )
     .get(tenantId, yearMonth) as { total: number };
 

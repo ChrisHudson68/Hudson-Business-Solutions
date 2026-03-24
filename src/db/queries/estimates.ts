@@ -106,6 +106,8 @@ function baseSelect(): string {
       e.public_token,
       e.created_at,
       e.updated_at,
+      e.archived_at,
+      e.archived_by_user_id,
       creator.name AS created_by_name,
       updater.name AS updated_by_name,
       j.job_name AS converted_job_name
@@ -120,9 +122,11 @@ function baseSelect(): string {
   `;
 }
 
-export function listByTenant(db: DB, tenantId: number, status?: EstimateStatus): Estimate[] {
+export function listByTenant(db: DB, tenantId: number, status?: EstimateStatus, showArchived = false): Estimate[] {
   const params: Array<number | string> = [tenantId];
   let whereSql = 'WHERE e.tenant_id = ?';
+
+  whereSql += showArchived ? ' AND e.archived_at IS NOT NULL' : ' AND e.archived_at IS NULL';
 
   if (status) {
     whereSql += ' AND e.status = ?';
@@ -156,6 +160,14 @@ export function findById(db: DB, estimateId: number, tenantId: number): Estimate
   `).get(estimateId, tenantId) as Estimate | undefined;
 }
 
+export function findActiveById(db: DB, estimateId: number, tenantId: number): Estimate | undefined {
+  return db.prepare(`
+    ${baseSelect()}
+    WHERE e.id = ? AND e.tenant_id = ? AND e.archived_at IS NULL
+    LIMIT 1
+  `).get(estimateId, tenantId) as Estimate | undefined;
+}
+
 export function findByEstimateNumber(db: DB, estimateNumber: string, tenantId: number): Estimate | undefined {
   return db.prepare(`
     ${baseSelect()}
@@ -168,6 +180,7 @@ export function findByPublicToken(db: DB, publicToken: string): Estimate | undef
   return db.prepare(`
     ${baseSelect()}
     WHERE e.public_token = ?
+      AND e.archived_at IS NULL
     LIMIT 1
   `).get(publicToken) as Estimate | undefined;
 }
@@ -449,9 +462,31 @@ export function setStatus(
   });
 }
 
+
+export function archive(db: DB, estimateId: number, tenantId: number, archivedByUserId: number | null = null): void {
+  db.prepare(`
+    UPDATE estimates
+    SET archived_at = CURRENT_TIMESTAMP,
+        archived_by_user_id = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+  `).run(archivedByUserId, estimateId, tenantId);
+}
+
+export function restore(db: DB, estimateId: number, tenantId: number): void {
+  db.prepare(`
+    UPDATE estimates
+    SET archived_at = NULL,
+        archived_by_user_id = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ? AND archived_at IS NOT NULL
+  `).run(estimateId, tenantId);
+}
+
 export default {
   listByTenant,
   findById,
+  findActiveById,
   findByEstimateNumber,
   findByPublicToken,
   getLineItems,
@@ -460,4 +495,6 @@ export default {
   create,
   update,
   setStatus,
+  archive,
+  restore,
 };

@@ -104,6 +104,7 @@ export interface Estimate {
   converted_job_id: number | null;
   expiration_date: string | null;
   public_token: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
   created_by_name?: string | null;
@@ -118,9 +119,6 @@ export interface EstimateLineItem {
   description: string;
   quantity: number;
   unit: string;
-  unit_cost: number;
-  upcharge_percent: number;
-  apply_upcharge: number;
   unit_price: number;
   line_total: number;
   sort_order: number;
@@ -219,4 +217,29 @@ export interface JobWithFinancials extends Job {
 export interface InvoiceWithJob extends Invoice {
   job_name: string | null;
   client_name: string | null;
+}
+
+export interface TimeEntryWithNames extends TimeEntry {
+  employee_name: string;
+  job_name: string | null;
+}
+
+export interface TimeEntryEditRequest {
+  id: number;
+  tenant_id: number;
+  time_entry_id: number;
+  employee_id: number;
+  requested_by_user_id: number;
+  proposed_job_id: number | null;
+  proposed_date: string;
+  proposed_clock_in_at: string;
+  proposed_clock_out_at: string;
+  proposed_hours: number;
+  proposed_note: string | null;
+  request_reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewed_by_user_id: number | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
 }

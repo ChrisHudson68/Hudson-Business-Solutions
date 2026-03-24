@@ -12,9 +12,7 @@ interface EstimatesListPageProps {
   approvedCount: number;
   rejectedCount: number;
   canCreateEstimates?: boolean;
-  canManageEstimateArchive?: boolean;
   showArchived?: boolean;
-  csrfToken?: string;
 }
 
 function formatMoney(value: number): string {
@@ -35,14 +33,6 @@ function statusBadgeClass(status: string): string {
   return 'badge';
 }
 
-function filterHref(selectedStatus: string, showArchived: boolean): string {
-  const params = new URLSearchParams();
-  if (selectedStatus) params.set('status', selectedStatus);
-  if (showArchived) params.set('show_archived', '1');
-  const query = params.toString();
-  return query ? `/estimates?${query}` : '/estimates';
-}
-
 export const EstimatesListPage: FC<EstimatesListPageProps> = ({
   estimates,
   selectedStatus,
@@ -54,9 +44,7 @@ export const EstimatesListPage: FC<EstimatesListPageProps> = ({
   approvedCount,
   rejectedCount,
   canCreateEstimates,
-  canManageEstimateArchive,
-  showArchived,
-  csrfToken,
+  showArchived = false,
 }) => {
   const hasEstimates = estimates.length > 0;
 
@@ -64,16 +52,13 @@ export const EstimatesListPage: FC<EstimatesListPageProps> = ({
     <div>
       <div class="page-head">
         <div>
-          <h1>Estimates</h1>
-          <p class="muted">Track open estimates before they become active jobs.</p>
+          <h1>{showArchived ? 'Archived Estimates' : 'Estimates'}</h1>
+          <p class="muted">{showArchived ? 'Review and restore archived estimates.' : 'Track open estimates before they become active jobs.'}</p>
         </div>
         <div class="actions actions-mobile-stack">
-          {canManageEstimateArchive ? (
-            <a class="btn" href={showArchived ? filterHref(selectedStatus, false) : filterHref(selectedStatus, true)}>
-              {showArchived ? 'Hide Archived' : 'Show Archived'}
-            </a>
-          ) : null}
-          {canCreateEstimates ? <a class="btn btn-primary" href="/estimates/new">New Estimate</a> : null}
+          {showArchived ? <a class="btn" href="/estimates">Back to Active</a> : null}
+          {!showArchived && canCreateEstimates ? <a class="btn" href="/estimates/archived">Archived Estimates</a> : null}
+          {canCreateEstimates && !showArchived ? <a class="btn btn-primary" href="/estimates/new">New Estimate</a> : null}
         </div>
       </div>
 
@@ -98,12 +83,12 @@ export const EstimatesListPage: FC<EstimatesListPageProps> = ({
 
       <div class="card" style="margin-bottom:14px;">
         <div class="actions actions-mobile-stack">
-          <a class={`btn ${selectedStatus === '' ? 'btn-primary' : ''}`} href={filterHref('', !!showArchived)}>All</a>
-          <a class={`btn ${selectedStatus === 'draft' ? 'btn-primary' : ''}`} href={filterHref('draft', !!showArchived)}>Draft ({draftCount})</a>
-          <a class={`btn ${selectedStatus === 'ready' ? 'btn-primary' : ''}`} href={filterHref('ready', !!showArchived)}>Ready ({readyCount})</a>
-          <a class={`btn ${selectedStatus === 'sent' ? 'btn-primary' : ''}`} href={filterHref('sent', !!showArchived)}>Sent ({sentCount})</a>
-          <a class={`btn ${selectedStatus === 'approved' ? 'btn-primary' : ''}`} href={filterHref('approved', !!showArchived)}>Approved ({approvedCount})</a>
-          <a class={`btn ${selectedStatus === 'rejected' ? 'btn-primary' : ''}`} href={filterHref('rejected', !!showArchived)}>Rejected ({rejectedCount})</a>
+          <a class={`btn ${selectedStatus === '' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived' : '/estimates'}>All</a>
+          <a class={`btn ${selectedStatus === 'draft' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=draft' : '/estimates?status=draft'}>Draft ({draftCount})</a>
+          <a class={`btn ${selectedStatus === 'ready' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=ready' : '/estimates?status=ready'}>Ready ({readyCount})</a>
+          <a class={`btn ${selectedStatus === 'sent' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=sent' : '/estimates?status=sent'}>Sent ({sentCount})</a>
+          <a class={`btn ${selectedStatus === 'approved' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=approved' : '/estimates?status=approved'}>Approved ({approvedCount})</a>
+          <a class={`btn ${selectedStatus === 'rejected' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=rejected' : '/estimates?status=rejected'}>Rejected ({rejectedCount})</a>
         </div>
       </div>
 
@@ -127,41 +112,21 @@ export const EstimatesListPage: FC<EstimatesListPageProps> = ({
                     <td>
                       <div><b>{estimate.estimate_number}</b></div>
                       <div class="muted small">{estimate.site_address || 'No site address yet'}</div>
-                      {estimate.archived_at ? (
-                        <div class="muted small" style="margin-top:4px;">Archived</div>
-                      ) : null}
                     </td>
                     <td>
                       <div>{estimate.customer_name}</div>
                       <div class="muted small">{estimate.customer_email || estimate.customer_phone || 'No contact details'}</div>
                     </td>
                     <td>
-                      {estimate.archived_at ? (
-                        <span class="badge badge-warn">Archived</span>
-                      ) : (
-                        <span class={statusBadgeClass(estimate.status)}>{statusLabel(estimate.status)}</span>
-                      )}
+                      <span class={statusBadgeClass(estimate.status)}>{statusLabel(estimate.status)}</span>
                     </td>
                     <td class="right">${formatMoney(estimate.total)}</td>
                     <td>{estimate.updated_at?.slice(0, 10) || '—'}</td>
                     <td class="right">
                       <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
                         <a class="btn" href={`/estimate/${estimate.id}`}>View</a>
-                        {!estimate.archived_at && (estimate.status === 'draft' || estimate.status === 'ready') && canCreateEstimates ? (
+                        {(estimate.status === 'draft' || estimate.status === 'ready') && canCreateEstimates ? (
                           <a class="btn" href={`/estimate/${estimate.id}/edit`}>Edit</a>
-                        ) : null}
-                        {canManageEstimateArchive && csrfToken ? (
-                          estimate.archived_at ? (
-                            <form method="post" action={`/estimate/${estimate.id}/restore`} class="inline-form">
-                              <input type="hidden" name="csrf_token" value={csrfToken} />
-                              <button class="btn" type="submit">Restore</button>
-                            </form>
-                          ) : (
-                            <form method="post" action={`/estimate/${estimate.id}/archive`} class="inline-form">
-                              <input type="hidden" name="csrf_token" value={csrfToken} />
-                              <button class="btn" type="submit">Archive</button>
-                            </form>
-                          )
                         ) : null}
                       </div>
                     </td>

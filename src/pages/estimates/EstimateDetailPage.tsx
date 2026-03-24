@@ -61,9 +61,22 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
           <p class="muted">Internal estimate detail and pricing review.</p>
         </div>
         <div class="actions actions-mobile-stack">
-          <a class="btn" href="/estimates">Back</a>
+          <a class="btn" href={estimate.archived_at ? '/estimates?show_archived=1' : '/estimates'}>Back</a>
           {canEditEstimate ? (
             <a class="btn btn-primary" href={`/estimate/${estimate.id}/edit`}>Edit Estimate</a>
+          ) : null}
+          {csrfToken ? (
+            estimate.archived_at ? (
+              <form method="post" action={`/estimate/${estimate.id}/restore`} class="inline-form">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit">Restore Estimate</button>
+              </form>
+            ) : (
+              <form method="post" action={`/estimate/${estimate.id}/archive`} class="inline-form">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <button class="btn" type="submit">Archive Estimate</button>
+              </form>
+            )
           ) : null}
         </div>
       </div>
@@ -78,7 +91,11 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
         <div class="card mobile-kpi-card">
           <div class="metric-label">Status</div>
           <div style="margin-top:8px;">
-            <span class={statusBadgeClass(estimate.status)}>{statusLabel(estimate.status)}</span>
+            {estimate.archived_at ? (
+              <span class="badge badge-warn">Archived</span>
+            ) : (
+              <span class={statusBadgeClass(estimate.status)}>{statusLabel(estimate.status)}</span>
+            )}
           </div>
         </div>
         <div class="card mobile-kpi-card">

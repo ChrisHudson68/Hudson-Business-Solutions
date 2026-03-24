@@ -377,6 +377,20 @@ function buildDetailNotice(rawValue: string | undefined): { message?: string; to
     };
   }
 
+  if (normalized === 'archived') {
+    return {
+      message: 'Estimate archived successfully.',
+      tone: 'success',
+    };
+  }
+
+  if (normalized === 'restored') {
+    return {
+      message: 'Estimate restored successfully.',
+      tone: 'success',
+    };
+  }
+
   return {};
 }
 
@@ -405,7 +419,8 @@ estimateRoutes.get('/estimates', loginRequired, (c) => {
   const db = getDb();
 
   const status = parseFilterStatus(c.req.query('status'));
-  const rows = estimates.listByTenant(db, tenantId, status);
+  const showArchived = c.req.query('show_archived') === '1';
+  const rows = estimates.listByTenant(db, tenantId, status, showArchived);
 
   const summary = rows.reduce(
     (acc: { totalCount: number; totalValue: number; statusCounts: Record<string, number> }, row: any) => {
@@ -436,6 +451,9 @@ estimateRoutes.get('/estimates', loginRequired, (c) => {
       approvedCount={summary.statusCounts.approved || 0}
       rejectedCount={summary.statusCounts.rejected || 0}
       canCreateEstimates={isManagerOrAdmin(currentUser)}
+      canManageEstimateArchive={isManagerOrAdmin(currentUser)}
+      showArchived={showArchived}
+      csrfToken={c.get('csrfToken')}
     />,
   );
 });
@@ -877,6 +895,72 @@ estimateRoutes.post('/estimate/:id/convert', roleRequired('Admin', 'Manager'), a
   });
 
   return c.redirect(`/job/${jobId}`);
+});
+
+estimateRoutes.post('/estimate/:id/archive', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!estimateId) return c.text('Estimate not found', 404);
+
+  const estimate = estimates.findById(db, estimateId, tenantId);
+  if (!estimate) return c.text('Estimate not found', 404);
+  if (estimate.archived_at) return c.redirect('/estimates?show_archived=1');
+
+  estimates.archive(db, estimateId, tenantId, currentUser?.id ?? null);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser?.id,
+    eventType: 'estimate.archived',
+    entityType: 'estimate',
+    entityId: estimateId,
+    description: `${currentUser?.name || 'User'} archived estimate ${estimate.estimate_number}.`,
+    metadata: {
+      estimate_number: estimate.estimate_number,
+      customer_name: estimate.customer_name,
+      status: estimate.status,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect('/estimates?notice=archived');
+});
+
+estimateRoutes.post('/estimate/:id/restore', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const estimateId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!estimateId) return c.text('Estimate not found', 404);
+
+  const estimate = estimates.findById(db, estimateId, tenantId);
+  if (!estimate) return c.text('Estimate not found', 404);
+  if (!estimate.archived_at) return c.redirect(`/estimate/${estimateId}`);
+
+  estimates.restore(db, estimateId, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser?.id,
+    eventType: 'estimate.restored',
+    entityType: 'estimate',
+    entityId: estimateId,
+    description: `${currentUser?.name || 'User'} restored estimate ${estimate.estimate_number}.`,
+    metadata: {
+      estimate_number: estimate.estimate_number,
+      customer_name: estimate.customer_name,
+      status: estimate.status,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(`/estimate/${estimateId}?notice=restored`);
 });
 
 export default estimateRoutes;
