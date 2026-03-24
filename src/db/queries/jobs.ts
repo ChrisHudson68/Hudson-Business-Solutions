@@ -33,12 +33,23 @@ export function listWithFinancials(db: DB, tenantId: number, includeArchived = f
       (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.job_id = j.id AND ex.tenant_id = j.tenant_id AND ex.archived_at IS NULL) AS total_expenses,
       (SELECT COALESCE(SUM(t.labor_cost), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_labor,
       (SELECT COALESCE(SUM(t.hours), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_hours,
-      (SELECT COALESCE(SUM(inv.amount), 0) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_invoiced,
+      (SELECT COALESCE(SUM(inv.amount), 0)
+         FROM invoices inv
+        WHERE inv.job_id = j.id
+          AND inv.tenant_id = j.tenant_id
+          AND inv.archived_at IS NULL) AS total_invoiced,
       (SELECT COALESCE(SUM(p.amount), 0)
          FROM payments p
          JOIN invoices inv ON inv.id = p.invoice_id
-        WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
-      (SELECT COUNT(*) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id AND inv.status = 'Unpaid') AS unpaid_invoices
+        WHERE inv.job_id = j.id
+          AND inv.tenant_id = j.tenant_id
+          AND inv.archived_at IS NULL) AS total_collected,
+      (SELECT COUNT(*)
+         FROM invoices inv
+        WHERE inv.job_id = j.id
+          AND inv.tenant_id = j.tenant_id
+          AND inv.archived_at IS NULL
+          AND inv.status = 'Unpaid') AS unpaid_invoices
     FROM jobs j
     LEFT JOIN estimates e
       ON e.id = j.source_estimate_id
@@ -68,12 +79,23 @@ export function findWithFinancialsById(db: DB, jobId: number, tenantId: number) 
       (SELECT COALESCE(SUM(ex.amount), 0) FROM expenses ex WHERE ex.job_id = j.id AND ex.tenant_id = j.tenant_id AND ex.archived_at IS NULL) AS total_expenses,
       (SELECT COALESCE(SUM(t.labor_cost), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_labor,
       (SELECT COALESCE(SUM(t.hours), 0) FROM time_entries t WHERE t.job_id = j.id AND t.tenant_id = j.tenant_id) AS total_hours,
-      (SELECT COALESCE(SUM(inv.amount), 0) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_invoiced,
+      (SELECT COALESCE(SUM(inv.amount), 0)
+         FROM invoices inv
+        WHERE inv.job_id = j.id
+          AND inv.tenant_id = j.tenant_id
+          AND inv.archived_at IS NULL) AS total_invoiced,
       (SELECT COALESCE(SUM(p.amount), 0)
          FROM payments p
          JOIN invoices inv ON inv.id = p.invoice_id
-        WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id) AS total_collected,
-      (SELECT COUNT(*) FROM invoices inv WHERE inv.job_id = j.id AND inv.tenant_id = j.tenant_id AND inv.status = 'Unpaid') AS unpaid_invoices
+        WHERE inv.job_id = j.id
+          AND inv.tenant_id = j.tenant_id
+          AND inv.archived_at IS NULL) AS total_collected,
+      (SELECT COUNT(*)
+         FROM invoices inv
+        WHERE inv.job_id = j.id
+          AND inv.tenant_id = j.tenant_id
+          AND inv.archived_at IS NULL
+          AND inv.status = 'Unpaid') AS unpaid_invoices
     FROM jobs j
     LEFT JOIN estimates e
       ON e.id = j.source_estimate_id

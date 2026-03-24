@@ -5,7 +5,6 @@ import * as jobs from '../db/queries/jobs.js';
 import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
 import * as timeEntries from '../db/queries/time-entries.js';
-import * as invoices from '../db/queries/invoices.js';
 import * as payments from '../db/queries/payments.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
@@ -31,6 +30,48 @@ function renderApp(c: any, subtitle: string, content: any) {
       {content}
     </AppLayout>,
   );
+}
+
+
+function sumActiveInvoiceAmountByTenantMonth(db: ReturnType<typeof getDb>, tenantId: number, yearMonth: string): number {
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM invoices
+      WHERE tenant_id = ?
+        AND archived_at IS NULL
+        AND substr(date_issued, 1, 7) = ?`,
+  ).get(tenantId, yearMonth) as { total: number } | undefined;
+
+  return Number(row?.total || 0);
+}
+
+function listActiveInvoicesByTenant(db: ReturnType<typeof getDb>, tenantId: number) {
+  return db.prepare(
+    `SELECT i.id, i.job_id, j.job_name, j.client_name,
+            i.invoice_number, i.date_issued, i.due_date, i.amount, i.status,
+            i.notes, i.attachment_filename, i.archived_at, i.archived_by_user_id
+       FROM invoices i
+       JOIN jobs j
+         ON j.id = i.job_id
+        AND j.tenant_id = i.tenant_id
+      WHERE i.tenant_id = ?
+        AND i.archived_at IS NULL
+      ORDER BY i.due_date DESC, i.id DESC`,
+  ).all(tenantId) as Array<{
+    id: number;
+    job_id: number;
+    job_name: string | null;
+    client_name: string | null;
+    invoice_number: string | null;
+    date_issued: string;
+    due_date: string;
+    amount: number;
+    status: string | null;
+    notes?: string | null;
+    attachment_filename?: string | null;
+    archived_at?: string | null;
+    archived_by_user_id?: number | null;
+  }>;
 }
 
 function parsePositiveInt(value: string | null | undefined): number | null {
@@ -149,17 +190,7 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
 
   const expenseMtd = Number(expenseMtdRow?.total || 0);
 
-  const invoiceMtdRow = db
-    .prepare(
-      `SELECT COALESCE(SUM(amount), 0) as total
-       FROM invoices
-       WHERE tenant_id = ?
-         AND archived_at IS NULL
-         AND substr(date_issued, 1, 7) = ?`,
-    )
-    .get(tenantId, yearMonth) as { total: number };
-
-  const invoicedMtd = Number(invoiceMtdRow?.total || 0);
+  const invoicedMtd = sumActiveInvoiceAmountByTenantMonth(db, tenantId, yearMonth);
 
   const collectedMtdRow = db
     .prepare(
@@ -169,7 +200,7 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
 
   const collectedMtd = Number(collectedMtdRow?.total || 0);
 
-  const allInvoices = invoices.listByTenant(db, tenantId);
+  const allInvoices = listActiveInvoicesByTenant(db, tenantId);
 
   const invoicesDue: {
     id: number;
