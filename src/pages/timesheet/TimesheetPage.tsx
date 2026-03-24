@@ -99,6 +99,7 @@ interface TimesheetPageProps {
   nextWeekStart: string;
   error?: string;
   success?: string;
+  showAdminHoursLink?: boolean;
 }
 
 const pageScript = `
@@ -192,6 +193,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
   nextWeekStart,
   error,
   success,
+  showAdminHoursLink,
 }) => {
   const viewingOwnEntries = !!(currentEmployeeContext && employeeId === currentEmployeeContext.employeeId);
   const selectedEmployee = employees.find((employee) => employee.id === employeeId) || null;
@@ -214,6 +216,9 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
           <a class="btn" href={`/timesheet?start=${prevWeekStart}${calendarTargetEmployeeId}`}>Previous Week</a>
           <a class="btn" href={`/timesheet${employeeId ? `?employee_id=${employeeId}` : ''}`}>This Week</a>
           <a class="btn btn-primary" href={`/timesheet?start=${nextWeekStart}${calendarTargetEmployeeId}`}>Next Week</a>
+          {showAdminHoursLink ? (
+            <a class="btn" href={`/timesheet/admin-hours?start=${start}`}>Weekly Hours</a>
+          ) : null}
         </div>
       </div>
 

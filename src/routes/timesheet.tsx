@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
-import { permissionRequired, userHasPermission } from '../middleware/auth.js';
+import { permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
 import { TimesheetPage } from '../pages/timesheet/TimesheetPage.js';
+import { AdminWeeklyHoursPage } from '../pages/timesheet/AdminWeeklyHoursPage.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 
@@ -102,6 +103,22 @@ interface TimesheetViewState {
   selectedWeekLabel: string;
   prevWeekStart: string;
   nextWeekStart: string;
+}
+
+interface AdminHoursRow {
+  employee_id: number;
+  employee_name: string;
+  monday_hours: number;
+  tuesday_hours: number;
+  wednesday_hours: number;
+  thursday_hours: number;
+  friday_hours: number;
+  saturday_hours: number;
+  sunday_hours: number;
+  total_hours: number;
+  entry_count: number;
+  approved_at: string | null;
+  approved_by_name: string | null;
 }
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
@@ -612,12 +629,120 @@ function buildTimesheetState(
   };
 }
 
+function loadAdminWeeklyHours(db: any, tenantId: number, start: string): AdminHoursRow[] {
+  const dates = weekDates(start);
+  return db.prepare(`
+    SELECT
+      e.id AS employee_id,
+      e.name AS employee_name,
+      COALESCE(SUM(CASE WHEN t.date = ? THEN t.hours ELSE 0 END), 0) AS monday_hours,
+      COALESCE(SUM(CASE WHEN t.date = ? THEN t.hours ELSE 0 END), 0) AS tuesday_hours,
+      COALESCE(SUM(CASE WHEN t.date = ? THEN t.hours ELSE 0 END), 0) AS wednesday_hours,
+      COALESCE(SUM(CASE WHEN t.date = ? THEN t.hours ELSE 0 END), 0) AS thursday_hours,
+      COALESCE(SUM(CASE WHEN t.date = ? THEN t.hours ELSE 0 END), 0) AS friday_hours,
+      COALESCE(SUM(CASE WHEN t.date = ? THEN t.hours ELSE 0 END), 0) AS saturday_hours,
+      COALESCE(SUM(CASE WHEN t.date = ? THEN t.hours ELSE 0 END), 0) AS sunday_hours,
+      COALESCE(SUM(t.hours), 0) AS total_hours,
+      COUNT(t.id) AS entry_count,
+      w.approved_at,
+      u.name AS approved_by_name
+    FROM employees e
+    LEFT JOIN time_entries t
+      ON t.employee_id = e.id
+     AND t.tenant_id = e.tenant_id
+     AND t.date BETWEEN ? AND ?
+    LEFT JOIN time_entry_week_approvals w
+      ON w.employee_id = e.id
+     AND w.tenant_id = e.tenant_id
+     AND w.week_start = ?
+    LEFT JOIN users u
+      ON u.id = w.approved_by_user_id
+     AND u.tenant_id = w.tenant_id
+    WHERE e.tenant_id = ?
+      AND (
+        e.active = 1
+        OR EXISTS (
+          SELECT 1
+          FROM time_entries te
+          WHERE te.employee_id = e.id
+            AND te.tenant_id = e.tenant_id
+            AND te.date BETWEEN ? AND ?
+        )
+      )
+    GROUP BY e.id, e.name, w.approved_at, u.name
+    ORDER BY e.name ASC
+  `).all(
+    dates[0],
+    dates[1],
+    dates[2],
+    dates[3],
+    dates[4],
+    dates[5],
+    dates[6],
+    dates[0],
+    dates[6],
+    start,
+    tenantId,
+    dates[0],
+    dates[6],
+  ) as AdminHoursRow[];
+}
+
+function csvCell(value: unknown): string {
+  const raw = String(value ?? '');
+  return /[",\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
+}
+
+function buildAdminWeeklyHoursCsv(start: string, rows: AdminHoursRow[]): string {
+  const header = [
+    'Employee ID',
+    'Employee Name',
+    'Week Start',
+    'Monday Hours',
+    'Tuesday Hours',
+    'Wednesday Hours',
+    'Thursday Hours',
+    'Friday Hours',
+    'Saturday Hours',
+    'Sunday Hours',
+    'Total Hours',
+    'Entry Count',
+    'Approved',
+    'Approved By',
+  ];
+
+  const lines = [header.join(',')];
+
+  for (const row of rows) {
+    lines.push([
+      row.employee_id,
+      row.employee_name,
+      start,
+      Number(row.monday_hours || 0).toFixed(2),
+      Number(row.tuesday_hours || 0).toFixed(2),
+      Number(row.wednesday_hours || 0).toFixed(2),
+      Number(row.thursday_hours || 0).toFixed(2),
+      Number(row.friday_hours || 0).toFixed(2),
+      Number(row.saturday_hours || 0).toFixed(2),
+      Number(row.sunday_hours || 0).toFixed(2),
+      Number(row.total_hours || 0).toFixed(2),
+      row.entry_count,
+      row.approved_at ? 'Yes' : 'No',
+      row.approved_by_name || '',
+    ].map(csvCell).join(','));
+  }
+
+  return lines.join('\n');
+}
+
 function renderTimesheetPage(
   c: any,
   state: TimesheetViewState,
   extras?: { error?: string; success?: string },
   status: 200 | 400 = 200,
 ) {
+  const currentUser = c.get('user');
+
   return renderApp(
     c,
     state.isEmployeeUser ? 'Time Clock' : 'Weekly Timesheet',
@@ -648,6 +773,7 @@ function renderTimesheetPage(
       nextWeekStart={state.nextWeekStart}
       error={extras?.error}
       success={extras?.success}
+      showAdminHoursLink={currentUser?.role === 'Admin'}
     />,
     status,
   );
@@ -684,6 +810,48 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
   }
 
   return renderTimesheetPage(c, state);
+});
+
+timesheetRoutes.get('/timesheet/admin-hours', roleRequired('Admin'), (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
+
+  const rawStart = c.req.query('start') || toIsoDate(new Date());
+  const start = isRealIsoDate(rawStart) ? weekStart(rawStart) : weekStart(toIsoDate(new Date()));
+  const rows = loadAdminWeeklyHours(getDb(), tenant.id, start);
+  const totalHours = Number(rows.reduce((sum, row) => sum + Number(row.total_hours || 0), 0).toFixed(2));
+  const approvedCount = rows.filter((row) => !!row.approved_at).length;
+
+  return renderApp(
+    c,
+    'Weekly Employee Hours',
+    <AdminWeeklyHoursPage
+      start={start}
+      end={addDays(start, 6)}
+      prevWeekStart={addDays(start, -7)}
+      nextWeekStart={addDays(start, 7)}
+      rows={rows}
+      totalHours={totalHours}
+      approvedCount={approvedCount}
+      employeeCount={rows.length}
+    />,
+  );
+});
+
+timesheetRoutes.get('/timesheet/admin-hours/export.csv', roleRequired('Admin'), (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
+
+  const rawStart = c.req.query('start') || toIsoDate(new Date());
+  const start = isRealIsoDate(rawStart) ? weekStart(rawStart) : weekStart(toIsoDate(new Date()));
+  const rows = loadAdminWeeklyHours(getDb(), tenant.id, start);
+  const csv = buildAdminWeeklyHoursCsv(start, rows);
+
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header('Content-Disposition', `attachment; filename="weekly_employee_hours_${start}.csv"`);
+  c.header('Cache-Control', 'no-store');
+
+  return c.body(csv);
 });
 
 timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c) => {
