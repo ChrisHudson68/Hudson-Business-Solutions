@@ -52,7 +52,7 @@ export const MyAccountPage: FC<MyAccountPageProps> = ({ currentUser, formData, e
           {success ? <div style={alertSuccessStyle}>{success}</div> : null}
 
           <form method="post" action="/my-account" style="display:grid;gap:18px;">
-            <input type="hidden" name="_csrf" value={csrfToken} />
+            <input type="hidden" name="csrf_token" value={csrfToken} />
 
             <div style="display:grid;gap:14px;">
               <div>
