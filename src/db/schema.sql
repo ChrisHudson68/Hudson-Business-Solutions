@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS employees (
     hourly_rate REAL,
     annual_salary REAL,
     active INTEGER NOT NULL DEFAULT 1,
+    lunch_deduction_exempt INTEGER NOT NULL DEFAULT 0,
     tenant_id INTEGER,
     archived_at TEXT,
     archived_by_user_id INTEGER,

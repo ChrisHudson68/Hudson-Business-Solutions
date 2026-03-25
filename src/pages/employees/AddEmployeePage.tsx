@@ -8,6 +8,7 @@ interface AddEmployeePageProps {
     pay_type?: string;
     hourly_rate?: string;
     annual_salary?: string;
+    lunch_deduction_exempt?: string;
   };
 }
 
@@ -21,6 +22,7 @@ export const AddEmployeePage: FC<AddEmployeePageProps> = ({
     pay_type: formData?.pay_type ?? 'Hourly',
     hourly_rate: formData?.hourly_rate ?? '0',
     annual_salary: formData?.annual_salary ?? '0',
+    lunch_deduction_exempt: formData?.lunch_deduction_exempt ?? '0',
   };
 
   return (
@@ -66,6 +68,20 @@ export const AddEmployeePage: FC<AddEmployeePageProps> = ({
               <label>Annual Salary</label>
               <input name="annual_salary" type="number" step="0.01" min="0" value={values.annual_salary} />
             </div>
+          </div>
+
+          <label style="margin-top:14px;">Lunch Deduction</label>
+          <label style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+            <input
+              type="checkbox"
+              name="lunch_deduction_exempt"
+              value="1"
+              checked={values.lunch_deduction_exempt === '1'}
+            />
+            <span>Exempt this employee from the automatic 1-hour lunch deduction on shifts of 6 hours or more.</span>
+          </label>
+          <div class="muted" style="margin-top:6px;">
+            Leave this unchecked for most employees. Check it only for the 1–2 employees who should keep full hours.
           </div>
 
           <div class="actions actions-mobile-stack" style="margin-top:16px;">

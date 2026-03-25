@@ -146,6 +146,23 @@ function hourlyEquivalent(payType: string, hourlyRate: number | null, annualSala
   return Number(annualSalary || 0) / 2080;
 }
 
+function parseBooleanFlag(value: unknown): number {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'on' || normalized === 'yes' ? 1 : 0;
+}
+
+function applyAutomaticLunchDeduction(hours: number, lunchDeductionExempt: boolean): number {
+  if (lunchDeductionExempt) {
+    return Number(hours.toFixed(2));
+  }
+
+  if (hours >= 6) {
+    return Number(Math.max(hours - 1, 0).toFixed(2));
+  }
+
+  return Number(hours.toFixed(2));
+}
+
 function isRealIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
 
@@ -323,20 +340,29 @@ function ensureJobExists(db: any, jobId: number, tenantId: number) {
   }
 }
 
-function getEmployeeRate(db: any, employeeId: number, tenantId: number) {
+function getEmployeeCompensationSettings(db: any, employeeId: number, tenantId: number) {
   const employee = db.prepare(`
-    SELECT id, pay_type, hourly_rate, annual_salary
+    SELECT id, pay_type, hourly_rate, annual_salary, COALESCE(lunch_deduction_exempt, 0) AS lunch_deduction_exempt
     FROM employees
     WHERE id = ? AND tenant_id = ? AND active = 1
   `).get(employeeId, tenantId) as
-    | { id: number; pay_type: string; hourly_rate: number | null; annual_salary: number | null }
+    | {
+        id: number;
+        pay_type: string;
+        hourly_rate: number | null;
+        annual_salary: number | null;
+        lunch_deduction_exempt: number;
+      }
     | undefined;
 
   if (!employee) {
     throw new Error('Selected employee was not found.');
   }
 
-  return hourlyEquivalent(employee.pay_type, employee.hourly_rate, employee.annual_salary);
+  return {
+    rate: hourlyEquivalent(employee.pay_type, employee.hourly_rate, employee.annual_salary),
+    lunchDeductionExempt: Number(employee.lunch_deduction_exempt || 0) === 1,
+  };
 }
 
 function loadExistingEntries(db: any, tenantId: number, employeeId: number | null, start: string): ExistingEntry[] {
@@ -871,7 +897,7 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
 
     assertWeekNotApproved(db, tenant.id, employeeId, start);
 
-    const rate = getEmployeeRate(db, employeeId, tenant.id);
+    const { rate, lunchDeductionExempt } = getEmployeeCompensationSettings(db, employeeId, tenant.id);
     const allowedDates = new Set(weekDates(start));
     const rowDates = bodyValues(body, 'row_date');
     const rowTimeIns = bodyValues(body, 'row_time_in_local');
@@ -903,7 +929,8 @@ timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c)
 
       const clockInUtc = localDateTimeToUtc(rawDate, rawTimeIn);
       const clockOutUtc = localDateTimeToUtc(rawDate, rawTimeOut);
-      const hours = hoursBetween(clockInUtc, clockOutUtc);
+      const rawHours = hoursBetween(clockInUtc, clockOutUtc);
+      const hours = applyAutomaticLunchDeduction(rawHours, lunchDeductionExempt);
       const note = normalizeNote(rawNote);
       const jobId = rawJobId ? parsePositiveInt(rawJobId) : null;
 
@@ -1142,7 +1169,7 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
     }
 
     const hours = hoursBetween(activeClockEntry.clock_in_at, nowUtc);
-    const rate = getEmployeeRate(db, employeeId, tenant.id);
+    const { rate, lunchDeductionExempt } = getEmployeeCompensationSettings(db, employeeId, tenant.id);
     const laborCost = Number((hours * rate).toFixed(2));
 
     db.prepare(`
@@ -1153,7 +1180,7 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
           approved_by_user_id = ?,
           approved_at = CURRENT_TIMESTAMP
       WHERE id = ? AND tenant_id = ?
-    `).run(nowUtc, hours, laborCost, currentUser.id, activeClockEntry.id, tenant.id);
+    `).run(nowUtc, deductedHours, laborCost, currentUser.id, activeClockEntry.id, tenant.id);
 
     const state = buildTimesheetState(db, tenant.id, currentUser);
     return renderTimesheetPage(c, state, {
@@ -1351,8 +1378,9 @@ timesheetRoutes.post('/timeclock/edit-request/:id/approve', permissionRequired('
   try {
     assertWeekNotApproved(db, tenant.id, request.employee_id, weekStart(request.proposed_date));
 
-    const rate = getEmployeeRate(db, request.employee_id, tenant.id);
-    const laborCost = Number((request.proposed_hours * rate).toFixed(2));
+    const { rate, lunchDeductionExempt } = getEmployeeCompensationSettings(db, request.employee_id, tenant.id);
+    const approvedHours = applyAutomaticLunchDeduction(Number(request.proposed_hours || 0), lunchDeductionExempt);
+    const laborCost = Number((approvedHours * rate).toFixed(2));
 
     db.prepare(`
       UPDATE time_entries
@@ -1375,7 +1403,7 @@ timesheetRoutes.post('/timeclock/edit-request/:id/approve', permissionRequired('
       request.proposed_date,
       request.proposed_clock_in_at,
       request.proposed_clock_out_at,
-      request.proposed_hours,
+      approvedHours,
       laborCost,
       request.proposed_note,
       currentUser.id,

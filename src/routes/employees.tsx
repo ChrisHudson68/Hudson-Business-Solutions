@@ -79,6 +79,11 @@ function parseNonNegativeMoney(value: unknown, fieldLabel: string): number {
   return Number(parsed.toFixed(2));
 }
 
+function parseCheckboxFlag(value: unknown): number {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'on' || normalized === 'yes' ? 1 : 0;
+}
+
 function normalizeEmployeeInput(body: Record<string, unknown>) {
   const payType = parsePayType(body.pay_type);
   const hourlyRate = parseNonNegativeMoney(body.hourly_rate, 'Hourly rate');
@@ -97,6 +102,7 @@ function normalizeEmployeeInput(body: Record<string, unknown>) {
     pay_type: payType,
     hourly_rate: payType === 'Hourly' ? hourlyRate : 0,
     annual_salary: payType === 'Salary' ? annualSalary : 0,
+    lunch_deduction_exempt: parseCheckboxFlag(body.lunch_deduction_exempt),
   };
 }
 
@@ -107,12 +113,13 @@ function buildEmployeeFormData(source: Record<string, unknown>) {
     hourly_rate: String(source.hourly_rate ?? '0'),
     annual_salary: String(source.annual_salary ?? '0'),
     active: String(source.active ?? '1'),
+    lunch_deduction_exempt: String(parseCheckboxFlag(source.lunch_deduction_exempt)),
   };
 }
 
 function getEmployeeById(db: any, employeeId: number, tenantId: number) {
   return db.prepare(`
-    SELECT id, name, pay_type, hourly_rate, annual_salary, active, archived_at, archived_by_user_id
+    SELECT id, name, pay_type, hourly_rate, annual_salary, active, COALESCE(lunch_deduction_exempt, 0) AS lunch_deduction_exempt, archived_at, archived_by_user_id
     FROM employees
     WHERE id = ? AND tenant_id = ?
   `).get(employeeId, tenantId) as
@@ -123,6 +130,7 @@ function getEmployeeById(db: any, employeeId: number, tenantId: number) {
         hourly_rate: number | null;
         annual_salary: number | null;
         active: number;
+        lunch_deduction_exempt: number;
         archived_at: string | null;
         archived_by_user_id: number | null;
       }
@@ -181,6 +189,7 @@ employeeRoutes.get('/add_employee', permissionRequired('employees.create'), (c) 
         pay_type: 'Hourly',
         hourly_rate: '0',
         annual_salary: '0',
+        lunch_deduction_exempt: '0',
       }}
       csrfToken={c.get('csrfToken')}
     />
@@ -202,14 +211,15 @@ employeeRoutes.post('/add_employee', permissionRequired('employees.create'), asy
     const db = getDb();
     const result = db.prepare(`
       INSERT INTO employees (
-        name, pay_type, hourly_rate, annual_salary, active, tenant_id, archived_at, archived_by_user_id
+        name, pay_type, hourly_rate, annual_salary, active, lunch_deduction_exempt, tenant_id, archived_at, archived_by_user_id
       )
-      VALUES (?, ?, ?, ?, 1, ?, NULL, NULL)
+      VALUES (?, ?, ?, ?, 1, ?, ?, NULL, NULL)
     `).run(
       normalized.name,
       normalized.pay_type,
       normalized.hourly_rate,
       normalized.annual_salary,
+      normalized.lunch_deduction_exempt,
       tenantId,
     );
 
@@ -225,6 +235,7 @@ employeeRoutes.post('/add_employee', permissionRequired('employees.create'), asy
         pay_type: normalized.pay_type,
         hourly_rate: normalized.hourly_rate,
         annual_salary: normalized.annual_salary,
+        lunch_deduction_exempt: normalized.lunch_deduction_exempt,
         active: 1,
       },
       ipAddress: resolveRequestIp(c),
@@ -304,12 +315,13 @@ employeeRoutes.post('/edit_employee/:id', permissionRequired('employees.edit'), 
       pay_type: existingEmployee.pay_type,
       hourly_rate: Number(existingEmployee.hourly_rate || 0),
       annual_salary: Number(existingEmployee.annual_salary || 0),
+      lunch_deduction_exempt: Number(existingEmployee.lunch_deduction_exempt || 0),
       active: Number(existingEmployee.active || 0),
     };
 
     db.prepare(`
       UPDATE employees
-      SET name = ?, pay_type = ?, hourly_rate = ?, annual_salary = ?, active = ?
+      SET name = ?, pay_type = ?, hourly_rate = ?, annual_salary = ?, active = ?, lunch_deduction_exempt = ?
       WHERE id = ? AND tenant_id = ?
     `).run(
       normalized.name,
@@ -317,6 +329,7 @@ employeeRoutes.post('/edit_employee/:id', permissionRequired('employees.edit'), 
       normalized.hourly_rate,
       normalized.annual_salary,
       active,
+      normalized.lunch_deduction_exempt,
       employeeId,
       tenantId,
     );
@@ -326,6 +339,7 @@ employeeRoutes.post('/edit_employee/:id', permissionRequired('employees.edit'), 
       pay_type: normalized.pay_type,
       hourly_rate: normalized.hourly_rate,
       annual_salary: normalized.annual_salary,
+      lunch_deduction_exempt: normalized.lunch_deduction_exempt,
       active,
     };
 
@@ -380,6 +394,7 @@ employeeRoutes.post('/edit_employee/:id', permissionRequired('employees.edit'), 
           active: String(formData.active) === '1' ? 1 : 0,
           hourly_rate: Number(formData.hourly_rate || 0),
           annual_salary: Number(formData.annual_salary || 0),
+          lunch_deduction_exempt: Number(formData.lunch_deduction_exempt || 0),
         }}
         error={message}
         csrfToken={c.get('csrfToken')}
@@ -432,6 +447,7 @@ employeeRoutes.post('/archive_employee/:id', permissionRequired('employees.archi
       pay_type: employee.pay_type,
       hourly_rate: Number(employee.hourly_rate || 0),
       annual_salary: Number(employee.annual_salary || 0),
+      lunch_deduction_exempt: Number(employee.lunch_deduction_exempt || 0),
     },
     ipAddress: resolveRequestIp(c),
   });
@@ -476,6 +492,7 @@ employeeRoutes.post('/restore_employee/:id', permissionRequired('employees.archi
       pay_type: employee.pay_type,
       hourly_rate: Number(employee.hourly_rate || 0),
       annual_salary: Number(employee.annual_salary || 0),
+      lunch_deduction_exempt: Number(employee.lunch_deduction_exempt || 0),
     },
     ipAddress: resolveRequestIp(c),
   });
