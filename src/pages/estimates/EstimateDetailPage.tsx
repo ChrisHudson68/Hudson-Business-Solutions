@@ -170,9 +170,9 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
 
       <div class="grid" style="grid-template-columns:1.2fr .8fr; gap:14px; align-items:start;">
         <div class="card">
-          <h3 style="margin-top:0;">Job Description</h3>
+          <h3 style="margin-top:0;">Scope of Work</h3>
           <div class="muted" style="white-space:pre-wrap;">
-            {estimate.scope_of_work || 'No job description entered yet.'}
+            {estimate.scope_of_work || 'No scope of work entered yet.'}
           </div>
         </div>
 
