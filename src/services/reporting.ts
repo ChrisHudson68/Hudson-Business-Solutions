@@ -248,6 +248,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       SELECT id, job_id, date_issued, due_date, amount
       FROM invoices
       WHERE tenant_id = ?
+        AND archived_at IS NULL
         AND date_issued >= ?
         AND date_issued <= ?
       ORDER BY date_issued ASC, id ASC
@@ -268,6 +269,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
         ON i.id = p.invoice_id
        AND i.tenant_id = p.tenant_id
       WHERE p.tenant_id = ?
+        AND i.archived_at IS NULL
         AND p.date >= ?
         AND p.date <= ?
       ORDER BY p.date ASC, p.id ASC
@@ -296,11 +298,15 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
 
   const paidToDateRows = db.prepare(
     `
-      SELECT invoice_id, COALESCE(SUM(amount), 0) AS total_paid
-      FROM payments
-      WHERE tenant_id = ?
-        AND date <= ?
-      GROUP BY invoice_id
+      SELECT p.invoice_id, COALESCE(SUM(p.amount), 0) AS total_paid
+      FROM payments p
+      JOIN invoices i
+        ON i.id = p.invoice_id
+       AND i.tenant_id = p.tenant_id
+      WHERE p.tenant_id = ?
+        AND i.archived_at IS NULL
+        AND p.date <= ?
+      GROUP BY p.invoice_id
     `
   ).all(tenantId, filter.endDate) as Array<{
     invoice_id: number;
