@@ -186,6 +186,58 @@ function splitBulletLikeLines(paragraph: string): string[] | null {
   return lines.map((line) => line.replace(/^[-*•]\s*/, '').trim()).filter(Boolean);
 }
 
+
+function splitNumberedLikeLines(paragraph: string): string[] | null {
+  const lines = paragraph
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) return null;
+  if (!lines.every((line) => /^\d+[.)]\s+/.test(line))) return null;
+
+  return lines.map((line) => line.replace(/^\d+[.)]\s+/, '').trim()).filter(Boolean);
+}
+
+function splitListLikeLines(paragraph: string): string[] | null {
+  return splitBulletLikeLines(paragraph) || splitNumberedLikeLines(paragraph);
+}
+
+function parseScopeBlock(block: string): { label?: string; bullets?: string[]; body?: string } {
+  const lines = String(block || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return {};
+
+  const first = lines[0] || '';
+  const rest = lines.slice(1);
+
+  if (/[:：]$/.test(first) && rest.length) {
+    const bullets = splitListLikeLines(rest.join('\n'));
+    if (bullets?.length) {
+      return {
+        label: first.replace(/[:：]+$/, '').trim(),
+        bullets,
+      };
+    }
+
+    return {
+      label: first.replace(/[:：]+$/, '').trim(),
+      body: rest.join(' '),
+    };
+  }
+
+  const directBullets = splitListLikeLines(lines.join('\n'));
+  if (directBullets?.length) {
+    return { bullets: directBullets };
+  }
+
+  return { body: lines.join(' ') };
+}
+
 function normalizeParagraphSpace(value: string): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -809,7 +861,20 @@ function drawInvestmentSummary(ctx: PdfContext): void {
   ctx.y = boxY - 14;
 }
 
-function drawLineItemsTableHeader(ctx: PdfContext, tableX: number, widths: number[], headers: string[], headerHeight: number): void {
+function drawLineItemsTable(ctx: PdfContext): void {
+  drawSectionHeading(
+    ctx,
+    'Detailed Investment',
+    'The following line items are generated from the estimate and reflect the current project pricing.',
+  );
+
+  const tableX = MARGIN_X;
+  const widths = [232, 48, 62, 78, 96];
+  const headers = ['Description', 'Qty', 'Unit', 'Unit Price', 'Line Total'];
+  const headerHeight = 24;
+
+  ensureSpace(ctx, 50);
+
   let headerX = tableX;
   headers.forEach((header, index) => {
     ctx.page.drawRectangle({
@@ -832,22 +897,6 @@ function drawLineItemsTableHeader(ctx: PdfContext, tableX: number, widths: numbe
   });
 
   ctx.y -= 28;
-}
-
-function drawLineItemsTable(ctx: PdfContext): void {
-  drawSectionHeading(
-    ctx,
-    'Detailed Investment',
-    'The following line items are generated from the estimate and reflect the current project pricing.',
-  );
-
-  const tableX = MARGIN_X;
-  const widths = [232, 48, 62, 78, 96];
-  const headers = ['Description', 'Qty', 'Unit', 'Unit Price', 'Line Total'];
-  const headerHeight = 24;
-
-  ensureSpace(ctx, 50);
-  drawLineItemsTableHeader(ctx, tableX, widths, headers, headerHeight);
 
   const totalWidth = widths.reduce((sum, width) => sum + width, 0);
 
@@ -856,11 +905,7 @@ function drawLineItemsTable(ctx: PdfContext): void {
     const descriptionLines = wrapText(description, ctx.fonts.regular, 10, widths[0] - 12);
     const rowHeight = Math.max(26, descriptionLines.length * 12 + 10);
 
-    if (ctx.y - (rowHeight + 4) < BOTTOM_MARGIN) {
-      addPage(ctx);
-      ensureSpace(ctx, 50);
-      drawLineItemsTableHeader(ctx, tableX, widths, headers, headerHeight);
-    }
+    ensureSpace(ctx, rowHeight + 4);
 
     ctx.page.drawRectangle({
       x: tableX,
@@ -1146,64 +1191,6 @@ function drawLabeledParagraph(ctx: PdfContext, label: string, text: string): voi
   ctx.y = lineY - 4;
 }
 
-function drawStructuredRichTextSection(ctx: PdfContext, source: string): boolean {
-  const sections = parseLabeledTermBlocks(source);
-  if (!sections.length) return false;
-
-  for (const section of sections) {
-    if (section.label) {
-      drawLabeledParagraph(ctx, section.label, section.body);
-      continue;
-    }
-
-    const bullets = splitBulletLikeLines(section.body);
-    if (bullets?.length) {
-      drawBulletList(ctx, bullets);
-    } else {
-      drawParagraph(ctx, section.body);
-    }
-  }
-
-  return true;
-}
-
-function drawScopeOfWorkSection(ctx: PdfContext): void {
-  drawSectionHeading(
-    ctx,
-    'Scope of Work',
-    'This proposal outlines the current project scope, pricing, and expectations based on the estimate on file.',
-  );
-
-  const source = String(ctx.estimate.scope_of_work || '').trim();
-
-  if (!source) {
-    drawParagraph(
-      ctx,
-      'Detailed project scope has not been entered yet. The line items below represent the current estimate breakdown for this project.',
-    );
-    return;
-  }
-
-  const scopeBlocks = normalizeScopeParagraphs(source);
-  if (!scopeBlocks.length) {
-    drawParagraph(ctx, source);
-    return;
-  }
-
-  for (const block of scopeBlocks) {
-    if (drawStructuredRichTextSection(ctx, block)) {
-      continue;
-    }
-
-    const bullets = splitBulletLikeLines(block);
-    if (bullets?.length) {
-      drawBulletList(ctx, bullets);
-    } else {
-      drawParagraph(ctx, block);
-    }
-  }
-}
-
 function drawTermsSection(ctx: PdfContext): void {
   const company = ctx.tenant.name || 'The contractor';
   const source = String(ctx.estimate.custom_terms || ctx.tenant.proposal_default_terms || '').trim();
@@ -1211,7 +1198,21 @@ function drawTermsSection(ctx: PdfContext): void {
   drawSectionHeading(ctx, 'Additional Terms & Conditions');
 
   if (source) {
-    drawStructuredRichTextSection(ctx, source);
+    const sections = parseLabeledTermBlocks(source);
+
+    for (const section of sections) {
+      if (section.label) {
+        drawLabeledParagraph(ctx, section.label, section.body);
+      } else {
+        const bullets = splitBulletLikeLines(section.body);
+        if (bullets?.length) {
+          drawBulletList(ctx, bullets);
+        } else {
+          drawParagraph(ctx, section.body);
+        }
+      }
+    }
+
     return;
   }
 
@@ -1386,7 +1387,36 @@ export async function generateEstimateProposalPdf(data: EstimateProposalPdfData)
   drawProposalCover(ctx);
 
   drawInfoGrid(ctx);
-  drawScopeOfWorkSection(ctx);
+
+  drawSectionHeading(
+    ctx,
+    'Scope of Work',
+    'This proposal outlines the current project scope, pricing, and expectations based on the estimate on file.',
+  );
+
+  const introCompany = data.tenant.name || 'Our company';
+  drawParagraph(
+    ctx,
+    `${introCompany} proposes to provide the labor, materials, coordination, and project execution necessary to complete the work described for ${data.estimate.customer_name || 'the customer'}.`,
+  );
+
+  const scopeParagraphs = normalizeScopeParagraphs(data.estimate.scope_of_work);
+  if (scopeParagraphs.length) {
+    for (const paragraph of scopeParagraphs) {
+      const bullets = splitBulletLikeLines(paragraph);
+      if (bullets?.length) {
+        drawBulletList(ctx, bullets);
+      } else {
+        drawParagraph(ctx, paragraph);
+      }
+    }
+  } else {
+    drawParagraph(
+      ctx,
+      'Detailed project scope has not been entered yet. The line items below represent the current estimate breakdown for this project.',
+    );
+  }
+
   drawInvestmentSummary(ctx);
   drawLineItemsTable(ctx);
 
@@ -1400,7 +1430,7 @@ export async function generateEstimateProposalPdf(data: EstimateProposalPdfData)
   drawSectionHeading(ctx, 'Acknowledgment & Agreement');
   const acknowledgment = String(
     data.tenant.proposal_default_acknowledgment
-      || `By accepting this proposal, the customer authorizes ${data.tenant.name || 'our company'} to move forward with planning, scheduling, and project coordination based on the current approved scope.`,
+      || `By accepting this proposal, the customer authorizes ${introCompany} to move forward with planning, scheduling, and project coordination based on the current approved scope.`,
   ).trim();
 
   drawAcknowledgmentBox(ctx, acknowledgment);
