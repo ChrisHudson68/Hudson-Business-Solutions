@@ -10,6 +10,7 @@ const MARGIN_X = 48;
 const TOP_MARGIN = 58;
 const BOTTOM_MARGIN = 72;
 const CONTENT_WIDTH = PAGE_WIDTH - (MARGIN_X * 2);
+const CONTINUED_PAGE_START_Y = PAGE_HEIGHT - 132;
 
 interface EstimateProposalPdfData {
   tenant: {
@@ -185,60 +186,74 @@ function splitBulletLikeLines(paragraph: string): string[] | null {
   return lines.map((line) => line.replace(/^[-*•]\s*/, '').trim()).filter(Boolean);
 }
 
-
-function parseLabeledTermSection(section: string): { heading: string; body: string } | null {
-  const lines = normalizeLooseLines(section);
-  if (!lines.length) return null;
-
-  if (lines.length === 1) {
-    const match = lines[0].match(/^([^:]{2,80}):(\s*)(.+)$/);
-    if (!match) return null;
-
-    return {
-      heading: `${match[1].trim()}:`,
-      body: match[3].trim(),
-    };
-  }
-
-  const first = lines[0].match(/^([^:]{2,80}):$/);
-  if (!first) return null;
-
-  return {
-    heading: `${first[1].trim()}:`,
-    body: lines.slice(1).join(' ').trim(),
-  };
+function normalizeParagraphSpace(value: string): string {
+  return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function drawLabeledTerm(ctx: PdfContext, heading: string, body: string): void {
-  const headingLines = wrapText(heading, ctx.fonts.bold, 10.25, CONTENT_WIDTH);
-  const bodyLines = wrapText(body, ctx.fonts.regular, 10.25, CONTENT_WIDTH);
-  const estimatedHeight = headingLines.length * 12 + bodyLines.length * 12 + 12;
+function parseLabeledTermBlocks(value: string | null | undefined): Array<{ label?: string; body: string }> {
+  const raw = String(value || '').replace(/\r/g, '').trim();
+  if (!raw) return [];
 
-  ensureSpace(ctx, estimatedHeight);
+  const blocks = raw
+    .split(/\n\s*\n+/)
+    .map((block) => block.trim())
+    .filter(Boolean);
 
-  for (const line of headingLines) {
-    ctx.page.drawText(line, {
-      x: MARGIN_X,
-      y: ctx.y,
-      size: 10.25,
-      font: ctx.fonts.bold,
-      color: ctx.theme.text,
+  const parsed: Array<{ label?: string; body: string }> = [];
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const lines = blocks[index]
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (!lines.length) continue;
+
+    const first = lines[0] || '';
+    const firstIsLabel = /[:：]$/.test(first);
+
+    if (firstIsLabel && lines.length > 1) {
+      parsed.push({
+        label: first.replace(/[:：]+$/, '').trim(),
+        body: normalizeParagraphSpace(lines.slice(1).join(' ')),
+      });
+      continue;
+    }
+
+    if (firstIsLabel && lines.length === 1) {
+      const next = blocks[index + 1];
+      if (next) {
+        parsed.push({
+          label: first.replace(/[:：]+$/, '').trim(),
+          body: normalizeParagraphSpace(next),
+        });
+        index += 1;
+        continue;
+      }
+    }
+
+    const colonIndex = first.indexOf(':');
+    if (colonIndex > 0 && colonIndex < 80) {
+      const label = first.slice(0, colonIndex).trim();
+      const remainder = [first.slice(colonIndex + 1).trim(), ...lines.slice(1)]
+        .join(' ')
+        .trim();
+
+      if (label && remainder) {
+        parsed.push({
+          label,
+          body: normalizeParagraphSpace(remainder),
+        });
+        continue;
+      }
+    }
+
+    parsed.push({
+      body: normalizeParagraphSpace(lines.join(' ')),
     });
-    ctx.y -= 12;
   }
 
-  for (const line of bodyLines) {
-    ctx.page.drawText(line, {
-      x: MARGIN_X,
-      y: ctx.y,
-      size: 10.25,
-      font: ctx.fonts.regular,
-      color: ctx.theme.text,
-    });
-    ctx.y -= 12;
-  }
-
-  ctx.y -= 6;
+  return parsed.filter((entry) => entry.body);
 }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -427,7 +442,7 @@ function drawFooter(ctx: PdfContext): void {
 function addPage(ctx: PdfContext): void {
   ctx.page = ctx.pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   ctx.pageNumber += 1;
-  ctx.y = PAGE_HEIGHT - TOP_MARGIN;
+  ctx.y = CONTINUED_PAGE_START_Y;
   drawHeader(ctx);
   drawFooter(ctx);
 }
@@ -468,7 +483,7 @@ function drawSectionHeading(ctx: PdfContext, title: string, subtitle?: string): 
     y: ctx.y,
     size: 16.5,
     font: ctx.fonts.bold,
-    color: ctx.theme.white,
+    color: ctx.theme.primary,
   });
 
   ctx.page.drawRectangle({
@@ -483,7 +498,7 @@ function drawSectionHeading(ctx: PdfContext, title: string, subtitle?: string): 
 
   if (subtitle) {
     const lines = wrapText(subtitle, ctx.fonts.regular, 10.25, CONTENT_WIDTH);
-    drawTextLines(ctx, lines, MARGIN_X, 10.25, ctx.fonts.regular, ctx.theme.white, 13);
+    drawTextLines(ctx, lines, MARGIN_X, 10.25, ctx.fonts.regular, ctx.theme.muted, 13);
     ctx.y -= 3;
   }
 }
@@ -1088,6 +1103,42 @@ function drawPaymentScheduleSection(ctx: PdfContext, source: string): void {
   ctx.y -= 4;
 }
 
+function drawLabeledParagraph(ctx: PdfContext, label: string, text: string): void {
+  const labelText = `${label}:`;
+  const labelWidth = ctx.fonts.bold.widthOfTextAtSize(labelText, 10.75);
+  const availableInlineWidth = CONTENT_WIDTH - labelWidth - 8;
+  const inlineLines = wrapText(text, ctx.fonts.regular, 10.75, Math.max(availableInlineWidth, 120));
+
+  ensureSpace(ctx, Math.max(20, inlineLines.length * 14 + 6));
+
+  ctx.page.drawText(labelText, {
+    x: MARGIN_X,
+    y: ctx.y,
+    size: 10.75,
+    font: ctx.fonts.bold,
+    color: ctx.theme.text,
+  });
+
+  if (!inlineLines.length) {
+    ctx.y -= 18;
+    return;
+  }
+
+  let lineY = ctx.y;
+  for (let index = 0; index < inlineLines.length; index += 1) {
+    ctx.page.drawText(inlineLines[index], {
+      x: index === 0 ? MARGIN_X + labelWidth + 8 : MARGIN_X,
+      y: lineY,
+      size: 10.75,
+      font: ctx.fonts.regular,
+      color: ctx.theme.text,
+    });
+    lineY -= 14;
+  }
+
+  ctx.y = lineY - 4;
+}
+
 function drawTermsSection(ctx: PdfContext): void {
   const company = ctx.tenant.name || 'The contractor';
   const source = String(ctx.estimate.custom_terms || ctx.tenant.proposal_default_terms || '').trim();
@@ -1095,22 +1146,19 @@ function drawTermsSection(ctx: PdfContext): void {
   drawSectionHeading(ctx, 'Additional Terms & Conditions');
 
   if (source) {
-    const sections = normalizeLooseSections(source);
+    const sections = parseLabeledTermBlocks(source);
 
     for (const section of sections) {
-      const labeled = parseLabeledTermSection(section);
-      if (labeled) {
-        drawLabeledTerm(ctx, labeled.heading, labeled.body);
-        continue;
+      if (section.label) {
+        drawLabeledParagraph(ctx, section.label, section.body);
+      } else {
+        const bullets = splitBulletLikeLines(section.body);
+        if (bullets?.length) {
+          drawBulletList(ctx, bullets);
+        } else {
+          drawParagraph(ctx, section.body);
+        }
       }
-
-      const bullets = splitBulletLikeLines(section);
-      if (bullets?.length) {
-        drawBulletList(ctx, bullets);
-        continue;
-      }
-
-      drawParagraph(ctx, section);
     }
 
     return;
