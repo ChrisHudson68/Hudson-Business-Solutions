@@ -8,7 +8,6 @@ const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const MARGIN_X = 48;
 const TOP_MARGIN = 58;
-const BODY_TOP_Y = PAGE_HEIGHT - 130;
 const BOTTOM_MARGIN = 72;
 const CONTENT_WIDTH = PAGE_WIDTH - (MARGIN_X * 2);
 
@@ -184,6 +183,62 @@ function splitBulletLikeLines(paragraph: string): string[] | null {
   if (!lines.every((line) => /^[-*•]/.test(line))) return null;
 
   return lines.map((line) => line.replace(/^[-*•]\s*/, '').trim()).filter(Boolean);
+}
+
+
+function parseLabeledTermSection(section: string): { heading: string; body: string } | null {
+  const lines = normalizeLooseLines(section);
+  if (!lines.length) return null;
+
+  if (lines.length === 1) {
+    const match = lines[0].match(/^([^:]{2,80}):(\s*)(.+)$/);
+    if (!match) return null;
+
+    return {
+      heading: `${match[1].trim()}:`,
+      body: match[3].trim(),
+    };
+  }
+
+  const first = lines[0].match(/^([^:]{2,80}):$/);
+  if (!first) return null;
+
+  return {
+    heading: `${first[1].trim()}:`,
+    body: lines.slice(1).join(' ').trim(),
+  };
+}
+
+function drawLabeledTerm(ctx: PdfContext, heading: string, body: string): void {
+  const headingLines = wrapText(heading, ctx.fonts.bold, 10.25, CONTENT_WIDTH);
+  const bodyLines = wrapText(body, ctx.fonts.regular, 10.25, CONTENT_WIDTH);
+  const estimatedHeight = headingLines.length * 12 + bodyLines.length * 12 + 12;
+
+  ensureSpace(ctx, estimatedHeight);
+
+  for (const line of headingLines) {
+    ctx.page.drawText(line, {
+      x: MARGIN_X,
+      y: ctx.y,
+      size: 10.25,
+      font: ctx.fonts.bold,
+      color: ctx.theme.text,
+    });
+    ctx.y -= 12;
+  }
+
+  for (const line of bodyLines) {
+    ctx.page.drawText(line, {
+      x: MARGIN_X,
+      y: ctx.y,
+      size: 10.25,
+      font: ctx.fonts.regular,
+      color: ctx.theme.text,
+    });
+    ctx.y -= 12;
+  }
+
+  ctx.y -= 6;
 }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -372,7 +427,7 @@ function drawFooter(ctx: PdfContext): void {
 function addPage(ctx: PdfContext): void {
   ctx.page = ctx.pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   ctx.pageNumber += 1;
-  ctx.y = BODY_TOP_Y;
+  ctx.y = PAGE_HEIGHT - TOP_MARGIN;
   drawHeader(ctx);
   drawFooter(ctx);
 }
@@ -413,7 +468,7 @@ function drawSectionHeading(ctx: PdfContext, title: string, subtitle?: string): 
     y: ctx.y,
     size: 16.5,
     font: ctx.fonts.bold,
-    color: ctx.theme.primary,
+    color: ctx.theme.white,
   });
 
   ctx.page.drawRectangle({
@@ -428,7 +483,7 @@ function drawSectionHeading(ctx: PdfContext, title: string, subtitle?: string): 
 
   if (subtitle) {
     const lines = wrapText(subtitle, ctx.fonts.regular, 10.25, CONTENT_WIDTH);
-    drawTextLines(ctx, lines, MARGIN_X, 10.25, ctx.fonts.regular, ctx.theme.muted, 13);
+    drawTextLines(ctx, lines, MARGIN_X, 10.25, ctx.fonts.regular, ctx.theme.white, 13);
     ctx.y -= 3;
   }
 }
@@ -739,55 +794,29 @@ function drawInvestmentSummary(ctx: PdfContext): void {
   ctx.y = boxY - 14;
 }
 
-function drawLineItemsHeader(
-  ctx: PdfContext,
-  tableX: number,
-  widths: number[],
-  headers: string[],
-  continued = false,
-): void {
+function drawLineItemsTable(ctx: PdfContext): void {
+  drawSectionHeading(
+    ctx,
+    'Detailed Investment',
+    'The following line items are generated from the estimate and reflect the current project pricing.',
+  );
+
+  const tableX = MARGIN_X;
+  const widths = [232, 48, 62, 78, 96];
+  const headers = ['Description', 'Qty', 'Unit', 'Unit Price', 'Line Total'];
   const headerHeight = 24;
-  const totalWidth = widths.reduce((sum, width) => sum + width, 0);
 
-  if (continued) {
-    const continuedLabel = 'Detailed Investment (continued)';
-    ctx.page.drawText(continuedLabel, {
-      x: MARGIN_X,
-      y: ctx.y,
-      size: 13,
-      font: ctx.fonts.bold,
-      color: ctx.theme.primary,
-    });
-
-    ctx.page.drawRectangle({
-      x: MARGIN_X,
-      y: ctx.y - 8,
-      width: 180,
-      height: 2.5,
-      color: ctx.theme.secondary,
-    });
-
-    ctx.y -= 18;
-  }
-
-  ctx.page.drawRectangle({
-    x: tableX,
-    y: ctx.y - headerHeight + 6,
-    width: totalWidth,
-    height: headerHeight,
-    color: ctx.theme.primary,
-  });
+  ensureSpace(ctx, 50);
 
   let headerX = tableX;
   headers.forEach((header, index) => {
-    if (index > 0) {
-      ctx.page.drawLine({
-        start: { x: headerX, y: ctx.y - headerHeight + 6 },
-        end: { x: headerX, y: ctx.y + 6 },
-        thickness: 1,
-        color: ctx.theme.border,
-      });
-    }
+    ctx.page.drawRectangle({
+      x: headerX,
+      y: ctx.y - headerHeight + 6,
+      width: widths[index],
+      height: headerHeight,
+      color: ctx.theme.primary,
+    });
 
     ctx.page.drawText(header, {
       x: headerX + 6,
@@ -801,32 +830,15 @@ function drawLineItemsHeader(
   });
 
   ctx.y -= 28;
-}
 
-function drawLineItemsTable(ctx: PdfContext): void {
-  drawSectionHeading(
-    ctx,
-    'Detailed Investment',
-    'The following line items are generated from the estimate and reflect the current project pricing.',
-  );
-
-  const tableX = MARGIN_X;
-  const widths = [232, 48, 62, 78, 96];
-  const headers = ['Description', 'Qty', 'Unit', 'Unit Price', 'Line Total'];
   const totalWidth = widths.reduce((sum, width) => sum + width, 0);
-
-  ensureSpace(ctx, 50);
-  drawLineItemsHeader(ctx, tableX, widths, headers);
 
   ctx.estimate.line_items.forEach((item, rowIndex) => {
     const description = String(item.description || '—');
     const descriptionLines = wrapText(description, ctx.fonts.regular, 10, widths[0] - 12);
     const rowHeight = Math.max(26, descriptionLines.length * 12 + 10);
 
-    if (ctx.y - (rowHeight + 4) < BOTTOM_MARGIN) {
-      addPage(ctx);
-      drawLineItemsHeader(ctx, tableX, widths, headers, true);
-    }
+    ensureSpace(ctx, rowHeight + 4);
 
     ctx.page.drawRectangle({
       x: tableX,
@@ -1086,17 +1098,19 @@ function drawTermsSection(ctx: PdfContext): void {
     const sections = normalizeLooseSections(source);
 
     for (const section of sections) {
+      const labeled = parseLabeledTermSection(section);
+      if (labeled) {
+        drawLabeledTerm(ctx, labeled.heading, labeled.body);
+        continue;
+      }
+
       const bullets = splitBulletLikeLines(section);
       if (bullets?.length) {
         drawBulletList(ctx, bullets);
-      } else {
-        const lines = normalizeLooseLines(section);
-        if (lines.length > 1 && lines.every((line) => line.length < 140)) {
-          drawBulletList(ctx, lines);
-        } else {
-          drawParagraph(ctx, section);
-        }
+        continue;
       }
+
+      drawParagraph(ctx, section);
     }
 
     return;
@@ -1262,7 +1276,7 @@ export async function generateEstimateProposalPdf(data: EstimateProposalPdfData)
     theme: resolveTheme(data.tenant.name),
     pageNumber: 1,
     page: pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]),
-    y: BODY_TOP_Y,
+    y: PAGE_HEIGHT - TOP_MARGIN,
     tenant: data.tenant,
     estimate: data.estimate,
     logoImage: await embedTenantLogo(pdfDoc, data.tenant.logo_path),
