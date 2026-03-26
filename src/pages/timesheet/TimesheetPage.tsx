@@ -200,7 +200,27 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
   const weekLocked = !!weekApproval;
   const calendarTargetEmployeeId = employeeId ? `&employee_id=${employeeId}` : '';
   const canShowEditRequests = canRequestEdits && viewingOwnEntries && !weekLocked;
-
+const resolveOpenForm = (entryId: number, note?: string | null, label = 'Resolve Open Entry') => (
+  <details style="display:inline-block; text-align:left; width:100%;">
+    <summary class="btn edit-request-summary">{label}</summary>
+    <div class="card details-card" style="min-width:420px;">
+      <form method="post" action={`/timeclock/resolve-open/${entryId}`} data-time-submit>
+        <input type="hidden" name="csrf_token" value={csrfToken} />
+        <label>Actual Clock Out</label>
+        <div class="edit-request-actions">
+          <input id={`resolve-open-${entryId}`} type="datetime-local" name="clock_out_local" required />
+          <button type="button" class="btn" data-fill-now={`resolve-open-${entryId}`}>Now</button>
+        </div>
+        <input type="hidden" name="clock_out_utc" value="" />
+        <label>Note (optional)</label>
+        <input name="note" maxLength={500} value={note || ''} />
+        <div class="actions actions-mobile-stack" style="margin-top:12px;">
+          <button class="btn" type="submit">{label}</button>
+        </div>
+      </form>
+    </div>
+  </details>
+);
   return (
     <div>
       <div class="page-head">
@@ -243,6 +263,9 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
             <div>
               <div class="badge badge-good" style="margin-bottom:10px;">Currently Clocked In</div>
               <div class="clock-status-grid">
+                <div style="margin-top:12px;">
+                  {resolveOpenForm(activeClockEntry.id, '', 'Resolve Open Entry')}
+                </div>
                 <div class="card clock-card">
                   <div class="muted">Type</div>
                   <div class="clock-card-value"><b>{activeClockEntry.job_name}</b></div>
@@ -496,9 +519,13 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                             </form>
                           </div>
                         </details>
+                      ) : entry.clock_in_at && !entry.clock_out_at && !weekLocked ? (
+                        resolveOpenForm(entry.id, entry.note || '', 'Resolve Open Entry')
                       ) : (
                         <span class="muted">{weekLocked ? 'Week approved' : 'View only'}</span>
                       )
+                    ) : canManageTimeEntries && !weekLocked && entry.clock_in_at && !entry.clock_out_at ? (
+                      resolveOpenForm(entry.id, entry.note || '', 'Close Entry')
                     ) : canManageTimeEntries && !weekLocked ? (
                       <form method="post" action={`/delete_time/${entry.id}`} style="display:inline;">
                         <input type="hidden" name="csrf_token" value={csrfToken} />

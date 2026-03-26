@@ -1168,8 +1168,17 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
       throw new Error('Invalid punch out timestamp.');
     }
 
-    const hours = hoursBetween(activeClockEntry.clock_in_at, nowUtc);
-    const { rate, lunchDeductionExempt } = getEmployeeCompensationSettings(db, employeeId, tenant.id);
+    let hours: number;
+    try {
+      hours = hoursBetween(activeClockEntry.clock_in_at, nowUtc);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'A single entry cannot exceed 24 hours.') {
+        throw new Error('This open clock entry is now older than 24 hours. Use Resolve Open Entry and enter the actual clock-out time from yesterday.');
+      }
+      throw error;
+    }
+
+    const rate = getEmployeeRate(db, employeeId, tenant.id);
     const laborCost = Number((hours * rate).toFixed(2));
 
     db.prepare(`
@@ -1190,6 +1199,135 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
     const state = buildTimesheetState(db, tenant.id, currentUser);
     return renderTimesheetPage(c, state, {
       error: error instanceof Error ? error.message : 'Unable to punch out.',
+    }, 400);
+  }
+});
+
+timesheetRoutes.post('/timeclock/resolve-open/:id', permissionRequired('time.view'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  const entryId = parsePositiveInt(c.req.param('id'));
+  if (!entryId) {
+    return c.text('Time entry not found', 404);
+  }
+
+  const db = getDb();
+  const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+  const link = loadEmployeeForUser(db, currentUser.id, tenant.id);
+
+  let fallbackEmployeeId = link?.employee_id ?? null;
+  let fallbackStart = weekStart(toIsoDate(new Date()));
+
+  try {
+    const entry = db.prepare(`
+      SELECT id, employee_id, date, clock_in_at, clock_out_at, note
+      FROM time_entries
+      WHERE id = ? AND tenant_id = ?
+      LIMIT 1
+    `).get(entryId, tenant.id) as
+      | {
+          id: number;
+          employee_id: number;
+          date: string;
+          clock_in_at: string | null;
+          clock_out_at: string | null;
+          note: string | null;
+        }
+      | undefined;
+
+    if (!entry || !entry.clock_in_at) {
+      throw new Error('Open time entry not found.');
+    }
+
+    fallbackEmployeeId = entry.employee_id;
+    fallbackStart = weekStart(entry.date);
+
+    if (entry.clock_out_at) {
+      throw new Error('This time entry is already closed.');
+    }
+
+    const canManageAnyEntry = userHasPermission(currentUser, 'time.approve');
+    if (!canManageAnyEntry && link?.employee_id !== entry.employee_id) {
+      throw new Error('You can only resolve your own open clock entries.');
+    }
+
+    assertWeekNotApproved(
+      db,
+      tenant.id,
+      entry.employee_id,
+      weekStart(entry.date),
+      'This week has already been approved. Reopen the week before resolving this open clock entry.'
+    );
+
+    const clockOutUtc = String(body.clock_out_utc ?? '').trim();
+    if (!isValidIsoDateTime(clockOutUtc)) {
+      throw new Error('Please provide a valid clock-out time.');
+    }
+
+    const hours = hoursBetween(entry.clock_in_at, clockOutUtc);
+    const rate = getEmployeeRate(db, entry.employee_id, tenant.id);
+    const laborCost = Number((hours * rate).toFixed(2));
+    const note = normalizeNote(body.note) ?? entry.note;
+
+    db.prepare(`
+      UPDATE time_entries
+      SET clock_out_at = ?,
+          hours = ?,
+          labor_cost = ?,
+          note = ?,
+          approval_status = 'approved',
+          approved_by_user_id = ?,
+          approved_at = CURRENT_TIMESTAMP,
+          last_edited_by_user_id = ?,
+          last_edited_at = CURRENT_TIMESTAMP,
+          edit_reason = 'Resolved previously open clock entry'
+      WHERE id = ? AND tenant_id = ?
+    `).run(
+      clockOutUtc,
+      hours,
+      laborCost,
+      note,
+      currentUser.id,
+      currentUser.id,
+      entry.id,
+      tenant.id,
+    );
+
+    logActivity(db, {
+      tenantId: tenant.id,
+      actorUserId: currentUser.id,
+      eventType: 'time.open_entry_resolved',
+      entityType: 'time_entry',
+      entityId: entry.id,
+      description: `${currentUser.name} resolved an open clock entry for employee #${entry.employee_id}.`,
+      metadata: {
+        time_entry_id: entry.id,
+        employee_id: entry.employee_id,
+        clock_in_at: entry.clock_in_at,
+        clock_out_at: clockOutUtc,
+        hours,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    const state = buildTimesheetState(db, tenant.id, currentUser, {
+      employeeId: fallbackEmployeeId,
+      start: fallbackStart,
+    });
+
+    return renderTimesheetPage(c, state, {
+      success: 'Open clock entry resolved successfully.',
+    });
+  } catch (error) {
+    const state = buildTimesheetState(db, tenant.id, currentUser, {
+      employeeId: fallbackEmployeeId,
+      start: fallbackStart,
+    });
+
+    return renderTimesheetPage(c, state, {
+      error: error instanceof Error ? error.message : 'Unable to resolve the open clock entry.',
     }, 400);
   }
 });
