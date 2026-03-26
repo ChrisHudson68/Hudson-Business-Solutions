@@ -1168,9 +1168,9 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
       throw new Error('Invalid punch out timestamp.');
     }
 
-    let hours: number;
+    let rawHours: number;
     try {
-      hours = hoursBetween(activeClockEntry.clock_in_at, nowUtc);
+      rawHours = hoursBetween(activeClockEntry.clock_in_at, nowUtc);
     } catch (error) {
       if (error instanceof Error && error.message === 'A single entry cannot exceed 24 hours.') {
         throw new Error('This open clock entry is now older than 24 hours. Use Resolve Open Entry and enter the actual clock-out time from yesterday.');
@@ -1178,8 +1178,9 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
       throw error;
     }
 
-    const rate = getEmployeeRate(db, employeeId, tenant.id);
-    const laborCost = Number((hours * rate).toFixed(2));
+    const { rate, lunchDeductionExempt } = getEmployeeCompensationSettings(db, employeeId, tenant.id);
+    const deductedHours = applyAutomaticLunchDeduction(rawHours, lunchDeductionExempt);
+    const laborCost = Number((deductedHours * rate).toFixed(2));
 
     db.prepare(`
       UPDATE time_entries
@@ -1266,8 +1267,9 @@ timesheetRoutes.post('/timeclock/resolve-open/:id', permissionRequired('time.vie
       throw new Error('Please provide a valid clock-out time.');
     }
 
-    const hours = hoursBetween(entry.clock_in_at, clockOutUtc);
-    const rate = getEmployeeRate(db, entry.employee_id, tenant.id);
+    const rawHours = hoursBetween(entry.clock_in_at, clockOutUtc);
+    const { rate, lunchDeductionExempt } = getEmployeeCompensationSettings(db, entry.employee_id, tenant.id);
+    const hours = applyAutomaticLunchDeduction(rawHours, lunchDeductionExempt);
     const laborCost = Number((hours * rate).toFixed(2));
     const note = normalizeNote(body.note) ?? entry.note;
 
