@@ -276,6 +276,14 @@ function normalizeNote(value: unknown): string | null {
   return note;
 }
 
+function resolveClientNowUtc(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (isValidIsoDateTime(raw)) {
+    return raw;
+  }
+  return new Date().toISOString();
+}
+
 function hoursBetween(startIso: string, endIso: string): number {
   const start = new Date(startIso);
   const end = new Date(endIso);
@@ -1115,12 +1123,8 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
     }
 
     const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
-    const nowUtc = String(body.client_now_utc ?? '').trim();
+    const nowUtc = resolveClientNowUtc(body.client_now_utc);
     const note = normalizeNote(body.note);
-
-    if (!isValidIsoDateTime(nowUtc)) {
-      throw new Error('Invalid punch in timestamp.');
-    }
 
     db.prepare(`
       INSERT INTO time_entries (
@@ -1162,11 +1166,7 @@ timesheetRoutes.post('/timeclock/punch-out', permissionRequired('time.clock'), a
     }
 
     const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
-    const nowUtc = String(body.client_now_utc ?? '').trim();
-
-    if (!isValidIsoDateTime(nowUtc)) {
-      throw new Error('Invalid punch out timestamp.');
-    }
+    const nowUtc = resolveClientNowUtc(body.client_now_utc);
 
     let rawHours: number;
     try {

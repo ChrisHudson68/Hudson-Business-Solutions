@@ -27,8 +27,15 @@ export function create(db: DB, tenantId: number, data: {
   lunch_deduction_exempt?: number;
 }) {
   const result = db.prepare(
-    'INSERT INTO employees (name, pay_type, hourly_rate, annual_salary, active, lunch_deduction_exempt, tenant_id) VALUES (?, ?, ?, ?, 1, ?, ?)'
-  ).run(data.name, data.pay_type, data.hourly_rate || null, data.annual_salary || null, data.lunch_deduction_exempt || 0, tenantId);
+    'INSERT INTO employees (name, pay_type, hourly_rate, annual_salary, active, tenant_id, lunch_deduction_exempt) VALUES (?, ?, ?, ?, 1, ?, ?)'
+  ).run(
+    data.name,
+    data.pay_type,
+    data.hourly_rate || null,
+    data.annual_salary || null,
+    tenantId,
+    data.lunch_deduction_exempt || 0,
+  );
   return result.lastInsertRowid as number;
 }
 
@@ -42,5 +49,14 @@ export function update(db: DB, employeeId: number, tenantId: number, data: {
 }) {
   db.prepare(
     'UPDATE employees SET name = ?, pay_type = ?, hourly_rate = ?, annual_salary = ?, active = ?, lunch_deduction_exempt = ? WHERE id = ? AND tenant_id = ?'
-  ).run(data.name, data.pay_type, data.hourly_rate ?? null, data.annual_salary ?? null, data.active, data.lunch_deduction_exempt ?? 0, employeeId, tenantId);
+  ).run(
+    data.name,
+    data.pay_type,
+    data.hourly_rate ?? null,
+    data.annual_salary ?? null,
+    data.active,
+    data.lunch_deduction_exempt || 0,
+    employeeId,
+    tenantId,
+  );
 }

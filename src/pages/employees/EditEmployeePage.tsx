@@ -116,25 +116,21 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
             </div>
           </div>
 
-          <label>Status</label>
-          <select name="active">
-            <option value="1" selected={employee.active === 1}>Active</option>
-            <option value="0" selected={employee.active === 0}>Inactive</option>
-          </select>
-
-          <label style="margin-top:14px;">Lunch Deduction</label>
-          <label style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+          <label style="display:flex; align-items:center; gap:10px; margin-top:14px;">
             <input
               type="checkbox"
               name="lunch_deduction_exempt"
               value="1"
               checked={Number(employee.lunch_deduction_exempt || 0) === 1}
             />
-            <span>Exempt this employee from the automatic 1-hour lunch deduction on shifts of 6 hours or more.</span>
+            Exempt from automatic 1-hour lunch deduction
           </label>
-          <div class="muted" style="margin-top:6px;">
-            Unchecked means the system will automatically deduct 1 hour when a single shift is 6 hours or longer.
-          </div>
+
+          <label>Status</label>
+          <select name="active">
+            <option value="1" selected={employee.active === 1}>Active</option>
+            <option value="0" selected={employee.active === 0}>Inactive</option>
+          </select>
 
           <div class="actions actions-mobile-stack" style="margin-top:16px;">
             <button class="btn btn-primary" type="submit">Save Changes</button>
