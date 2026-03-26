@@ -1,12 +1,13 @@
 import type { FC } from 'hono/jsx';
 
-interface Job {
+type Job = {
   id: number;
   job_name: string;
   client_name: string | null;
-}
+  job_code?: string | null;
+};
 
-interface TenantInfo {
+type TenantInfo = {
   id: number;
   name: string;
   subdomain: string;
@@ -15,16 +16,32 @@ interface TenantInfo {
   company_email: string | null;
   company_phone: string | null;
   company_address: string | null;
-}
+};
 
-interface AddInvoiceFormValues {
+type InvoiceLineFormValue = {
+  description: string;
+  quantity: string;
+  unit: string;
+  unit_price: string;
+};
+
+type AddInvoiceFormValues = {
   job_id: string;
   invoice_number: string;
-  amount: string;
-  date_issued: string;
+  issue_date: string;
   due_date: string;
-  notes: string;
-}
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  customer_address: string;
+  terms_text: string;
+  public_notes: string;
+  internal_notes: string;
+  discount_type: 'none' | 'percent' | 'amount';
+  discount_value: string;
+  tax_rate: string;
+  line_items: InvoiceLineFormValue[];
+};
 
 interface AddInvoicePageProps {
   jobs: Job[];
@@ -33,7 +50,134 @@ interface AddInvoicePageProps {
   tenant: TenantInfo;
   csrfToken: string;
   error?: string;
-  formValues?: Partial<AddInvoiceFormValues>;
+  formValues: AddInvoiceFormValues;
+}
+
+const UNIT_SUGGESTIONS = ['ea', 'hr', 'day', 'week', 'ft', 'lf', 'sq ft', 'lot', 'set', 'pcs', 'box', 'gal'];
+
+function invoiceEditorScript(rowsJson: string) {
+  return `
+(function () {
+  const initialRows = ${rowsJson};
+  const container = document.getElementById('invoice-line-items-container');
+  const template = document.getElementById('invoice-line-item-template');
+  const addButton = document.getElementById('invoice-add-line-item-btn');
+  const lineCountInput = document.getElementById('line_count');
+  const discountTypeInput = document.getElementById('discount_type');
+  const discountValueInput = document.getElementById('discount_value');
+  const taxRateInput = document.getElementById('tax_rate');
+  const subtotalInput = document.getElementById('subtotal_preview');
+  const discountInput = document.getElementById('discount_preview');
+  const taxInput = document.getElementById('tax_preview');
+  const totalInput = document.getElementById('total_preview');
+
+  function money(value) {
+    const num = Number.parseFloat(String(value || '').replace(/,/g, ''));
+    if (!Number.isFinite(num)) return 0;
+    return Math.round(num * 100) / 100;
+  }
+
+  function formatMoney(value) {
+    return money(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function cards() {
+    return Array.from(container.querySelectorAll('.invoice-line-item-card'));
+  }
+
+  function setNames() {
+    cards().forEach((card, index) => {
+      const desc = card.querySelector('.line-description');
+      const qty = card.querySelector('.line-quantity');
+      const unit = card.querySelector('.line-unit');
+      const unitPrice = card.querySelector('.line-unit-price');
+      const total = card.querySelector('.line-total-display');
+      const label = card.querySelector('.line-item-label');
+      if (desc) desc.name = 'line_description_' + index;
+      if (qty) qty.name = 'line_quantity_' + index;
+      if (unit) unit.name = 'line_unit_' + index;
+      if (unitPrice) unitPrice.name = 'line_unit_price_' + index;
+      if (label) label.textContent = 'Line Item ' + (index + 1);
+      if (total) total.name = 'line_total_display_' + index;
+    });
+    lineCountInput.value = String(cards().length);
+  }
+
+  function lineTotal(card) {
+    const qty = card.querySelector('.line-quantity');
+    const unitPrice = card.querySelector('.line-unit-price');
+    const totalDisplay = card.querySelector('.line-total-display');
+    const total = money(qty && qty.value) * money(unitPrice && unitPrice.value);
+    if (totalDisplay) totalDisplay.value = '$' + formatMoney(total);
+    return total;
+  }
+
+  function updateTotals() {
+    const subtotal = cards().reduce((sum, card) => sum + lineTotal(card), 0);
+    const discountType = String(discountTypeInput && discountTypeInput.value || 'none');
+    const discountValue = money(discountValueInput && discountValueInput.value);
+    const taxRate = money(taxRateInput && taxRateInput.value);
+
+    let discountAmount = 0;
+    if (discountType === 'percent') {
+      discountAmount = subtotal * (discountValue / 100);
+    } else if (discountType === 'amount') {
+      discountAmount = Math.min(discountValue, subtotal);
+    }
+
+    const taxable = Math.max(subtotal - discountAmount, 0);
+    const tax = taxable * (taxRate / 100);
+    const total = taxable + tax;
+
+    subtotalInput.textContent = '$' + formatMoney(subtotal);
+    discountInput.textContent = '$' + formatMoney(discountAmount);
+    taxInput.textContent = '$' + formatMoney(tax);
+    totalInput.textContent = '$' + formatMoney(total);
+  }
+
+  function attachEvents(card) {
+    ['.line-description', '.line-quantity', '.line-unit', '.line-unit-price'].forEach((selector) => {
+      const el = card.querySelector(selector);
+      if (el) el.addEventListener('input', updateTotals);
+    });
+    const removeBtn = card.querySelector('.remove-line-item-btn');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function () {
+        card.remove();
+        if (!cards().length) addLine();
+        setNames();
+        updateTotals();
+      });
+    }
+  }
+
+  function addLine(row) {
+    const fragment = template.content.cloneNode(true);
+    const card = fragment.querySelector('.invoice-line-item-card');
+    if (!card) return;
+    const desc = card.querySelector('.line-description');
+    const qty = card.querySelector('.line-quantity');
+    const unit = card.querySelector('.line-unit');
+    const unitPrice = card.querySelector('.line-unit-price');
+    if (desc) desc.value = row && row.description ? row.description : '';
+    if (qty) qty.value = row && row.quantity ? row.quantity : '';
+    if (unit) unit.value = row && row.unit ? row.unit : '';
+    if (unitPrice) unitPrice.value = row && row.unit_price ? row.unit_price : '';
+    container.appendChild(fragment);
+    const lastCard = cards()[cards().length - 1];
+    if (lastCard) attachEvents(lastCard);
+    setNames();
+    updateTotals();
+  }
+
+  if (addButton) addButton.addEventListener('click', function () { addLine(); });
+  if (discountTypeInput) discountTypeInput.addEventListener('change', updateTotals);
+  if (discountValueInput) discountValueInput.addEventListener('input', updateTotals);
+  if (taxRateInput) taxRateInput.addEventListener('input', updateTotals);
+
+  (initialRows && initialRows.length ? initialRows : [{ description: '', quantity: '', unit: '', unit_price: '' }]).forEach(addLine);
+})();
+`;
 }
 
 export const AddInvoicePage: FC<AddInvoicePageProps> = ({
@@ -45,141 +189,218 @@ export const AddInvoicePage: FC<AddInvoicePageProps> = ({
   error,
   formValues,
 }) => {
-  const selectedJobId = formValues?.job_id ?? (prefillJobId ? String(prefillJobId) : '');
-  const invoiceNumber = formValues?.invoice_number ?? suggestedInvoiceNumber ?? '';
-  const amount = formValues?.amount ?? '';
-  const dateIssued = formValues?.date_issued ?? '';
-  const dueDate = formValues?.due_date ?? '';
-  const notes = formValues?.notes ?? '';
+  const rowsJson = JSON.stringify(formValues.line_items.length ? formValues.line_items : [{ description: '', quantity: '', unit: '', unit_price: '' }]);
+  const selectedJobId = formValues.job_id || (prefillJobId ? String(prefillJobId) : '');
 
   return (
-    <div>
+    <div style="display:grid; gap:14px;">
       <div class="page-head">
         <div>
-          <h1>Create Invoice</h1>
-          <p>Generate a new invoice for a job.</p>
+          <h1>Create Invoice V2</h1>
+          <p class="muted">Use a dedicated draft invoice builder with line-by-line items, branded details, and PDF-ready totals.</p>
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href="/invoices">Back</a>
         </div>
       </div>
 
-      {error ? (
-        <div
-          class="card"
-          style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;"
-        >
-          {error}
-        </div>
-      ) : null}
+      {error ? <div class="card" style="border-color:#FECACA; background:#FEF2F2; color:#991B1B;">{error}</div> : null}
 
-      <div class="grid grid-2">
-        <div class="card">
-          <h3 style="margin-top:0;">Invoice Details</h3>
+      <form method="post" enctype="multipart/form-data" id="invoice-form">
+        <input type="hidden" name="csrf_token" value={csrfToken} />
+        <input type="hidden" name="line_count" id="line_count" value={String(formValues.line_items.length || 1)} />
 
-          <form method="post" enctype="multipart/form-data">
-            <input type="hidden" name="csrf_token" value={csrfToken} />
-
-            <label>Job</label>
-            <select name="job_id" required>
-              <option value="">Select a job</option>
-              {jobs.map((j) => (
-                <option value={String(j.id)} selected={selectedJobId === String(j.id)}>
-                  {j.job_name}
-                  {j.client_name ? ` — ${j.client_name}` : ''}
-                </option>
-              ))}
-            </select>
-
-            <div class="row">
-              <div>
-                <label>Invoice Number</label>
-                <input name="invoice_number" value={invoiceNumber} required />
-              </div>
-              <div>
-                <label>Amount</label>
-                <input name="amount" type="number" step="0.01" min="0.01" value={amount} required />
-              </div>
-            </div>
-
-            <div class="row">
-              <div>
-                <label>Date Issued</label>
-                <input name="date_issued" type="date" value={dateIssued} required />
-              </div>
-              <div>
-                <label>Due Date</label>
-                <input name="due_date" type="date" value={dueDate} required />
+        <div class="grid" style="grid-template-columns:1.15fr .85fr; gap:14px; align-items:start;">
+          <div style="display:grid; gap:14px;">
+            <div class="card">
+              <h3 style="margin-top:0;">Invoice Information</h3>
+              <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+                <div>
+                  <label for="job_id">Job</label>
+                  <select id="job_id" name="job_id" required>
+                    <option value="">Select a job</option>
+                    {jobs.map((job) => (
+                      <option value={String(job.id)} selected={selectedJobId === String(job.id)}>
+                        {job.job_name}{job.client_name ? ` — ${job.client_name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label for="invoice_number">Invoice Number</label>
+                  <input id="invoice_number" name="invoice_number" value={formValues.invoice_number || suggestedInvoiceNumber} required />
+                </div>
+                <div>
+                  <label for="issue_date">Issue Date</label>
+                  <input id="issue_date" type="date" name="issue_date" value={formValues.issue_date} required />
+                </div>
+                <div>
+                  <label for="due_date">Due Date</label>
+                  <input id="due_date" type="date" name="due_date" value={formValues.due_date} required />
+                </div>
               </div>
             </div>
 
-            <label>Notes</label>
-            <textarea name="notes" rows={4} placeholder="Optional">
-              {notes}
-            </textarea>
-
-            <label>Attachment (optional)</label>
-            <input
-              type="file"
-              name="attachment"
-              accept=".png,.jpg,.jpeg,.webp,.pdf"
-            />
-            <div class="muted small" style="margin-top:6px;">
-              Supported types: PDF, PNG, JPG, JPEG, WEBP.
+            <div class="card">
+              <h3 style="margin-top:0;">Bill To</h3>
+              <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
+                <div>
+                  <label for="customer_name">Customer Name</label>
+                  <input id="customer_name" name="customer_name" value={formValues.customer_name} required />
+                </div>
+                <div>
+                  <label for="customer_email">Customer Email</label>
+                  <input id="customer_email" type="email" name="customer_email" value={formValues.customer_email} />
+                </div>
+                <div>
+                  <label for="customer_phone">Customer Phone</label>
+                  <input id="customer_phone" name="customer_phone" value={formValues.customer_phone} />
+                </div>
+                <div style="grid-column:1 / -1;">
+                  <label for="customer_address">Customer Address</label>
+                  <textarea id="customer_address" name="customer_address" rows={3}>{formValues.customer_address}</textarea>
+                </div>
+              </div>
             </div>
 
-            <div class="actions actions-mobile-stack" style="margin-top:16px;">
-              <button class="btn btn-primary" type="submit">Create Invoice</button>
+            <div class="card">
+              <div class="page-head" style="margin-bottom:12px;">
+                <div>
+                  <h3 style="margin:0;">Line Items</h3>
+                  <p class="muted" style="margin-top:6px;">Add as many invoice rows as you need. The PDF will use these exact saved rows.</p>
+                </div>
+                <div class="actions">
+                  <button type="button" class="btn btn-primary" id="invoice-add-line-item-btn">Add Line</button>
+                </div>
+              </div>
+
+              <datalist id="invoice-unit-suggestions">
+                {UNIT_SUGGESTIONS.map((unit) => <option value={unit} />)}
+              </datalist>
+
+              <div id="invoice-line-items-container" style="display:grid; gap:12px;" />
+
+              <template id="invoice-line-item-template">
+                <div class="invoice-line-item-card" style="border:1px solid #E5EAF2; border-radius:16px; padding:14px; background:#FFF;">
+                  <div class="page-head" style="margin-bottom:10px;">
+                    <div><div class="small muted line-item-label">Line Item</div></div>
+                    <div class="actions"><button type="button" class="btn remove-line-item-btn">Remove</button></div>
+                  </div>
+                  <div style="display:grid; gap:12px;">
+                    <div>
+                      <label>Description</label>
+                      <input class="line-description" placeholder="Labor, material, service, or milestone" />
+                    </div>
+                    <div style="display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); align-items:end;">
+                      <div>
+                        <label>Quantity</label>
+                        <input class="line-quantity" inputmode="decimal" placeholder="1.00" />
+                      </div>
+                      <div>
+                        <label>Unit</label>
+                        <input class="line-unit" list="invoice-unit-suggestions" placeholder="ea, hr, lot..." />
+                      </div>
+                      <div>
+                        <label>Unit Price</label>
+                        <input class="line-unit-price" inputmode="decimal" placeholder="0.00" />
+                      </div>
+                      <div>
+                        <label>Line Total</label>
+                        <input class="line-total-display" readonly />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
             </div>
-          </form>
-        </div>
 
-        <div class="card">
-          <h3 style="margin-top:0;">Billing Profile</h3>
-
-          <div style="font-weight:800; font-size:18px; margin-bottom:10px;">
-            {tenant.name || 'Company'}
+            <div class="card">
+              <h3 style="margin-top:0;">Terms &amp; Notes</h3>
+              <div class="grid" style="grid-template-columns:1fr; gap:12px;">
+                <div>
+                  <label for="terms_text">Terms</label>
+                  <textarea id="terms_text" name="terms_text" rows={5}>{formValues.terms_text}</textarea>
+                </div>
+                <div>
+                  <label for="public_notes">Customer Notes</label>
+                  <textarea id="public_notes" name="public_notes" rows={4}>{formValues.public_notes}</textarea>
+                </div>
+                <div>
+                  <label for="internal_notes">Internal Notes</label>
+                  <textarea id="internal_notes" name="internal_notes" rows={3}>{formValues.internal_notes}</textarea>
+                </div>
+                <div>
+                  <label for="attachment">Attachment</label>
+                  <input id="attachment" type="file" name="attachment" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx" />
+                </div>
+              </div>
+            </div>
           </div>
 
-          {tenant.logo_path ? (
-            <div style="margin-bottom:14px;">
-              <img
-                src={tenant.logo_path}
-                alt="Company Logo"
-                style="max-height:80px; border:1px solid #E5EAF2; border-radius:12px; padding:8px; background:white;"
-              />
+          <div style="display:grid; gap:14px;">
+            <div class="card">
+              <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+                <div>
+                  <h3 style="margin:0;">Brand Preview</h3>
+                  <div class="muted" style="margin-top:8px; line-height:1.6;">
+                    <div><b>{tenant.name}</b></div>
+                    {tenant.company_address ? <div>{tenant.company_address}</div> : null}
+                    {tenant.company_email ? <div>{tenant.company_email}</div> : null}
+                    {tenant.company_phone ? <div>{tenant.company_phone}</div> : null}
+                  </div>
+                </div>
+                {tenant.logo_path ? <img src={tenant.logo_path} alt="Tenant logo" style="max-height:84px; max-width:140px; object-fit:contain; border:1px solid #E5EAF2; border-radius:12px; padding:8px; background:white;" /> : null}
+              </div>
             </div>
-          ) : null}
 
-          <div class="mobile-info-list" style="margin-top:0;">
-            {tenant.company_address ? (
-              <div class="mobile-info-row">
-                <span class="mobile-info-label">Address</span>
-                <span class="mobile-info-value">{tenant.company_address}</span>
+            <div class="card">
+              <h3 style="margin-top:0;">Totals</h3>
+              <div class="grid" style="grid-template-columns:1fr; gap:12px;">
+                <div>
+                  <label for="discount_type">Discount Type</label>
+                  <select id="discount_type" name="discount_type">
+                    <option value="none" selected={formValues.discount_type === 'none'}>No discount</option>
+                    <option value="percent" selected={formValues.discount_type === 'percent'}>Percent</option>
+                    <option value="amount" selected={formValues.discount_type === 'amount'}>Fixed amount</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="discount_value">Discount Value</label>
+                  <input id="discount_value" name="discount_value" value={formValues.discount_value} inputmode="decimal" placeholder="0.00" />
+                </div>
+                <div>
+                  <label for="tax_rate">Tax Rate %</label>
+                  <input id="tax_rate" name="tax_rate" value={formValues.tax_rate} inputmode="decimal" placeholder="0.00" />
+                </div>
               </div>
-            ) : null}
-
-            {tenant.company_email ? (
-              <div class="mobile-info-row">
-                <span class="mobile-info-label">Email</span>
-                <span class="mobile-info-value">{tenant.company_email}</span>
+              <div style="display:grid; gap:10px; margin-top:16px;">
+                <div style="display:flex; justify-content:space-between; gap:12px;"><span class="muted">Subtotal</span><strong id="subtotal_preview">$0.00</strong></div>
+                <div style="display:flex; justify-content:space-between; gap:12px;"><span class="muted">Discount</span><strong id="discount_preview">$0.00</strong></div>
+                <div style="display:flex; justify-content:space-between; gap:12px;"><span class="muted">Tax</span><strong id="tax_preview">$0.00</strong></div>
+                <div style="display:flex; justify-content:space-between; gap:12px; font-size:22px;"><span><b>Total</b></span><strong id="total_preview">$0.00</strong></div>
               </div>
-            ) : null}
+            </div>
 
-            {tenant.company_phone ? (
-              <div class="mobile-info-row">
-                <span class="mobile-info-label">Phone</span>
-                <span class="mobile-info-value">{tenant.company_phone}</span>
+            <div class="card">
+              <h3 style="margin-top:0;">What gets saved</h3>
+              <div class="muted" style="display:grid; gap:10px;">
+                <div>The invoice saves as a <b>Draft</b> so you can review before future send/finalize work.</div>
+                <div>Each line item is stored separately and used for the invoice PDF.</div>
+                <div>Customer and tenant branding details are snapshotted onto the invoice record for safer history.</div>
               </div>
-            ) : null}
+            </div>
 
-            <div class="mobile-info-row">
-              <span class="mobile-info-label">Invoice Prefix</span>
-              <span class="mobile-info-value">{tenant.invoice_prefix || 'INV'}</span>
+            <div class="card">
+              <div class="actions actions-mobile-stack" style="justify-content:flex-start;">
+                <button class="btn btn-primary" type="submit">Create Draft Invoice</button>
+                <a class="btn" href="/invoices">Cancel</a>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </form>
+
+      <script dangerouslySetInnerHTML={{ __html: invoiceEditorScript(rowsJson) }} />
     </div>
   );
 };
