@@ -277,6 +277,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                   <th>Category</th>
                   <th>Vendor</th>
                   <th>Amount</th>
+                  <th>Receipt</th>
                 </tr>
               </thead>
               <tbody>
@@ -286,10 +287,19 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                     <td>{row.category || '—'}</td>
                     <td>{row.vendor || '—'}</td>
                     <td>${formatMoney(Number(row.amount || 0))}</td>
+                    <td>
+                      {row.receipt_filename ? (
+                        <a class="btn" href={`/expense-receipts/${row.id}`} target="_blank" rel="noopener noreferrer">
+                          View Receipt
+                        </a>
+                      ) : (
+                        <span class="muted">—</span>
+                      )}
+                    </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colspan={4} class="muted">No expenses recorded yet.</td>
+                    <td colspan={5} class="muted">No expenses recorded yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -370,6 +380,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                     <th>Category</th>
                     <th>Vendor</th>
                     <th>Amount</th>
+                    <th>Receipt</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -379,10 +390,19 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                       <td>{row.category || '—'}</td>
                       <td>{row.vendor || '—'}</td>
                       <td>${formatMoney(Number(row.amount || 0))}</td>
+                      <td>
+                        {row.receipt_filename ? (
+                          <a class="btn" href={`/expense-receipts/${row.id}`} target="_blank" rel="noopener noreferrer">
+                            View Receipt
+                          </a>
+                        ) : (
+                          <span class="muted">—</span>
+                        )}
+                      </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colspan={4} class="muted">No archived expenses.</td>
+                      <td colspan={5} class="muted">No archived expenses.</td>
                     </tr>
                   )}
                 </tbody>
