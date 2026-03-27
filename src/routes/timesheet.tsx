@@ -1126,13 +1126,35 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
     const nowUtc = resolveClientNowUtc(body.client_now_utc);
     const note = normalizeNote(body.note);
 
+    // 🆕 NEW: Optional job selection
+    const rawJobId = String(body.job_id ?? '').trim();
+    let jobId: number | null = null;
+
+    if (rawJobId) {
+      const parsed = parsePositiveInt(rawJobId);
+      if (!parsed) {
+        throw new Error('Invalid job selected.');
+      }
+
+      ensureJobExists(db, parsed, tenant.id);
+      jobId = parsed;
+    }
+
     db.prepare(`
       INSERT INTO time_entries (
         job_id, employee_id, date, hours, note, labor_cost, tenant_id,
         clock_in_at, clock_out_at, entry_method, approval_status, approved_by_user_id, approved_at
       )
-      VALUES (NULL, ?, ?, 0, ?, 0, ?, ?, NULL, 'clock', 'approved', ?, CURRENT_TIMESTAMP)
-    `).run(employeeId, toIsoDate(new Date(nowUtc)), note, tenant.id, nowUtc, currentUser.id);
+      VALUES (?, ?, ?, 0, ?, 0, ?, ?, NULL, 'clock', 'approved', ?, CURRENT_TIMESTAMP)
+    `).run(
+      jobId, // 🆕 NOW STORES JOB OR NULL
+      employeeId,
+      toIsoDate(new Date(nowUtc)),
+      note,
+      tenant.id,
+      nowUtc,
+      currentUser.id
+    );
 
     const state = buildTimesheetState(db, tenant.id, currentUser);
     return renderTimesheetPage(c, state, {

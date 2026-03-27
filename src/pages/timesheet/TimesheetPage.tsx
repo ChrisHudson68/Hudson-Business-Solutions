@@ -299,11 +299,26 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
             <form method="post" action="/timeclock/punch-in" data-punch-now>
               <input type="hidden" name="csrf_token" value={csrfToken} />
               <input type="hidden" name="client_now_utc" value="" />
+
               <div class="row">
+                <div>
+                  <label>Job (optional)</label>
+                  <select name="job_id">
+                    <option value="">Global (no job)</option>
+                    {jobs.map((job) => (
+                      <option value={String(job.id)}>
+                        {job.job_name}
+                        {job.client_name ? ` - ${job.client_name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label>Note (optional)</label>
                   <input name="note" maxLength={500} placeholder="Optional shift note" />
                 </div>
+
                 <div style="flex:0;">
                   <label>&nbsp;</label>
                   <button class="btn btn-primary" type="submit">Punch In</button>
