@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { PDFDocument, StandardFonts, rgb, type PDFPage, type PDFFont } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib';
 import { getEnv } from '../config/env.js';
 
 export interface InvoicePdfLineItem {
@@ -10,6 +10,47 @@ export interface InvoicePdfLineItem {
   unit_price: number;
   line_total: number;
 }
+
+type LegacyInvoicePdfData = {
+  tenant: {
+    name: string;
+    company_address: string | null;
+    company_email: string | null;
+    company_phone: string | null;
+    logo_path?: string | null;
+    company_website?: string | null;
+  };
+  invoice: {
+    id: number;
+    invoice_number: string | null;
+    date_issued: string;
+    due_date: string;
+    amount?: number;
+    notes?: string | null;
+    subtotal_amount?: number;
+    discount_amount?: number;
+    tax_amount?: number;
+    total_amount?: number;
+    public_notes?: string | null;
+    terms_text?: string | null;
+    status?: string;
+  };
+  job: {
+    job_name: string;
+    client_name?: string | null;
+    job_code?: string | null;
+  };
+  customer?: {
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    address: string | null;
+  };
+  lineItems?: InvoicePdfLineItem[];
+  paid?: number;
+  outstanding?: number;
+  status?: string;
+};
 
 export interface InvoicePdfData {
   tenant: {
@@ -48,6 +89,8 @@ export interface InvoicePdfData {
   outstanding: number;
 }
 
+type NormalizedInvoicePdfData = InvoicePdfData;
+
 type EmbeddedLogo = { image: any; width: number; height: number } | null;
 
 const PAGE_WIDTH = 612;
@@ -63,7 +106,10 @@ function roundMoney(value: number): number {
 }
 
 function formatCurrency(value: number): string {
-  return roundMoney(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return roundMoney(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function resolveLogoFilePath(logoPath: string | null | undefined): string | null {
@@ -81,7 +127,10 @@ function resolveLogoFilePath(logoPath: string | null | undefined): string | null
   return null;
 }
 
-async function embedTenantLogo(pdfDoc: PDFDocument, logoPath: string | null | undefined): Promise<EmbeddedLogo> {
+async function embedTenantLogo(
+  pdfDoc: PDFDocument,
+  logoPath: string | null | undefined,
+): Promise<EmbeddedLogo> {
   const filePath = resolveLogoFilePath(logoPath);
   if (!filePath || !fs.existsSync(filePath)) return null;
 
@@ -133,7 +182,98 @@ function splitText(font: PDFFont, text: string, maxWidth: number, fontSize: numb
   return lines;
 }
 
-export async function generateInvoicePdf(data: InvoicePdfData): Promise<Uint8Array> {
+function normalizeInvoicePdfData(input: InvoicePdfData | LegacyInvoicePdfData): NormalizedInvoicePdfData {
+  const legacyAmount = roundMoney(Number(input.invoice.amount || 0));
+  const subtotal = roundMoney(
+    Number(
+      input.invoice.subtotal_amount ??
+        input.invoice.total_amount ??
+        input.invoice.amount ??
+        0,
+    ),
+  );
+  const discountAmount = roundMoney(Number(input.invoice.discount_amount || 0));
+  const taxAmount = roundMoney(Number(input.invoice.tax_amount || 0));
+  const totalAmount = roundMoney(
+    Number(
+      input.invoice.total_amount ??
+        input.invoice.amount ??
+        subtotal - discountAmount + taxAmount,
+    ),
+  );
+
+  const paid = roundMoney(Number(input.paid || 0));
+  const outstanding = roundMoney(
+    Number(
+      input.outstanding ??
+        Math.max(totalAmount - paid, 0),
+    ),
+  );
+
+  const lineItems =
+    input.lineItems && input.lineItems.length
+      ? input.lineItems.map((item) => ({
+          description: String(item.description || 'Invoice item'),
+          quantity: Number(item.quantity || 0),
+          unit: item.unit ?? null,
+          unit_price: roundMoney(Number(item.unit_price || 0)),
+          line_total: roundMoney(Number(item.line_total || 0)),
+        }))
+      : [
+          {
+            description: input.job?.job_name
+              ? `Invoice for ${input.job.job_name}`
+              : 'Invoice amount',
+            quantity: 1,
+            unit: null,
+            unit_price: totalAmount || legacyAmount,
+            line_total: totalAmount || legacyAmount,
+          },
+        ];
+
+  return {
+    tenant: {
+      name: String(input.tenant?.name || 'Hudson Business Solutions'),
+      logo_path: input.tenant?.logo_path ?? null,
+      company_address: input.tenant?.company_address ?? null,
+      company_email: input.tenant?.company_email ?? null,
+      company_phone: input.tenant?.company_phone ?? null,
+      company_website: input.tenant?.company_website ?? null,
+    },
+    invoice: {
+      id: Number(input.invoice.id || 0),
+      invoice_number: input.invoice.invoice_number ?? null,
+      date_issued: String(input.invoice.date_issued || ''),
+      due_date: String(input.invoice.due_date || ''),
+      subtotal_amount: subtotal,
+      discount_amount: discountAmount,
+      tax_amount: taxAmount,
+      total_amount: totalAmount,
+      public_notes: input.invoice.public_notes ?? input.invoice.notes ?? null,
+      terms_text: input.invoice.terms_text ?? null,
+      status: String(input.invoice.status || input.status || 'Unpaid'),
+    },
+    customer: {
+      name: input.customer?.name ?? input.job?.client_name ?? null,
+      email: input.customer?.email ?? null,
+      phone: input.customer?.phone ?? null,
+      address: input.customer?.address ?? null,
+    },
+    job: {
+      job_name: String(input.job?.job_name || 'Job'),
+      job_code: input.job?.job_code ?? null,
+    },
+    lineItems,
+    paid,
+    outstanding,
+  };
+}
+
+export async function generateInvoicePdf(
+  rawData: InvoicePdfData | LegacyInvoicePdfData,
+): Promise<Uint8Array> {
+  const data = normalizeInvoicePdfData(rawData);
+
   const pdfDoc = await PDFDocument.create();
   const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -152,6 +292,88 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Uint8Arr
     });
   };
 
+  const drawHeader = () => {
+    let rightX = PAGE_WIDTH - RIGHT_MARGIN;
+    if (logo) {
+      const maxWidth = 118;
+      const maxHeight = 68;
+      const scale = Math.min(maxWidth / logo.width, maxHeight / logo.height, 1);
+      const width = logo.width * scale;
+      const height = logo.height * scale;
+      page.drawImage(logo.image, {
+        x: rightX - width,
+        y: y - height + 8,
+        width,
+        height,
+      });
+      rightX -= width + 14;
+    }
+
+    page.drawText(data.tenant.name || 'Hudson Business Solutions', {
+      x: LEFT_MARGIN,
+      y,
+      size: 20,
+      font: bold,
+      color: rgb(0.11, 0.23, 0.37),
+    });
+
+    let headerLineY = y - 18;
+    [
+      data.tenant.company_address,
+      data.tenant.company_email,
+      data.tenant.company_phone,
+      data.tenant.company_website,
+    ]
+      .filter(Boolean)
+      .forEach((line) => {
+        page.drawText(String(line), {
+          x: LEFT_MARGIN,
+          y: headerLineY,
+          size: 9.5,
+          font: regular,
+          color: rgb(0.35, 0.39, 0.45),
+        });
+        headerLineY -= 12;
+      });
+
+    page.drawText('INVOICE', {
+      x: rightX - bold.widthOfTextAtSize('INVOICE', 18),
+      y,
+      size: 18,
+      font: bold,
+      color: rgb(0.11, 0.23, 0.37),
+    });
+
+    const invoiceNumberText = data.invoice.invoice_number || `#${data.invoice.id}`;
+    const statusText = data.invoice.status || 'Draft';
+
+    page.drawText(`Invoice #: ${invoiceNumberText}`, {
+      x: rightX - regular.widthOfTextAtSize(`Invoice #: ${invoiceNumberText}`, 10),
+      y: y - 18,
+      size: 10,
+      font: regular,
+      color: rgb(0.2, 0.24, 0.29),
+    });
+
+    page.drawText(`Status: ${statusText}`, {
+      x: rightX - regular.widthOfTextAtSize(`Status: ${statusText}`, 10),
+      y: y - 31,
+      size: 10,
+      font: regular,
+      color: rgb(0.2, 0.24, 0.29),
+    });
+
+    y = y - 74;
+
+    page.drawLine({
+      start: { x: LEFT_MARGIN, y },
+      end: { x: PAGE_WIDTH - RIGHT_MARGIN, y },
+      thickness: 1,
+      color: rgb(0.88, 0.91, 0.94),
+    });
+    y -= 18;
+  };
+
   const newPage = () => {
     footer();
     page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
@@ -165,80 +387,45 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Uint8Arr
     }
   };
 
-  const drawHeader = () => {
-    let rightX = PAGE_WIDTH - RIGHT_MARGIN;
-    if (logo) {
-      const maxWidth = 118;
-      const maxHeight = 68;
-      const scale = Math.min(maxWidth / logo.width, maxHeight / logo.height, 1);
-      const width = logo.width * scale;
-      const height = logo.height * scale;
-      page.drawImage(logo.image, { x: rightX - width, y: y - height + 8, width, height });
-      rightX -= width + 14;
-    }
-
-    page.drawText(data.tenant.name || 'Hudson Business Solutions', {
-      x: LEFT_MARGIN,
-      y,
-      size: 20,
-      font: bold,
-      color: rgb(0.11, 0.23, 0.37),
-    });
-
-    let headerLineY = y - 18;
-    [data.tenant.company_address, data.tenant.company_email, data.tenant.company_phone, data.tenant.company_website].filter(Boolean).forEach((line) => {
-      page.drawText(String(line), { x: LEFT_MARGIN, y: headerLineY, size: 9.5, font: regular, color: rgb(0.35, 0.39, 0.45) });
-      headerLineY -= 12;
-    });
-
-    page.drawText('INVOICE', {
-      x: rightX - bold.widthOfTextAtSize('INVOICE', 18),
-      y,
-      size: 18,
-      font: bold,
-      color: rgb(0.11, 0.23, 0.37),
-    });
-
-    const invoiceNumberText = data.invoice.invoice_number || `#${data.invoice.id}`;
-    const statusText = data.invoice.status || 'Draft';
-    page.drawText(`Invoice #: ${invoiceNumberText}`, {
-      x: rightX - regular.widthOfTextAtSize(`Invoice #: ${invoiceNumberText}`, 10),
-      y: y - 18,
-      size: 10,
-      font: regular,
-      color: rgb(0.2, 0.24, 0.29),
-    });
-    page.drawText(`Status: ${statusText}`, {
-      x: rightX - regular.widthOfTextAtSize(`Status: ${statusText}`, 10),
-      y: y - 31,
-      size: 10,
-      font: regular,
-      color: rgb(0.2, 0.24, 0.29),
-    });
-    y = y - 74;
-
-    page.drawLine({
-      start: { x: LEFT_MARGIN, y },
-      end: { x: PAGE_WIDTH - RIGHT_MARGIN, y },
-      thickness: 1,
-      color: rgb(0.88, 0.91, 0.94),
-    });
-    y -= 18;
-  };
-
   drawHeader();
 
   ensureSpace(120);
   const boxTop = y;
   const boxWidth = (CONTENT_WIDTH - 16) / 2;
+
   const drawInfoBox = (x: number, title: string, lines: string[]) => {
-    page.drawRectangle({ x, y: boxTop - 82, width: boxWidth, height: 82, borderColor: rgb(0.9, 0.92, 0.95), borderWidth: 1, color: rgb(0.985, 0.988, 0.992) });
-    page.drawText(title, { x: x + 12, y: boxTop - 18, size: 10, font: bold, color: rgb(0.11, 0.23, 0.37) });
-    let lineY = boxTop - 34;
-    lines.filter((line) => line.trim()).slice(0, 4).forEach((line) => {
-      page.drawText(line, { x: x + 12, y: lineY, size: 9.5, font: regular, color: rgb(0.25, 0.29, 0.34) });
-      lineY -= 12;
+    page.drawRectangle({
+      x,
+      y: boxTop - 82,
+      width: boxWidth,
+      height: 82,
+      borderColor: rgb(0.9, 0.92, 0.95),
+      borderWidth: 1,
+      color: rgb(0.985, 0.988, 0.992),
     });
+
+    page.drawText(title, {
+      x: x + 12,
+      y: boxTop - 18,
+      size: 10,
+      font: bold,
+      color: rgb(0.11, 0.23, 0.37),
+    });
+
+    let lineY = boxTop - 34;
+    lines
+      .filter((line) => line.trim())
+      .slice(0, 4)
+      .forEach((line) => {
+        page.drawText(line, {
+          x: x + 12,
+          y: lineY,
+          size: 9.5,
+          font: regular,
+          color: rgb(0.25, 0.29, 0.34),
+        });
+        lineY -= 12;
+      });
   };
 
   drawInfoBox(LEFT_MARGIN, 'Bill To', [
@@ -266,49 +453,147 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Uint8Arr
     amount: LEFT_MARGIN + 500,
   };
 
-  page.drawRectangle({ x: LEFT_MARGIN, y: y - 20, width: CONTENT_WIDTH, height: 20, color: rgb(0.11, 0.23, 0.37) });
-  page.drawText('Description', { x: columns.desc, y: y - 14, size: 9.5, font: bold, color: rgb(1, 1, 1) });
-  page.drawText('Qty', { x: columns.qty, y: y - 14, size: 9.5, font: bold, color: rgb(1, 1, 1) });
-  page.drawText('Unit', { x: columns.unit, y: y - 14, size: 9.5, font: bold, color: rgb(1, 1, 1) });
-  page.drawText('Rate', { x: columns.rate, y: y - 14, size: 9.5, font: bold, color: rgb(1, 1, 1) });
-  page.drawText('Amount', { x: columns.amount, y: y - 14, size: 9.5, font: bold, color: rgb(1, 1, 1) });
+  page.drawRectangle({
+    x: LEFT_MARGIN,
+    y: y - 20,
+    width: CONTENT_WIDTH,
+    height: 20,
+    color: rgb(0.11, 0.23, 0.37),
+  });
+
+  page.drawText('Description', {
+    x: columns.desc,
+    y: y - 14,
+    size: 9.5,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
+  page.drawText('Qty', {
+    x: columns.qty,
+    y: y - 14,
+    size: 9.5,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
+  page.drawText('Unit', {
+    x: columns.unit,
+    y: y - 14,
+    size: 9.5,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
+  page.drawText('Rate', {
+    x: columns.rate,
+    y: y - 14,
+    size: 9.5,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
+  page.drawText('Amount', {
+    x: columns.amount,
+    y: y - 14,
+    size: 9.5,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
+
   y -= 30;
 
   for (const item of data.lineItems) {
     const descLines = splitText(regular, item.description, 300, 9.5);
     const rowHeight = Math.max(22, descLines.length * 12 + 8);
     ensureSpace(rowHeight + 6);
-    page.drawRectangle({ x: LEFT_MARGIN, y: y - rowHeight + 4, width: CONTENT_WIDTH, height: rowHeight, borderColor: rgb(0.9, 0.92, 0.95), borderWidth: 1 });
+
+    page.drawRectangle({
+      x: LEFT_MARGIN,
+      y: y - rowHeight + 4,
+      width: CONTENT_WIDTH,
+      height: rowHeight,
+      borderColor: rgb(0.9, 0.92, 0.95),
+      borderWidth: 1,
+    });
+
     let textY = y - 10;
     descLines.forEach((line) => {
-      page.drawText(line, { x: columns.desc, y: textY, size: 9.5, font: regular, color: rgb(0.2, 0.24, 0.29) });
+      page.drawText(line, {
+        x: columns.desc,
+        y: textY,
+        size: 9.5,
+        font: regular,
+        color: rgb(0.2, 0.24, 0.29),
+      });
       textY -= 12;
     });
-    page.drawText(String(item.quantity), { x: columns.qty, y: y - 10, size: 9.5, font: regular, color: rgb(0.2, 0.24, 0.29) });
-    page.drawText(item.unit || '—', { x: columns.unit, y: y - 10, size: 9.5, font: regular, color: rgb(0.2, 0.24, 0.29) });
-    page.drawText(`$${formatCurrency(item.unit_price)}`, { x: columns.rate, y: y - 10, size: 9.5, font: regular, color: rgb(0.2, 0.24, 0.29) });
-    page.drawText(`$${formatCurrency(item.line_total)}`, { x: columns.amount - regular.widthOfTextAtSize(`$${formatCurrency(item.line_total)}`, 9.5) + 34, y: y - 10, size: 9.5, font: regular, color: rgb(0.2, 0.24, 0.29) });
+
+    page.drawText(String(item.quantity), {
+      x: columns.qty,
+      y: y - 10,
+      size: 9.5,
+      font: regular,
+      color: rgb(0.2, 0.24, 0.29),
+    });
+
+    page.drawText(item.unit || '—', {
+      x: columns.unit,
+      y: y - 10,
+      size: 9.5,
+      font: regular,
+      color: rgb(0.2, 0.24, 0.29),
+    });
+
+    page.drawText(`$${formatCurrency(item.unit_price)}`, {
+      x: columns.rate,
+      y: y - 10,
+      size: 9.5,
+      font: regular,
+      color: rgb(0.2, 0.24, 0.29),
+    });
+
+    const amountText = `$${formatCurrency(item.line_total)}`;
+    page.drawText(amountText, {
+      x: PAGE_WIDTH - RIGHT_MARGIN - regular.widthOfTextAtSize(amountText, 9.5),
+      y: y - 10,
+      size: 9.5,
+      font: regular,
+      color: rgb(0.2, 0.24, 0.29),
+    });
+
     y -= rowHeight + 6;
   }
 
   ensureSpace(150);
   const totalsX = LEFT_MARGIN + 320;
+
   const drawTotalLine = (label: string, value: string, strong = false) => {
     const font = strong ? bold : regular;
-    page.drawText(label, { x: totalsX, y, size: strong ? 10.5 : 9.5, font, color: rgb(0.2, 0.24, 0.29) });
-    page.drawText(value, {
-      x: PAGE_WIDTH - RIGHT_MARGIN - font.widthOfTextAtSize(value, strong ? 10.5 : 9.5),
+    const size = strong ? 10.5 : 9.5;
+
+    page.drawText(label, {
+      x: totalsX,
       y,
-      size: strong ? 10.5 : 9.5,
+      size,
       font,
       color: rgb(0.2, 0.24, 0.29),
     });
+
+    page.drawText(value, {
+      x: PAGE_WIDTH - RIGHT_MARGIN - font.widthOfTextAtSize(value, size),
+      y,
+      size,
+      font,
+      color: rgb(0.2, 0.24, 0.29),
+    });
+
     y -= strong ? 18 : 14;
   };
 
   drawTotalLine('Subtotal', `$${formatCurrency(data.invoice.subtotal_amount)}`);
-  if (data.invoice.discount_amount > 0) drawTotalLine('Discount', `-$${formatCurrency(data.invoice.discount_amount)}`);
-  if (data.invoice.tax_amount > 0) drawTotalLine('Tax', `$${formatCurrency(data.invoice.tax_amount)}`);
+  if (data.invoice.discount_amount > 0) {
+    drawTotalLine('Discount', `-$${formatCurrency(data.invoice.discount_amount)}`);
+  }
+  if (data.invoice.tax_amount > 0) {
+    drawTotalLine('Tax', `$${formatCurrency(data.invoice.tax_amount)}`);
+  }
   drawTotalLine('Total', `$${formatCurrency(data.invoice.total_amount)}`, true);
   drawTotalLine('Payments Received', `$${formatCurrency(data.paid)}`);
   drawTotalLine('Balance Due', `$${formatCurrency(data.outstanding)}`, true);
@@ -317,14 +602,30 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Uint8Arr
   const drawTextSection = (title: string, source: string | null | undefined) => {
     const text = String(source || '').trim();
     if (!text) return;
+
     const lines = splitText(regular, text, CONTENT_WIDTH, 9.5);
     ensureSpace(lines.length * 12 + 30);
-    page.drawText(title, { x: LEFT_MARGIN, y, size: 11, font: bold, color: rgb(0.11, 0.23, 0.37) });
+
+    page.drawText(title, {
+      x: LEFT_MARGIN,
+      y,
+      size: 11,
+      font: bold,
+      color: rgb(0.11, 0.23, 0.37),
+    });
     y -= 16;
+
     lines.forEach((line) => {
-      page.drawText(line, { x: LEFT_MARGIN, y, size: 9.5, font: regular, color: rgb(0.25, 0.29, 0.34) });
+      page.drawText(line, {
+        x: LEFT_MARGIN,
+        y,
+        size: 9.5,
+        font: regular,
+        color: rgb(0.25, 0.29, 0.34),
+      });
       y -= 12;
     });
+
     y -= 8;
   };
 
