@@ -1,11 +1,27 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getDb } from '../db/connection.js';
-import { permissionRequired, userHasPermission } from '../middleware/auth.js';
+import { loginRequired, permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import { getEnv } from '../config/env.js';
+import {
+  DOCUMENT_ATTACHMENT_EXTENSIONS,
+  DOCUMENT_ATTACHMENT_MIME_TYPES,
+  saveUploadedFile,
+  buildTenantScopedStoredPath,
+  buildTenantScopedUploadDir,
+  resolveUploadedFilePath,
+  inferMimeTypeFromStoredFilename,
+  buildSafeDownloadFilename,
+  deleteUploadedFile,
+} from '../services/file-upload.js';
 import { ValidationError, optionalTrimmedString, parseIsoDate, parseMoney, parsePositiveInt } from '../lib/validation.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { InvoiceDetailPage } from '../pages/invoices/InvoiceDetailPage.js';
+
+const paymentAttachmentRootDir = path.join(getEnv().uploadDir, 'payment_attachments');
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 | 404 = 200) {
   return c.html(
@@ -71,7 +87,14 @@ function loadInvoiceDetailData(db: any, tenantId: number, invoiceId: number) {
   const payments = db
     .prepare(
       `
-        SELECT id, date, amount, method, reference
+        SELECT
+          id,
+          date,
+          amount,
+          method,
+          reference,
+          attachment_filename,
+          attachment_original_name
         FROM payments
         WHERE invoice_id = ? AND tenant_id = ?
         ORDER BY date DESC, id DESC
@@ -126,6 +149,7 @@ function renderInvoiceDetail(
       amount?: string;
       method?: string;
       reference?: string;
+      attachmentName?: string;
     };
   },
   statusCode: 200 | 400 | 404 = 200,
@@ -200,7 +224,13 @@ paymentRoutes.post('/add_payment/:invoiceId', permissionRequired('payments.manag
     amount: String(body['amount'] ?? ''),
     method: String(body['method'] ?? ''),
     reference: String(body['reference'] ?? ''),
+    attachmentName:
+      body['attachment'] instanceof File && body['attachment'].size > 0
+        ? body['attachment'].name
+        : '',
   };
+
+  let attachmentFilename: string | null = null;
 
   try {
     if (invoice.archived_at) {
@@ -211,6 +241,21 @@ paymentRoutes.post('/add_payment/:invoiceId', permissionRequired('payments.manag
     const amount = parseMoney(body['amount'], 'Payment amount');
     const method = optionalTrimmedString(body['method'], 120);
     const reference = optionalTrimmedString(body['reference'], 120);
+    const attachment = body['attachment'] instanceof File ? body['attachment'] : null;
+
+    let attachmentOriginalName: string | null = null;
+
+    if (attachment && attachment.size > 0) {
+      const tenantAttachmentDir = buildTenantScopedUploadDir(paymentAttachmentRootDir, tenantId);
+      const savedFilename = await saveUploadedFile(attachment, tenantAttachmentDir, {
+        allowedExtensions: DOCUMENT_ATTACHMENT_EXTENSIONS,
+        allowedMimeTypes: DOCUMENT_ATTACHMENT_MIME_TYPES,
+        maxBytes: getEnv().maxUploadBytes,
+      });
+
+      attachmentFilename = buildTenantScopedStoredPath(tenantId, savedFilename);
+      attachmentOriginalName = attachment.name || null;
+    }
 
     const paidRow = db
       .prepare(
@@ -231,10 +276,28 @@ paymentRoutes.post('/add_payment/:invoiceId', permissionRequired('payments.manag
 
     const result = db.prepare(
       `
-        INSERT INTO payments (invoice_id, date, amount, method, reference, tenant_id)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO payments (
+          invoice_id,
+          date,
+          amount,
+          method,
+          reference,
+          tenant_id,
+          attachment_filename,
+          attachment_original_name
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
-    ).run(invoiceId, date, amount, method, reference, tenantId);
+    ).run(
+      invoiceId,
+      date,
+      amount,
+      method,
+      reference,
+      tenantId,
+      attachmentFilename,
+      attachmentOriginalName,
+    );
 
     const paymentId = Number(result.lastInsertRowid);
 
@@ -254,6 +317,8 @@ paymentRoutes.post('/add_payment/:invoiceId', permissionRequired('payments.manag
         date,
         method,
         reference,
+        attachment_filename: attachmentFilename,
+        attachment_original_name: attachmentOriginalName,
       },
       ipAddress: resolveRequestIp(c),
     });
@@ -268,8 +333,12 @@ paymentRoutes.post('/add_payment/:invoiceId', permissionRequired('payments.manag
       200,
     );
   } catch (error) {
+    if (attachmentFilename) {
+      deleteUploadedFile(attachmentFilename, paymentAttachmentRootDir);
+    }
+
     const message =
-      error instanceof ValidationError ? error.message : 'Unable to add payment right now.';
+      error instanceof ValidationError || error instanceof Error ? error.message : 'Unable to add payment right now.';
 
     return renderInvoiceDetail(
       c,
@@ -311,6 +380,8 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', permissionRequired('
           p.amount,
           p.method,
           p.reference,
+          p.attachment_filename,
+          p.attachment_original_name,
           i.invoice_number,
           i.job_id,
           i.archived_at,
@@ -333,6 +404,8 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', permissionRequired('
           amount: number;
           method: string | null;
           reference: string | null;
+          attachment_filename: string | null;
+          attachment_original_name: string | null;
           invoice_number: string | null;
           job_id: number;
           archived_at: string | null;
@@ -363,6 +436,10 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', permissionRequired('
     `,
   ).run(paymentId, invoiceId, tenantId);
 
+  if (payment.attachment_filename) {
+    deleteUploadedFile(payment.attachment_filename, paymentAttachmentRootDir);
+  }
+
   logActivity(db, {
     tenantId,
     actorUserId: currentUser.id,
@@ -379,6 +456,8 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', permissionRequired('
       date: payment.date,
       method: payment.method,
       reference: payment.reference,
+      attachment_filename: payment.attachment_filename,
+      attachment_original_name: payment.attachment_original_name,
     },
     ipAddress: resolveRequestIp(c),
   });
@@ -392,6 +471,124 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', permissionRequired('
     },
     200,
   );
+});
+
+
+paymentRoutes.get('/payment-attachments/:paymentId', loginRequired, (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  let paymentId: number;
+  try {
+    paymentId = parseRouteId(c.req.param('paymentId'), 'Payment');
+  } catch {
+    return c.text('Attachment not found', 404);
+  }
+
+  const tenantId = tenant.id;
+  const db = getDb();
+
+  const payment = db
+    .prepare(
+      `
+        SELECT
+          p.id,
+          p.invoice_id,
+          p.date,
+          p.amount,
+          p.method,
+          p.reference,
+          p.attachment_filename,
+          p.attachment_original_name,
+          i.invoice_number,
+          i.job_id,
+          j.job_name
+        FROM payments p
+        JOIN invoices i
+          ON i.id = p.invoice_id
+         AND i.tenant_id = p.tenant_id
+        JOIN jobs j
+          ON j.id = i.job_id
+         AND j.tenant_id = i.tenant_id
+        WHERE p.id = ? AND p.tenant_id = ?
+        LIMIT 1
+      `,
+    )
+    .get(paymentId, tenantId) as
+      | {
+          id: number;
+          invoice_id: number;
+          date: string;
+          amount: number;
+          method: string | null;
+          reference: string | null;
+          attachment_filename: string | null;
+          attachment_original_name: string | null;
+          invoice_number: string | null;
+          job_id: number;
+          job_name: string | null;
+        }
+      | undefined;
+
+  if (!payment || !payment.attachment_filename) {
+    return c.text('Attachment not found', 404);
+  }
+
+  try {
+    const filePath = resolveUploadedFilePath(payment.attachment_filename, paymentAttachmentRootDir);
+
+    if (!fs.existsSync(filePath)) {
+      return c.text('Attachment file not found', 404);
+    }
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'payment.attachment_viewed',
+      entityType: 'payment',
+      entityId: payment.id,
+      description: `${currentUser.name} viewed a payment attachment for invoice ${payment.invoice_number || `#${payment.invoice_id}`}.`,
+      metadata: {
+        invoice_id: payment.invoice_id,
+        invoice_number: payment.invoice_number,
+        job_id: payment.job_id,
+        job_name: payment.job_name,
+        payment_amount: Number(payment.amount || 0),
+        payment_date: payment.date,
+        method: payment.method,
+        reference: payment.reference,
+        attachment_filename: payment.attachment_filename,
+        attachment_original_name: payment.attachment_original_name,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    const fileBuffer = fs.readFileSync(filePath);
+    const mimeType = inferMimeTypeFromStoredFilename(payment.attachment_filename);
+    const baseName = payment.attachment_original_name
+      ? String(payment.attachment_original_name)
+          .replace(/\.[^.]+$/, '')
+          .trim()
+          .replace(/[^A-Za-z0-9_-]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+      : '';
+    const downloadName = buildSafeDownloadFilename(
+      baseName || `payment-${payment.id}-attachment`,
+      payment.attachment_filename,
+    );
+
+    return new Response(fileBuffer, {
+      headers: {
+        'Content-Type': mimeType,
+        'Content-Disposition': `inline; filename="${downloadName}"`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  } catch {
+    return c.text('Attachment not found', 404);
+  }
 });
 
 export default paymentRoutes;
