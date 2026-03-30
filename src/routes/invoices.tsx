@@ -384,7 +384,7 @@ invoiceRoutes.get('/add_invoice', permissionRequired('invoices.create'), (c) => 
     tenantSettings.invoice_prefix || 'INV',
   );
 
-  return renderApp(
+    return renderApp(
     c,
     'Create Invoice',
     <AddInvoicePage
@@ -393,6 +393,10 @@ invoiceRoutes.get('/add_invoice', permissionRequired('invoices.create'), (c) => 
       suggestedInvoiceNumber={suggestedInvoiceNumber}
       tenant={tenantSettings}
       csrfToken={c.get('csrfToken')}
+      formValues={createEmptyInvoiceDraftForm({
+        job_id: prefillJobId ? String(prefillJobId) : '',
+        invoice_number: suggestedInvoiceNumber,
+      })}
     />,
   );
 });
