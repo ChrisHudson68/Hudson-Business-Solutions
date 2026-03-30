@@ -5,7 +5,13 @@ import path from 'node:path';
 import { getDb } from '../db/connection.js';
 import { loginRequired, permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { generateInvoicePdf } from '../services/invoice-pdf.js';
-import { createEmptyInvoiceDraftForm } from '../services/invoice-v2.js';
+import {
+  applyInvoiceDraftUpdate,
+  buildInvoiceDraftFormFromBody,
+  createEmptyInvoiceDraftForm,
+  parseInvoiceDraftFields,
+  parseInvoiceLineItems,
+} from '../services/invoice-v2.js';
 import {
   DOCUMENT_ATTACHMENT_EXTENSIONS,
   DOCUMENT_ATTACHMENT_MIME_TYPES,
