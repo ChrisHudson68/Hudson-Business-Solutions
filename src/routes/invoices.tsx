@@ -5,6 +5,7 @@ import path from 'node:path';
 import { getDb } from '../db/connection.js';
 import { loginRequired, permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { generateInvoicePdf } from '../services/invoice-pdf.js';
+import { createEmptyInvoiceDraftForm } from '../services/invoice-v2.js';
 import {
   DOCUMENT_ATTACHMENT_EXTENSIONS,
   DOCUMENT_ATTACHMENT_MIME_TYPES,
@@ -544,20 +545,21 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
     const message =
       error instanceof ValidationError ? error.message : 'Unable to create invoice right now.';
 
-    return renderApp(
-      c,
-      'Create Invoice',
-      <AddInvoicePage
-        jobs={jobs}
-        prefillJobId={null}
-        suggestedInvoiceNumber={fallbackInvoiceNumber}
-        tenant={tenantSettings}
-        csrfToken={c.get('csrfToken')}
-        error={message}
-        formValues={formValues}
-      />,
-      400,
-    );
+      return renderApp(
+        c,
+        'Create Invoice',
+        <AddInvoicePage
+            jobs={jobs}
+            prefillJobId={prefillJobId}
+            suggestedInvoiceNumber={suggestedInvoiceNumber}
+            tenant={tenantSettings}
+            csrfToken={c.get('csrfToken')}
+            formValues={createEmptyInvoiceDraftForm({
+                job_id: prefillJobId ? String(prefillJobId) : '',
+                invoice_number: suggestedInvoiceNumber,
+            })}
+          />,
+        );
   }
 });
 
