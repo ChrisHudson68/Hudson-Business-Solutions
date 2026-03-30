@@ -986,6 +986,9 @@ invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
+  const tenantId = tenant.id;
+  const db = getDb();
+
   let invoiceId: number;
   try {
     invoiceId = parseRouteId(c.req.param('id'), 'Invoice');
@@ -993,47 +996,40 @@ invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
     return c.text('Invoice not found', 404);
   }
 
-  const tenantId = tenant.id;
-  const db = getDb();
-
   const tenantSettings = getTenantSettings(db, tenantId);
   if (!tenantSettings) return c.text('Tenant not found', 404);
 
-  const inv = db
-    .prepare(
-      `
-        SELECT i.id, i.job_id, j.job_name, j.client_name,
-               i.invoice_number, i.date_issued, i.due_date, i.amount, i.notes
-        FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
-        WHERE i.id = ? AND i.tenant_id = ?
-      `,
-    )
-    .get(invoiceId, tenantId) as any;
+  const inv = db.prepare(`
+    SELECT i.*, j.job_name, j.client_name, j.job_code
+    FROM invoices i
+    JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+    WHERE i.id = ? AND i.tenant_id = ?
+  `).get(invoiceId, tenantId) as any;
 
   if (!inv) return c.text('Invoice not found', 404);
 
-  const amount = Number.parseFloat(String(inv.amount || 0));
+  // 🔥 LOAD REAL LINE ITEMS
+  const lineItems = db.prepare(`
+    SELECT description, quantity, unit, unit_price, line_total
+    FROM invoice_line_items
+    WHERE invoice_id = ? AND tenant_id = ?
+    ORDER BY sort_order ASC
+  `).all(invoiceId, tenantId);
 
-  const paidRow = db
-    .prepare(
-      `
-        SELECT COALESCE(SUM(amount), 0) as total
-        FROM payments
-        WHERE invoice_id = ? AND tenant_id = ?
-      `,
-    )
-    .get(invoiceId, tenantId) as any;
+  const paidRow = db.prepare(`
+    SELECT COALESCE(SUM(amount), 0) as total
+    FROM payments
+    WHERE invoice_id = ? AND tenant_id = ?
+  `).get(invoiceId, tenantId) as any;
 
-  const paid = Number.parseFloat(String(paidRow?.total || 0));
-  const outstanding = Math.max(amount - paid, 0);
-  const status = outstanding <= 0 ? 'PAID' : 'UNPAID';
-
-  const label = inv.invoice_number || `#${inv.id}`;
+  const paid = Number(paidRow?.total || 0);
+  const total = Number(inv.total_amount || inv.amount || 0);
+  const outstanding = Math.max(total - paid, 0);
 
   const pdfBytes = await generateInvoicePdf({
     tenant: {
       name: tenantSettings.name,
+      logo_path: tenantSettings.logo_path,
       company_address: tenantSettings.company_address,
       company_email: tenantSettings.company_email,
       company_phone: tenantSettings.company_phone,
@@ -1043,19 +1039,30 @@ invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
       invoice_number: inv.invoice_number,
       date_issued: inv.date_issued,
       due_date: inv.due_date,
-      amount,
-      notes: inv.notes,
+      subtotal_amount: inv.subtotal_amount || total,
+      discount_amount: inv.discount_amount || 0,
+      tax_amount: inv.tax_amount || 0,
+      total_amount: total,
+      public_notes: inv.public_notes,
+      terms_text: inv.terms_text,
+      status: inv.status || 'Draft',
+    },
+    customer: {
+      name: inv.customer_name,
+      email: inv.customer_email,
+      phone: inv.customer_phone,
+      address: inv.customer_address,
     },
     job: {
       job_name: inv.job_name,
-      client_name: inv.client_name,
+      job_code: inv.job_code,
     },
+    lineItems: lineItems,
     paid,
     outstanding,
-    status,
   });
 
-  const filename = `invoice_${String(label).replace(/ /g, '_').replace(/#/g, '')}.pdf`;
+  const filename = `invoice_${inv.invoice_number || inv.id}.pdf`;
 
   return new Response(Buffer.from(pdfBytes), {
     headers: {
