@@ -8,7 +8,9 @@ import { generateInvoicePdf } from '../services/invoice-pdf.js';
 import {
   applyInvoiceDraftUpdate,
   buildInvoiceDraftFormFromBody,
+  buildLegacyLineItem,
   createEmptyInvoiceDraftForm,
+  loadInvoiceLineItems,
   parseInvoiceDraftFields,
   parseInvoiceLineItems,
 } from '../services/invoice-v2.js';
@@ -646,7 +648,31 @@ invoiceRoutes.get('/edit_invoice/:id', permissionRequired('invoices.edit'), (c) 
 
   const invoice = db.prepare(
     `
-      SELECT id, job_id, invoice_number, date_issued, due_date, amount, notes, attachment_filename, archived_at
+      SELECT
+        id,
+        job_id,
+        invoice_number,
+        date_issued,
+        due_date,
+        amount,
+        status,
+        notes,
+        attachment_filename,
+        archived_at,
+        customer_name,
+        customer_email,
+        customer_phone,
+        customer_address,
+        terms_text,
+        public_notes,
+        internal_notes,
+        discount_type,
+        discount_value,
+        tax_rate,
+        subtotal_amount,
+        discount_amount,
+        tax_amount,
+        total_amount
       FROM invoices
       WHERE id = ? AND tenant_id = ?
       LIMIT 1
@@ -666,6 +692,43 @@ invoiceRoutes.get('/edit_invoice/:id', permissionRequired('invoices.edit'), (c) 
     `
   ).all(tenantId) as any[];
 
+  const storedLineItems = loadInvoiceLineItems(db, tenantId, invoiceId);
+  const lineItems = storedLineItems.length ? storedLineItems : buildLegacyLineItem(Number(invoice.total_amount || invoice.amount || 0));
+
+  const formValues = createEmptyInvoiceDraftForm({
+    job_id: String(invoice.job_id ?? ''),
+    invoice_number: String(invoice.invoice_number ?? ''),
+    issue_date: String(invoice.date_issued ?? ''),
+    due_date: String(invoice.due_date ?? ''),
+    customer_name: String(invoice.customer_name ?? ''),
+    customer_email: String(invoice.customer_email ?? ''),
+    customer_phone: String(invoice.customer_phone ?? ''),
+    customer_address: String(invoice.customer_address ?? ''),
+    terms_text: String(invoice.terms_text ?? ''),
+    public_notes: String(invoice.public_notes ?? invoice.notes ?? ''),
+    internal_notes: String(invoice.internal_notes ?? ''),
+    discount_type:
+      String(invoice.discount_type ?? 'none').trim().toLowerCase() === 'percent'
+        ? 'percent'
+        : String(invoice.discount_type ?? 'none').trim().toLowerCase() === 'amount'
+          ? 'amount'
+          : 'none',
+    discount_value:
+      invoice.discount_value === null || invoice.discount_value === undefined
+        ? ''
+        : String(invoice.discount_value),
+    tax_rate:
+      invoice.tax_rate === null || invoice.tax_rate === undefined
+        ? '0'
+        : String(invoice.tax_rate),
+    line_items: lineItems.map((item) => ({
+      description: String(item.description ?? ''),
+      quantity: String(item.quantity ?? ''),
+      unit: String(item.unit ?? ''),
+      unit_price: String(item.unit_price ?? ''),
+    })),
+  });
+
   return renderApp(
     c,
     'Edit Invoice',
@@ -673,6 +736,7 @@ invoiceRoutes.get('/edit_invoice/:id', permissionRequired('invoices.edit'), (c) 
       invoice={invoice}
       jobs={jobs}
       csrfToken={c.get('csrfToken')}
+      formValues={formValues}
     />,
   );
 });
@@ -695,7 +759,37 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
 
   const existingInvoice = db.prepare(
     `
-      SELECT id, job_id, invoice_number, date_issued, due_date, amount, notes, attachment_filename, archived_at
+      SELECT
+        id,
+        job_id,
+        invoice_number,
+        date_issued,
+        due_date,
+        amount,
+        status,
+        notes,
+        attachment_filename,
+        archived_at,
+        customer_name,
+        customer_email,
+        customer_phone,
+        customer_address,
+        company_name_snapshot,
+        company_email_snapshot,
+        company_phone_snapshot,
+        company_address_snapshot,
+        company_website_snapshot,
+        company_logo_path_snapshot,
+        terms_text,
+        public_notes,
+        internal_notes,
+        discount_type,
+        discount_value,
+        discount_amount,
+        tax_rate,
+        tax_amount,
+        subtotal_amount,
+        total_amount
       FROM invoices
       WHERE id = ? AND tenant_id = ?
       LIMIT 1
@@ -715,47 +809,82 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
     `
   ).all(tenantId) as any[];
 
+  const existingLineItems = loadInvoiceLineItems(db, tenantId, invoiceId);
+  const fallbackLineItems = existingLineItems.length
+    ? existingLineItems
+    : buildLegacyLineItem(Number(existingInvoice.total_amount || existingInvoice.amount || 0));
+
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const formValues = buildInvoiceDraftFormFromBody(body, String(existingInvoice.invoice_number ?? ''));
+
+  const pageInvoice = {
+    ...existingInvoice,
+    job_id: formValues.job_id || String(existingInvoice.job_id ?? ''),
+    invoice_number: formValues.invoice_number || String(existingInvoice.invoice_number ?? ''),
+    date_issued: formValues.issue_date || String(existingInvoice.date_issued ?? ''),
+    due_date: formValues.due_date || String(existingInvoice.due_date ?? ''),
+    customer_name: formValues.customer_name || String(existingInvoice.customer_name ?? ''),
+    customer_email: formValues.customer_email || String(existingInvoice.customer_email ?? ''),
+    customer_phone: formValues.customer_phone || String(existingInvoice.customer_phone ?? ''),
+    customer_address: formValues.customer_address || String(existingInvoice.customer_address ?? ''),
+    terms_text: formValues.terms_text || String(existingInvoice.terms_text ?? ''),
+    public_notes: formValues.public_notes || String(existingInvoice.public_notes ?? existingInvoice.notes ?? ''),
+    internal_notes: formValues.internal_notes || String(existingInvoice.internal_notes ?? ''),
+    discount_type: formValues.discount_type || String(existingInvoice.discount_type ?? 'none'),
+    discount_value: formValues.discount_value || String(existingInvoice.discount_value ?? ''),
+    tax_rate: formValues.tax_rate || String(existingInvoice.tax_rate ?? '0'),
+    line_items: formValues.line_items.length
+      ? formValues.line_items
+      : fallbackLineItems.map((item) => ({
+          description: String(item.description ?? ''),
+          quantity: String(item.quantity ?? ''),
+          unit: String(item.unit ?? ''),
+          unit_price: String(item.unit_price ?? ''),
+        })),
+  };
+
   if (existingInvoice.archived_at) {
     return renderApp(
       c,
       'Edit Invoice',
       <EditInvoicePage
-        invoice={existingInvoice}
+        invoice={pageInvoice}
         jobs={jobs}
         csrfToken={c.get('csrfToken')}
         error="Archived invoices cannot be edited. Restore the invoice first."
+        formValues={pageInvoice}
       />,
       400,
     );
   }
 
-  const body = (await c.req.parseBody()) as Record<string, unknown>;
-  const formValues = {
-    job_id: String(body['job_id'] ?? existingInvoice.job_id),
-    invoice_number: String(body['invoice_number'] ?? existingInvoice.invoice_number ?? ''),
-    amount: String(body['amount'] ?? existingInvoice.amount ?? ''),
-    date_issued: String(body['date_issued'] ?? existingInvoice.date_issued ?? ''),
-    due_date: String(body['due_date'] ?? existingInvoice.due_date ?? ''),
-    notes: String(body['notes'] ?? existingInvoice.notes ?? ''),
-  };
-
   let newStoredAttachment: string | null = null;
+  let oldAttachmentToDelete: string | null = null;
 
   try {
     const jobId = parsePositiveInt(body['job_id'], 'Job');
+    const rawInvoiceNumber = String(body['invoice_number'] ?? '').trim();
     const invoiceNumber = normalizeInvoiceNumber(
-      String(body['invoice_number'] ?? '').trim(),
-      'INV',
+      rawInvoiceNumber || String(existingInvoice.invoice_number ?? ''),
+      tenant.invoice_prefix || 'INV',
     );
-    const dateIssued = parseIsoDate(body['date_issued'], 'Date issued');
-    const dueDate = parseIsoDate(body['due_date'], 'Due date');
-    ensureDateOrder(dateIssued, dueDate, 'date issued', 'Due date');
-    const amount = parseMoney(body['amount'], 'Amount');
-    const notes = optionalTrimmedString(body['notes'], 2000);
+
+    const lineItems = parseInvoiceLineItems(body);
+    const draft = parseInvoiceDraftFields(body, lineItems);
+    ensureDateOrder(draft.issueDate, draft.dueDate, 'Issue date', 'Due date');
 
     const job = db
-      .prepare('SELECT id, job_name FROM jobs WHERE id = ? AND tenant_id = ? AND archived_at IS NULL')
-      .get(jobId, tenantId) as { id: number; job_name: string } | undefined;
+      .prepare(
+        `
+          SELECT id, job_name, client_name, job_code
+          FROM jobs
+          WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+          LIMIT 1
+        `,
+      )
+      .get(jobId, tenantId) as
+      | { id: number; job_name: string; client_name: string | null; job_code: string | null }
+      | undefined;
 
     if (!job) {
       throw new ValidationError('Selected job was not found for this company.');
@@ -775,7 +904,6 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
     }
 
     let nextAttachmentFilename = existingInvoice.attachment_filename || null;
-    let oldAttachmentToDelete: string | null = null;
 
     const attachment = body['attachment'];
     if (attachment && attachment instanceof File && attachment.size > 0) {
@@ -791,30 +919,38 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
       oldAttachmentToDelete = existingInvoice.attachment_filename || null;
     }
 
-    db.prepare(
-      `
-        UPDATE invoices
-        SET
-          job_id = ?,
-          invoice_number = ?,
-          date_issued = ?,
-          due_date = ?,
-          amount = ?,
-          notes = ?,
-          attachment_filename = ?
-        WHERE id = ? AND tenant_id = ?
-      `
-    ).run(
+    const tenantSettings = getTenantSettings(db, tenantId);
+    if (!tenantSettings) {
+      throw new ValidationError('Tenant not found.');
+    }
+
+    applyInvoiceDraftUpdate(db, {
+      tenantId,
+      invoiceId,
       jobId,
       invoiceNumber,
-      dateIssued,
-      dueDate,
-      amount,
-      notes,
-      nextAttachmentFilename,
-      invoiceId,
-      tenantId,
-    );
+      issueDate: draft.issueDate,
+      dueDate: draft.dueDate,
+      customerName: draft.customerName,
+      customerEmail: draft.customerEmail,
+      customerPhone: draft.customerPhone,
+      customerAddress: draft.customerAddress,
+      companyName: tenantSettings.name,
+      companyEmail: tenantSettings.company_email,
+      companyPhone: tenantSettings.company_phone,
+      companyAddress: tenantSettings.company_address,
+      companyWebsite: tenantSettings.company_website ?? null,
+      companyLogoPath: tenantSettings.logo_path,
+      jobName: job.job_name,
+      jobCode: job.job_code ?? null,
+      termsText: draft.termsText,
+      publicNotes: draft.publicNotes,
+      internalNotes: draft.internalNotes,
+      totals: draft.totals,
+      attachmentFilename: nextAttachmentFilename,
+      lineItems,
+      status: existingInvoice.status || 'Draft',
+    });
 
     if (oldAttachmentToDelete) {
       deleteUploadedFile(oldAttachmentToDelete, invoiceAttachmentRootDir);
@@ -826,20 +962,27 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
       eventType: 'invoice.updated',
       entityType: 'invoice',
       entityId: invoiceId,
-      description: `${currentUser.name} updated invoice ${invoiceNumber}.`,
+      description: `${currentUser.name} updated draft invoice ${invoiceNumber}.`,
       metadata: {
         previous_job_id: existingInvoice.job_id,
         new_job_id: jobId,
         previous_invoice_number: existingInvoice.invoice_number,
         new_invoice_number: invoiceNumber,
-        previous_date_issued: existingInvoice.date_issued,
-        new_date_issued: dateIssued,
+        previous_customer_name: existingInvoice.customer_name,
+        new_customer_name: draft.customerName,
+        previous_issue_date: existingInvoice.date_issued,
+        new_issue_date: draft.issueDate,
         previous_due_date: existingInvoice.due_date,
-        new_due_date: dueDate,
-        previous_amount: Number(existingInvoice.amount || 0),
-        new_amount: amount,
-        previous_notes: existingInvoice.notes,
-        new_notes: notes,
+        new_due_date: draft.dueDate,
+        previous_subtotal_amount: Number(existingInvoice.subtotal_amount || existingInvoice.amount || 0),
+        new_subtotal_amount: draft.totals.subtotal,
+        previous_discount_amount: Number(existingInvoice.discount_amount || 0),
+        new_discount_amount: draft.totals.discountAmount,
+        previous_tax_amount: Number(existingInvoice.tax_amount || 0),
+        new_tax_amount: draft.totals.taxAmount,
+        previous_total_amount: Number(existingInvoice.total_amount || existingInvoice.amount || 0),
+        new_total_amount: draft.totals.total,
+        line_item_count: lineItems.length,
         attachment_filename: nextAttachmentFilename,
       },
       ipAddress: resolveRequestIp(c),
@@ -871,15 +1014,27 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
     const message =
       error instanceof ValidationError ? error.message : 'Unable to update invoice right now.';
 
+    const errorFormValues = pageInvoice.line_items?.length
+      ? pageInvoice
+      : {
+          ...pageInvoice,
+          line_items: fallbackLineItems.map((item) => ({
+            description: String(item.description ?? ''),
+            quantity: String(item.quantity ?? ''),
+            unit: String(item.unit ?? ''),
+            unit_price: String(item.unit_price ?? ''),
+          })),
+        };
+
     return renderApp(
       c,
       'Edit Invoice',
       <EditInvoicePage
-        invoice={existingInvoice}
+        invoice={pageInvoice}
         jobs={jobs}
         csrfToken={c.get('csrfToken')}
         error={message}
-        formValues={formValues}
+        formValues={errorFormValues}
       />,
       400,
     );
