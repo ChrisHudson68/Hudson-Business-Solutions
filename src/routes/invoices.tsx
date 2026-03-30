@@ -107,7 +107,7 @@ function getTenantSettings(db: any, tenantId: number) {
     .prepare(
       `
         SELECT id, name, subdomain, logo_path, invoice_prefix,
-               company_email, company_phone, company_address
+               company_email, company_phone, company_address, company_website
         FROM tenants
         WHERE id = ?
       `,
@@ -438,7 +438,7 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
   );
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
-  const formValues = buildInvoiceFormValues(body, fallbackInvoiceNumber, null);
+  const formValues = buildInvoiceDraftFormFromBody(body, fallbackInvoiceNumber);
 
   let attachmentFilename: string | null = null;
 
@@ -451,16 +451,23 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
       tenantSettings.invoice_prefix || 'INV',
     );
 
-    const dateIssued = parseIsoDate(body['date_issued'], 'Date issued');
-    const dueDate = parseIsoDate(body['due_date'], 'Due date');
-    ensureDateOrder(dateIssued, dueDate, 'date issued', 'Due date');
+    const lineItems = parseInvoiceLineItems(body);
+    const draft = parseInvoiceDraftFields(body, lineItems);
 
-    const amount = parseMoney(body['amount'], 'Amount');
-    const notes = optionalTrimmedString(body['notes'], 2000);
+    ensureDateOrder(draft.issueDate, draft.dueDate, 'Issue date', 'Due date');
 
     const job = db
-      .prepare('SELECT id, job_name FROM jobs WHERE id = ? AND tenant_id = ? AND archived_at IS NULL')
-      .get(jobId, tenantId) as { id: number; job_name: string } | undefined;
+      .prepare(
+        `
+          SELECT id, job_name, client_name, job_code
+          FROM jobs
+          WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+          LIMIT 1
+        `,
+      )
+      .get(jobId, tenantId) as
+      | { id: number; job_name: string; client_name: string | null; job_code: string | null }
+      | undefined;
 
     if (!job) {
       throw new ValidationError('Selected job was not found for this company.');
@@ -496,13 +503,62 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
     const result = db.prepare(
       `
         INSERT INTO invoices (
-          job_id, invoice_number, date_issued, due_date, amount, status, notes, attachment_filename, tenant_id, archived_at, archived_by_user_id
+          job_id,
+          invoice_number,
+          date_issued,
+          due_date,
+          amount,
+          status,
+          notes,
+          attachment_filename,
+          tenant_id,
+          created_by_user_id,
+          archived_at,
+          archived_by_user_id
         )
-        VALUES (?, ?, ?, ?, ?, 'Unpaid', ?, ?, ?, NULL, NULL)
+        VALUES (?, ?, ?, ?, ?, 'Draft', ?, ?, ?, ?, NULL, NULL)
       `,
-    ).run(jobId, invoiceNumber, dateIssued, dueDate, amount, notes, attachmentFilename, tenantId);
+    ).run(
+      jobId,
+      invoiceNumber,
+      draft.issueDate,
+      draft.dueDate,
+      draft.totals.total,
+      draft.publicNotes,
+      attachmentFilename,
+      tenantId,
+      currentUser.id,
+    );
 
     const invoiceId = Number(result.lastInsertRowid);
+
+    applyInvoiceDraftUpdate(db, {
+      tenantId,
+      invoiceId,
+      jobId,
+      invoiceNumber,
+      issueDate: draft.issueDate,
+      dueDate: draft.dueDate,
+      customerName: draft.customerName,
+      customerEmail: draft.customerEmail,
+      customerPhone: draft.customerPhone,
+      customerAddress: draft.customerAddress,
+      companyName: tenantSettings.name,
+      companyEmail: tenantSettings.company_email,
+      companyPhone: tenantSettings.company_phone,
+      companyAddress: tenantSettings.company_address,
+      companyWebsite: tenantSettings.company_website ?? null,
+      companyLogoPath: tenantSettings.logo_path,
+      jobName: job.job_name,
+      jobCode: job.job_code ?? null,
+      termsText: draft.termsText,
+      publicNotes: draft.publicNotes,
+      internalNotes: draft.internalNotes,
+      totals: draft.totals,
+      attachmentFilename,
+      lineItems,
+      status: 'Draft',
+    });
 
     logActivity(db, {
       tenantId,
@@ -510,14 +566,20 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
       eventType: 'invoice.created',
       entityType: 'invoice',
       entityId: invoiceId,
-      description: `${currentUser.name} created invoice ${invoiceNumber}.`,
+      description: `${currentUser.name} created draft invoice ${invoiceNumber}.`,
       metadata: {
         invoice_number: invoiceNumber,
         job_id: job.id,
         job_name: job.job_name,
-        amount,
-        date_issued: dateIssued,
-        due_date: dueDate,
+        customer_name: draft.customerName,
+        subtotal_amount: draft.totals.subtotal,
+        discount_type: draft.totals.discountType,
+        discount_value: draft.totals.discountValue,
+        discount_amount: draft.totals.discountAmount,
+        tax_rate: draft.totals.taxRate,
+        tax_amount: draft.totals.taxAmount,
+        total_amount: draft.totals.total,
+        line_item_count: lineItems.length,
         attachment_filename: attachmentFilename,
       },
       ipAddress: resolveRequestIp(c),
@@ -535,14 +597,14 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
           invoice_number: invoiceNumber,
           job_id: job.id,
           job_name: job.job_name,
-          amount,
+          total_amount: draft.totals.total,
           attachment_filename: attachmentFilename,
         },
         ipAddress: resolveRequestIp(c),
       });
     }
 
-    return c.redirect('/invoices');
+    return c.redirect(`/invoice/${invoiceId}`);
   } catch (error) {
     if (attachmentFilename) {
       deleteUploadedFile(attachmentFilename, invoiceAttachmentRootDir);
@@ -551,21 +613,20 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
     const message =
       error instanceof ValidationError ? error.message : 'Unable to create invoice right now.';
 
-      return renderApp(
-        c,
-        'Create Invoice',
-        <AddInvoicePage
-            jobs={jobs}
-            prefillJobId={prefillJobId}
-            suggestedInvoiceNumber={suggestedInvoiceNumber}
-            tenant={tenantSettings}
-            csrfToken={c.get('csrfToken')}
-            formValues={createEmptyInvoiceDraftForm({
-                job_id: prefillJobId ? String(prefillJobId) : '',
-                invoice_number: suggestedInvoiceNumber,
-            })}
-          />,
-        );
+    return renderApp(
+      c,
+      'Create Invoice',
+      <AddInvoicePage
+        jobs={jobs}
+        prefillJobId={formValues.job_id && /^\d+$/.test(formValues.job_id) ? Number.parseInt(formValues.job_id, 10) : null}
+        suggestedInvoiceNumber={fallbackInvoiceNumber}
+        tenant={tenantSettings}
+        csrfToken={c.get('csrfToken')}
+        error={message}
+        formValues={formValues}
+      />,
+      400,
+    );
   }
 });
 
