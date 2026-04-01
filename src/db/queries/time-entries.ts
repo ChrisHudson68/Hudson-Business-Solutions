@@ -52,14 +52,28 @@ export function sumLaborByTenant(db: DB, tenantId: number, jobId?: number): numb
 
 export function recentByTenant(db: DB, tenantId: number, limit: number = 6) {
   return db.prepare(`
-    SELECT t.date, t.hours, t.labor_cost, e.name AS employee_name, j.job_name
+    SELECT t.date,
+           t.hours,
+           t.labor_cost,
+           e.name AS employee_name,
+           j.job_name
     FROM time_entries t
-    JOIN employees e ON e.id = t.employee_id AND e.tenant_id = t.tenant_id
-    JOIN jobs j ON j.id = t.job_id AND j.tenant_id = t.tenant_id
+    JOIN employees e
+      ON e.id = t.employee_id
+     AND e.tenant_id = t.tenant_id
+    LEFT JOIN jobs j
+      ON j.id = t.job_id
+     AND j.tenant_id = t.tenant_id
     WHERE t.tenant_id = ?
     ORDER BY t.date DESC, t.id DESC
     LIMIT ?
-  `).all(tenantId, limit) as { date: string; hours: number; labor_cost: number; employee_name: string; job_name: string }[];
+  `).all(tenantId, limit) as {
+    date: string;
+    hours: number;
+    labor_cost: number;
+    employee_name: string;
+    job_name: string | null;
+  }[];
 }
 
 export function create(db: DB, tenantId: number, data: {
