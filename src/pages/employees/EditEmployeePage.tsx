@@ -19,6 +19,12 @@ interface EditEmployeePageProps {
   canArchiveEmployees?: boolean;
 }
 
+function selectedCardStyle(selected: boolean) {
+  return selected
+    ? 'border:1px solid var(--navy); background:rgba(30,58,95,0.06);'
+    : 'border:1px solid var(--border);';
+}
+
 export const EditEmployeePage: FC<EditEmployeePageProps> = ({
   employee,
   error,
@@ -26,12 +32,15 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
   csrfToken,
   canArchiveEmployees,
 }) => {
+  const isHourly = employee.pay_type === 'Hourly';
+  const isSalary = employee.pay_type === 'Salary';
+
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>Edit Employee</h1>
-          <p class="muted">Update employee pay setup and status.</p>
+          <p class="muted">Update employee pay setup, lunch deduction behavior, and status.</p>
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href="/employees">Back</a>
@@ -79,7 +88,7 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
         </div>
       ) : null}
 
-      <div class="card" style="max-width:760px;">
+      <div class="card" style="max-width:860px;">
         <form method="post" action={`/edit_employee/${employee.id}`}>
           <input type="hidden" name="csrf_token" value={csrfToken} />
 
@@ -88,11 +97,47 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
 
           <label>Pay Type</label>
           <select name="pay_type">
-            <option value="Hourly" selected={employee.pay_type === 'Hourly'}>Hourly</option>
-            <option value="Salary" selected={employee.pay_type === 'Salary'}>Salary</option>
+            <option value="Hourly" selected={isHourly}>Hourly</option>
+            <option value="Salary" selected={isSalary}>Salary</option>
           </select>
 
-          <div class="row">
+          <div class="muted" style="margin-top:8px;">
+            Choose how this employee should be costed in labor reports and timesheets.
+          </div>
+
+          <div
+            style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:16px;"
+          >
+            <div class="card" style={`margin:0; box-shadow:none; ${selectedCardStyle(isHourly)}`}>
+              <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                <div>
+                  <h3 style="margin:0 0 6px 0;">Hourly</h3>
+                  <p class="muted" style="margin:0;">
+                    Best for field labor and staff tracked by hourly cost.
+                  </p>
+                </div>
+                <span class={isHourly ? 'badge badge-good' : 'badge'}>Selected</span>
+              </div>
+              <div class="muted" style="margin-top:12px;">• Uses hourly rate for labor costing</div>
+              <div class="muted" style="margin-top:8px;">• Most common for time-entry based payroll</div>
+            </div>
+
+            <div class="card" style={`margin:0; box-shadow:none; ${selectedCardStyle(isSalary)}`}>
+              <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                <div>
+                  <h3 style="margin:0 0 6px 0;">Salary</h3>
+                  <p class="muted" style="margin:0;">
+                    Best for office or management staff with annual salary.
+                  </p>
+                </div>
+                <span class={isSalary ? 'badge badge-good' : 'badge'}>Selected</span>
+              </div>
+              <div class="muted" style="margin-top:12px;">• Converts annual salary to hourly equivalent</div>
+              <div class="muted" style="margin-top:8px;">• Keeps labor reports consistent across the app</div>
+            </div>
+          </div>
+
+          <div class="grid grid-2" style="margin-top:16px;">
             <div>
               <label>Hourly Rate</label>
               <input
@@ -102,6 +147,7 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
                 name="hourly_rate"
                 value={String(employee.hourly_rate ?? 0)}
               />
+              <div class="muted" style="margin-top:8px;">Use for Hourly employees.</div>
             </div>
 
             <div>
@@ -113,18 +159,32 @@ export const EditEmployeePage: FC<EditEmployeePageProps> = ({
                 name="annual_salary"
                 value={String(employee.annual_salary ?? 0)}
               />
+              <div class="muted" style="margin-top:8px;">Use for Salary employees.</div>
             </div>
           </div>
 
-          <label style="display:flex; align-items:center; gap:10px; margin-top:14px;">
-            <input
-              type="checkbox"
-              name="lunch_deduction_exempt"
-              value="1"
-              checked={Number(employee.lunch_deduction_exempt || 0) === 1}
-            />
-            Exempt from automatic 1-hour lunch deduction
-          </label>
+          <div class="card" style="margin-top:16px; box-shadow:none; border:1px solid var(--border);">
+            <h3 style="margin:0;">Lunch Deduction</h3>
+            <p class="muted" style="margin:6px 0 0;">
+              By default, the system deducts 1 hour for lunch on qualifying days. Exempt only employees who should not receive that automatic deduction.
+            </p>
+
+            <label style="display:flex; align-items:flex-start; gap:10px; margin-top:14px;">
+              <input
+                type="checkbox"
+                name="lunch_deduction_exempt"
+                value="1"
+                checked={Number(employee.lunch_deduction_exempt || 0) === 1}
+                style="width:auto; margin-top:2px;"
+              />
+              <span>
+                <b>Exempt from automatic 1-hour lunch deduction</b>
+                <span class="muted" style="display:block; margin-top:4px;">
+                  Use this for employees whose paid hours should not be reduced automatically for lunch.
+                </span>
+              </span>
+            </label>
+          </div>
 
           <label>Status</label>
           <select name="active">

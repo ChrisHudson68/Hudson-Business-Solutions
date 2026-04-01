@@ -8,6 +8,7 @@ interface EmployeeRow {
   annual_salary: number | null;
   active: number;
   archived_at?: string | null;
+  lunch_deduction_exempt?: number;
 }
 
 interface EmployeesPageProps {
@@ -32,19 +33,44 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
   canArchiveEmployees,
 }) => {
   const hasEmployees = employees.length > 0;
+  const activeCount = employees.filter((employee) => !employee.archived_at && employee.active === 1).length;
+  const inactiveCount = employees.filter((employee) => !employee.archived_at && employee.active !== 1).length;
+  const archivedCount = employees.filter((employee) => !!employee.archived_at).length;
+  const lunchExemptCount = employees.filter((employee) => Number(employee.lunch_deduction_exempt || 0) === 1 && !employee.archived_at).length;
 
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>Employees</h1>
-          <p class="muted">Manage pay setup and employee status.</p>
+          <p class="muted">Manage pay setup, lunch deduction behavior, and employee status.</p>
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href={showArchived ? '/employees' : '/employees?show_archived=1'}>
             {showArchived ? 'Hide Archived' : 'Show Archived'}
           </a>
           {canCreateEmployees ? <a class="btn btn-primary" href="/add_employee">Add Employee</a> : null}
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+          <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--border);">
+            <div class="muted">Active</div>
+            <div style="font-size:28px; font-weight:900; margin-top:6px;">{activeCount}</div>
+          </div>
+          <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--border);">
+            <div class="muted">Inactive</div>
+            <div style="font-size:28px; font-weight:900; margin-top:6px;">{inactiveCount}</div>
+          </div>
+          <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--border);">
+            <div class="muted">Archived</div>
+            <div style="font-size:28px; font-weight:900; margin-top:6px;">{archivedCount}</div>
+          </div>
+          <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--border);">
+            <div class="muted">Lunch Exempt</div>
+            <div style="font-size:28px; font-weight:900; margin-top:6px;">{lunchExemptCount}</div>
+          </div>
         </div>
       </div>
 
@@ -58,6 +84,7 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
                     <th>Name</th>
                     <th>Pay Type</th>
                     <th class="right">Rate / Salary</th>
+                    <th>Lunch</th>
                     <th>Status</th>
                     <th class="right">Actions</th>
                   </tr>
@@ -76,6 +103,13 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
                         {employee.pay_type === 'Salary'
                           ? `$${formatMoney(Number(employee.annual_salary || 0))}/yr`
                           : `$${formatMoney(Number(employee.hourly_rate || 0))}/hr`}
+                      </td>
+                      <td>
+                        {Number(employee.lunch_deduction_exempt || 0) === 1 ? (
+                          <span class="badge badge-warn">Exempt</span>
+                        ) : (
+                          <span class="badge badge-good">Auto Deduct</span>
+                        )}
                       </td>
                       <td>
                         {employee.archived_at ? (
@@ -153,7 +187,7 @@ export const EmployeesPage: FC<EmployeesPageProps> = ({
             <div class="muted small" style="margin-top:14px;">
               {showArchived
                 ? 'Archived employees will appear here once records are archived.'
-                : 'You can edit employee details, rates, and archive records later.'}
+                : 'You can edit employee details, pay setup, lunch deduction settings, and archive records later.'}
             </div>
           </div>
         )}
