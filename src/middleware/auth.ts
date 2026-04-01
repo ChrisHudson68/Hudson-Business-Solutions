@@ -5,7 +5,7 @@ import { getDb } from '../db/connection.js';
 import { getEnv } from '../config/env.js';
 import type { TenantVariables } from './tenant.js';
 import {
-  getRolePermissions,
+  getResolvedUserPermissions,
   hasAllPermissions,
   hasAnyPermission,
   normalizeUserRole,
@@ -46,6 +46,7 @@ function resolveUser(
   if (tenantId !== undefined && row.tenant_id !== tenantId) return null;
 
   const normalizedRole = normalizeUserRole(row.role);
+  const resolvedPermissions = getResolvedUserPermissions(normalizedRole, row.tenant_id, row.id, db);
 
   return {
     id: row.id,
@@ -53,7 +54,7 @@ function resolveUser(
     email: row.email,
     role: normalizedRole,
     tenant_id: row.tenant_id,
-    permissions: getRolePermissions(normalizedRole, row.tenant_id, db),
+    permissions: resolvedPermissions.permissions,
   };
 }
 
@@ -152,5 +153,6 @@ export function anyPermissionRequired(...permissions: string[]) {
 }
 
 export function userHasPermission(user: AuthenticatedUser | null | undefined, permission: string): boolean {
-  return !!user && user.permissions.includes(permission);
+  if (!user) return false;
+  return user.permissions.includes(permission);
 }

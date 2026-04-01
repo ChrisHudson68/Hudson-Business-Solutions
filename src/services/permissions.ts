@@ -34,9 +34,11 @@ export const PERMISSIONS = [
 
 export type PermissionKey = (typeof PERMISSIONS)[number];
 export type UserRole = 'Admin' | 'Manager' | 'Employee';
+export type PermissionOverrideValue = 'default' | 'allow' | 'deny';
 
 export const ROLE_ORDER: readonly UserRole[] = ['Admin', 'Manager', 'Employee'] as const;
 export const CONFIGURABLE_ROLES: readonly UserRole[] = ['Manager', 'Employee'] as const;
+export const USER_OVERRIDE_CONFIGURABLE_ROLES: readonly UserRole[] = ['Manager', 'Employee'] as const;
 
 const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
   Admin: PERMISSIONS,
@@ -82,6 +84,17 @@ export interface RolePreset {
   customized: boolean;
 }
 
+export interface EffectivePermissionResolution {
+  permissions: PermissionKey[];
+  rolePermissions: PermissionKey[];
+  overrides: Record<PermissionKey, PermissionOverrideValue>;
+}
+
+export interface UserPermissionOverrideRow {
+  permission_key: string;
+  allowed: number;
+}
+
 function isPermissionKey(value: string): value is PermissionKey {
   return (PERMISSIONS as readonly string[]).includes(value);
 }
@@ -100,6 +113,10 @@ export function getDefaultRolePermissions(role: string | null | undefined): Perm
 
 export function isConfigurableRole(role: string | null | undefined): boolean {
   return CONFIGURABLE_ROLES.includes(normalizeUserRole(role));
+}
+
+export function canCustomizeUserPermissions(role: string | null | undefined): boolean {
+  return USER_OVERRIDE_CONFIGURABLE_ROLES.includes(normalizeUserRole(role));
 }
 
 type TenantRolePermissionRow = {
@@ -156,6 +173,74 @@ export function getRolePermissions(
   return getTenantRolePermissionMap(tenantId, db)[normalized];
 }
 
+export function getUserPermissionOverrideRows(
+  db: DB,
+  tenantId: number,
+  userId: number,
+): UserPermissionOverrideRow[] {
+  return db.prepare(`
+    SELECT permission_key, allowed
+    FROM user_permission_overrides
+    WHERE tenant_id = ? AND user_id = ?
+  `).all(tenantId, userId) as UserPermissionOverrideRow[];
+}
+
+export function getUserPermissionOverrideMap(
+  tenantId: number,
+  userId: number,
+  db: DB = getDb(),
+): Record<PermissionKey, PermissionOverrideValue> {
+  const overrides = {} as Record<PermissionKey, PermissionOverrideValue>;
+  const rows = getUserPermissionOverrideRows(db, tenantId, userId);
+
+  for (const row of rows) {
+    if (!isPermissionKey(row.permission_key)) continue;
+    overrides[row.permission_key] = row.allowed === 1 ? 'allow' : 'deny';
+  }
+
+  return overrides;
+}
+
+export function getResolvedUserPermissions(
+  role: string | null | undefined,
+  tenantId: number | null | undefined,
+  userId: number | null | undefined,
+  db: DB = getDb(),
+): EffectivePermissionResolution {
+  const normalizedRole = normalizeUserRole(role);
+  const rolePermissions = getRolePermissions(normalizedRole, tenantId, db);
+  const rolePermissionSet = new Set<PermissionKey>(rolePermissions);
+  const resolvedSet = new Set<PermissionKey>(rolePermissions);
+  const overrides = {} as Record<PermissionKey, PermissionOverrideValue>;
+
+  if (!tenantId || !userId || !canCustomizeUserPermissions(normalizedRole)) {
+    return {
+      permissions: [...resolvedSet],
+      rolePermissions: [...rolePermissionSet],
+      overrides,
+    };
+  }
+
+  const overrideRows = getUserPermissionOverrideRows(db, tenantId, userId);
+  for (const row of overrideRows) {
+    if (!isPermissionKey(row.permission_key)) continue;
+
+    if (row.allowed === 1) {
+      resolvedSet.add(row.permission_key);
+      overrides[row.permission_key] = 'allow';
+    } else {
+      resolvedSet.delete(row.permission_key);
+      overrides[row.permission_key] = 'deny';
+    }
+  }
+
+  return {
+    permissions: [...resolvedSet],
+    rolePermissions: [...rolePermissionSet],
+    overrides,
+  };
+}
+
 export function saveTenantRolePermissions(
   db: DB,
   tenantId: number,
@@ -193,6 +278,44 @@ export function resetTenantRolePermissions(db: DB, tenantId: number, role: UserR
   }
 
   db.prepare('DELETE FROM tenant_role_permissions WHERE tenant_id = ? AND role = ?').run(tenantId, normalized);
+}
+
+export function saveUserPermissionOverrides(
+  db: DB,
+  tenantId: number,
+  userId: number,
+  role: string | null | undefined,
+  overrideSelections: Partial<Record<PermissionKey, PermissionOverrideValue>>,
+): void {
+  const normalizedRole = normalizeUserRole(role);
+  const clear = db.prepare('DELETE FROM user_permission_overrides WHERE tenant_id = ? AND user_id = ?');
+
+  if (!canCustomizeUserPermissions(normalizedRole)) {
+    clear.run(tenantId, userId);
+    return;
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO user_permission_overrides (tenant_id, user_id, permission_key, allowed, created_at, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT(tenant_id, user_id, permission_key)
+    DO UPDATE SET allowed = excluded.allowed, updated_at = CURRENT_TIMESTAMP
+  `);
+
+  const transaction = db.transaction(() => {
+    clear.run(tenantId, userId);
+
+    for (const permission of PERMISSIONS) {
+      const selection = overrideSelections[permission] ?? 'default';
+      if (selection === 'allow') {
+        insert.run(tenantId, userId, permission, 1);
+      } else if (selection === 'deny') {
+        insert.run(tenantId, userId, permission, 0);
+      }
+    }
+  });
+
+  transaction();
 }
 
 export function hasPermission(

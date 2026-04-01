@@ -11,7 +11,17 @@ import { AddUserPage } from '../pages/users/AddUserPage.js';
 import { EditUserPage } from '../pages/users/EditUserPage.js';
 import { UserPermissionsPage } from '../pages/users/UserPermissionsPage.js';
 import { MyAccountPage } from '../pages/users/MyAccountPage.js';
-import { getPermissionGroups, getRolePresets, normalizeUserRole } from '../services/permissions.js';
+import {
+  PERMISSIONS,
+  canCustomizeUserPermissions,
+  getPermissionGroups,
+  getResolvedUserPermissions,
+  getRolePresets,
+  normalizeUserRole,
+  saveUserPermissionOverrides,
+  type PermissionKey,
+  type PermissionOverrideValue,
+} from '../services/permissions.js';
 import {
   ValidationError,
   parsePositiveInt,
@@ -31,6 +41,7 @@ type EditUserFormData = {
   role: string;
   active: number;
   employee_id: string;
+  permissionOverrides: Partial<Record<PermissionKey, PermissionOverrideValue>>;
 };
 
 type MyAccountFormData = {
@@ -120,6 +131,69 @@ function parseActiveFlag(value: unknown): number {
   return value === '0' ? 0 : 1;
 }
 
+function parsePermissionOverrideValue(value: unknown): PermissionOverrideValue {
+  const normalized = String(value ?? 'default').trim().toLowerCase();
+  if (normalized === 'allow' || normalized === 'deny') {
+    return normalized;
+  }
+  return 'default';
+}
+
+function parsePermissionOverrideSelections(body: Record<string, unknown>): Partial<Record<PermissionKey, PermissionOverrideValue>> {
+  const selections: Partial<Record<PermissionKey, PermissionOverrideValue>> = {};
+
+  for (const permission of PERMISSIONS) {
+    selections[permission] = parsePermissionOverrideValue(body[`permission_override_${permission}`]);
+  }
+
+  return selections;
+}
+
+function getEditUserViewModel(db: any, tenantId: number, userId: number, roleOverride?: string | null, overrideSelections?: Partial<Record<PermissionKey, PermissionOverrideValue>>) {
+  const user = getTenantUserById(db, userId, tenantId);
+  if (!user) {
+    return null;
+  }
+
+  const effectiveResolution = getResolvedUserPermissions(
+    roleOverride ?? user.role,
+    tenantId,
+    userId,
+    db,
+  );
+
+  const selectedOverrides = overrideSelections ?? effectiveResolution.overrides;
+  const selectedRole = roleOverride ?? user.role;
+  const previewResolution = canCustomizeUserPermissions(selectedRole)
+    ? getResolvedUserPermissions(selectedRole, tenantId, userId, db)
+    : {
+        permissions: getRolePresets(tenantId, db).find((preset) => preset.role === normalizeUserRole(selectedRole))?.permissions ?? [],
+        rolePermissions: getRolePresets(tenantId, db).find((preset) => preset.role === normalizeUserRole(selectedRole))?.permissions ?? [],
+        overrides: {},
+      };
+
+  let effectivePermissions = previewResolution.permissions;
+  if (overrideSelections) {
+    const rolePermissions = getRolePresets(tenantId, db).find((preset) => preset.role === normalizeUserRole(selectedRole))?.permissions ?? [];
+    const resolved = new Set(rolePermissions);
+    if (canCustomizeUserPermissions(selectedRole)) {
+      for (const permission of PERMISSIONS) {
+        const selection = overrideSelections[permission] ?? 'default';
+        if (selection === 'allow') resolved.add(permission);
+        if (selection === 'deny') resolved.delete(permission);
+      }
+    }
+    effectivePermissions = [...resolved];
+  }
+
+  return {
+    user,
+    rolePermissions: getRolePresets(tenantId, db).find((preset) => preset.role === normalizeUserRole(selectedRole))?.permissions ?? [],
+    effectivePermissions,
+    overrideSelections: selectedOverrides,
+  };
+}
+
 function renderAddUserError(
   c: any,
   error: string,
@@ -145,8 +219,13 @@ function renderEditUserError(
   error: string,
   user: { id: number; name: string; email: string; role: string; active: number; employee_id: number | null },
   employeeOptions: Array<{ id: number; name: string }>,
+  rolePermissions: PermissionKey[],
+  effectivePermissions: PermissionKey[],
+  overrideSelections: Partial<Record<PermissionKey, PermissionOverrideValue>>,
   formData?: EditUserFormData,
 ) {
+  const tenant = c.get('tenant');
+
   return renderAppLayout(
     c,
     'Edit User',
@@ -154,7 +233,11 @@ function renderEditUserError(
       user={user}
       formData={formData}
       employeeOptions={employeeOptions}
-      rolePresets={getRolePresets()}
+      rolePresets={getRolePresets(tenant?.id)}
+      permissionGroups={getPermissionGroups()}
+      rolePermissions={rolePermissions}
+      effectivePermissions={effectivePermissions}
+      overrideSelections={overrideSelections}
       error={error}
       csrfToken={c.get('csrfToken')}
     />,
@@ -216,19 +299,20 @@ userRoutes.get('/users', permissionRequired('users.view'), (c) => {
       users={users.map((user) => ({ ...user, role: normalizeUserRole(user.role) }))}
       canCreateUsers={userHasPermission(currentUser, 'users.create')}
       canEditUsers={userHasPermission(currentUser, 'users.edit')}
-      rolePresets={getRolePresets()}
+      rolePresets={getRolePresets(tenant.id)}
     />,
   );
 });
 
 userRoutes.get('/users/permissions', permissionRequired('users.view'), (c) => {
   const currentUser = c.get('user');
+  const tenant = c.get('tenant');
 
   return renderAppLayout(
     c,
     'Role Permissions',
     <UserPermissionsPage
-      rolePresets={getRolePresets()}
+      rolePresets={getRolePresets(tenant?.id)}
       permissionGroups={getPermissionGroups()}
       canCreateUsers={userHasPermission(currentUser, 'users.create')}
     />,
@@ -353,7 +437,7 @@ userRoutes.get('/add_user', permissionRequired('users.create'), (c) => {
     <AddUserPage
       formData={{ name: '', email: '', role: 'Employee', employee_id: '' }}
       employeeOptions={employeeOptions}
-      rolePresets={getRolePresets()}
+      rolePresets={getRolePresets(tenant.id)}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -445,10 +529,10 @@ userRoutes.get('/edit_user/:id', permissionRequired('users.edit'), (c) => {
   }
 
   const db = getDb();
-  const user = getTenantUserById(db, userId, tenant.id);
+  const viewModel = getEditUserViewModel(db, tenant.id, userId);
   const employeeOptions = getEmployeeOptions(db, tenant.id);
 
-  if (!user) {
+  if (!viewModel) {
     return c.text('User not found', 404);
   }
 
@@ -456,9 +540,13 @@ userRoutes.get('/edit_user/:id', permissionRequired('users.edit'), (c) => {
     c,
     'Edit User',
     <EditUserPage
-      user={user}
+      user={viewModel.user}
       employeeOptions={employeeOptions}
-      rolePresets={getRolePresets()}
+      rolePresets={getRolePresets(tenant.id)}
+      permissionGroups={getPermissionGroups()}
+      rolePermissions={viewModel.rolePermissions}
+      effectivePermissions={viewModel.effectivePermissions}
+      overrideSelections={viewModel.overrideSelections}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -485,6 +573,7 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
   }
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const permissionOverrides = parsePermissionOverrideSelections(body);
 
   const formData: EditUserFormData = {
     name: String(body['name'] ?? '').trim(),
@@ -492,6 +581,7 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
     role: String(body['role'] ?? existingUser.role).trim(),
     active: parseActiveFlag(body['active']),
     employee_id: String(body['employee_id'] ?? '').trim(),
+    permissionOverrides,
   };
 
   try {
@@ -539,12 +629,18 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
       throw new ValidationError('Your company must have at least one active Admin user.');
     }
 
+    if (role === 'Employee' && employeeId === null) {
+      throw new ValidationError('Employee users must be linked to an employee record.');
+    }
+
     const before = {
       name: existingUser.name,
       email: existingUser.email,
       role: existingUser.role,
       active: existingUser.active,
       employee_id: existingUser.employee_id,
+      permission_overrides: getResolvedUserPermissions(existingUser.role, tenant.id, userId, db).overrides,
+      effective_permissions: getResolvedUserPermissions(existingUser.role, tenant.id, userId, db).permissions,
     };
 
     db.prepare(`
@@ -558,12 +654,17 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
       userQueries.updatePassword(db, userId, tenant.id, hashPassword(validatedPassword));
     }
 
+    saveUserPermissionOverrides(db, tenant.id, userId, role, permissionOverrides);
+
+    const afterResolution = getResolvedUserPermissions(role, tenant.id, userId, db);
     const after = {
       name,
       email,
       role,
       active,
       employee_id: employeeId,
+      permission_overrides: afterResolution.overrides,
+      effective_permissions: afterResolution.permissions,
     };
 
     const changedGeneral =
@@ -573,6 +674,7 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
 
     const changedRole = before.role !== after.role;
     const changedActivation = before.active !== after.active;
+    const changedPermissions = JSON.stringify(before.permission_overrides) !== JSON.stringify(after.permission_overrides);
 
     if (changedGeneral) {
       logActivity(db, {
@@ -625,6 +727,24 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
       });
     }
 
+    if (changedPermissions) {
+      logActivity(db, {
+        tenantId: tenant.id,
+        actorUserId: currentUser.id,
+        eventType: 'user.permissions_updated',
+        entityType: 'user',
+        entityId: userId,
+        description: `${currentUser.name} updated permission overrides for ${name}.`,
+        metadata: {
+          before_overrides: before.permission_overrides,
+          after_overrides: after.permission_overrides,
+          before_effective_permissions: before.effective_permissions,
+          after_effective_permissions: after.effective_permissions,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
+
     if (newPasswordRaw.trim()) {
       logActivity(db, {
         tenantId: tenant.id,
@@ -642,7 +762,18 @@ userRoutes.post('/edit_user/:id', permissionRequired('users.edit'), async (c) =>
   } catch (error) {
     const message =
       error instanceof ValidationError ? error.message : 'Unable to update user right now.';
-    return renderEditUserError(c, message, existingUser, employeeOptions, formData);
+    const viewModel = getEditUserViewModel(db, tenant.id, userId, formData.role, permissionOverrides);
+
+    return renderEditUserError(
+      c,
+      message,
+      viewModel?.user ?? existingUser,
+      employeeOptions,
+      viewModel?.rolePermissions ?? getRolePresets(tenant.id).find((preset) => preset.role === normalizeUserRole(formData.role))?.permissions ?? [],
+      viewModel?.effectivePermissions ?? [],
+      viewModel?.overrideSelections ?? permissionOverrides,
+      formData,
+    );
   }
 });
 
