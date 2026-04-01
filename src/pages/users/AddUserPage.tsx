@@ -30,8 +30,12 @@ interface AddUserPageProps {
 
 function presetCardClass(selected: boolean) {
   return selected
-    ? 'border:1px solid var(--brand); background:rgba(20,93,160,0.06);'
-    : 'border:1px solid var(--line);';
+    ? 'border:1px solid var(--navy); background:rgba(30,58,95,0.06);'
+    : 'border:1px solid var(--border);';
+}
+
+function roleTone(selected: boolean) {
+  return selected ? 'badge badge-good' : 'badge';
 }
 
 export const AddUserPage: FC<AddUserPageProps> = ({
@@ -58,11 +62,11 @@ export const AddUserPage: FC<AddUserPageProps> = ({
         </div>
       </div>
 
-      <div class="card" style="max-width:980px;">
+      <div class="card" style="max-width:1040px;">
         {error ? (
           <div
             class="badge badge-bad"
-            style="height:auto; padding:10px 12px; margin-bottom:14px; border-radius:12px;"
+            style="display:block; height:auto; padding:12px 14px; margin-bottom:14px; border-radius:12px;"
           >
             {error}
           </div>
@@ -71,60 +75,91 @@ export const AddUserPage: FC<AddUserPageProps> = ({
         <form method="post">
           <input type="hidden" name="csrf_token" value={csrfToken} />
 
-          <label>Name</label>
-          <input name="name" required value={formData?.name || ''} />
+          <div class="grid grid-2">
+            <div>
+              <label>Name</label>
+              <input name="name" required value={formData?.name || ''} />
+            </div>
 
-          <label>Email</label>
-          <input name="email" type="email" required value={formData?.email || ''} />
-
-          <label>Role</label>
-          <select name="role">
-            {rolePresets.map((preset) => (
-              <option value={preset.role} selected={selectedRole === preset.role}>{preset.role}</option>
-            ))}
-          </select>
-
-          <div class="muted" style="margin:8px 0 14px 0;">Choose a role preset. HBS permissions are currently managed by role rather than one-off custom toggles.</div>
-
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:16px;">
-            {rolePresets.map((preset) => (
-              <div class="card" style={`margin:0; box-shadow:none; ${presetCardClass(selectedRole === preset.role)}`}>
-                <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
-                  <div>
-                    <h3 style="margin:0 0 6px 0;">{preset.label}</h3>
-                    <p class="muted" style="margin:0;">{preset.description}</p>
-                  </div>
-                  <span class="badge">{preset.permissionCount}</span>
-                </div>
-                <div style="margin-top:12px; display:grid; gap:8px;">
-                  {preset.highlights.map((item) => (
-                    <div class="muted">• {item}</div>
-                  ))}
-                </div>
-              </div>
-            ))}
+            <div>
+              <label>Email</label>
+              <input name="email" type="email" required value={formData?.email || ''} />
+            </div>
           </div>
 
-          <label>Linked Employee Record (recommended for Employee users)</label>
-          <select name="employee_id">
-            <option value="">-- Not linked --</option>
-            {employeeOptions.map((employee) => (
-              <option
-                value={String(employee.id)}
-                selected={selectedEmployeeId === String(employee.id)}
-              >
-                {employee.name}
-              </option>
-            ))}
-          </select>
+          <div class="grid grid-2" style="margin-top:12px;">
+            <div>
+              <label>Role</label>
+              <select name="role">
+                {rolePresets.map((preset) => (
+                  <option value={preset.role} selected={selectedRole === preset.role}>{preset.role}</option>
+                ))}
+              </select>
+              <div class="muted" style="margin-top:8px;">
+                Start with a role preset. Individual user overrides can be adjusted later on the edit screen.
+              </div>
+            </div>
+
+            <div>
+              <label>Linked Employee Record</label>
+              <select name="employee_id">
+                <option value="">-- Not linked --</option>
+                {employeeOptions.map((employee) => (
+                  <option
+                    value={String(employee.id)}
+                    selected={selectedEmployeeId === String(employee.id)}
+                  >
+                    {employee.name}
+                  </option>
+                ))}
+              </select>
+              <div class="muted" style="margin-top:8px;">
+                Recommended for Employee users so time tracking and account links stay aligned.
+              </div>
+            </div>
+          </div>
 
           <label>Password</label>
           <input name="password" type="password" required />
 
-          <div class="card" style="margin-top:16px; box-shadow:none; border:1px solid var(--line);">
-            <h3 style="margin-top:0;">Selected Role Preview: {selectedPreset.label}</h3>
-            <p class="muted">This user will receive the following access set when the form is submitted.</p>
-            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+          <div class="card" style="margin-top:16px; box-shadow:none; border:1px solid var(--border);">
+            <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+              <div>
+                <h3 style="margin:0;">Role Presets</h3>
+                <p class="muted" style="margin:6px 0 0;">
+                  Compare the available access presets before creating the user.
+                </p>
+              </div>
+              <span class={roleTone(true)}>Selected: {selectedPreset.label}</span>
+            </div>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:14px;">
+              {rolePresets.map((preset) => (
+                <div class="card" style={`margin:0; box-shadow:none; ${presetCardClass(selectedRole === preset.role)}`}>
+                  <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                    <div>
+                      <h3 style="margin:0 0 6px 0;">{preset.label}</h3>
+                      <p class="muted" style="margin:0;">{preset.description}</p>
+                    </div>
+                    <span class={roleTone(selectedRole === preset.role)}>{preset.permissionCount}</span>
+                  </div>
+
+                  <div style="margin-top:12px; display:grid; gap:8px;">
+                    {preset.highlights.map((item) => (
+                      <div class="muted">• {item}</div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px; box-shadow:none; border:1px solid var(--border);">
+            <h3 style="margin:0;">Selected Role Preview: {selectedPreset.label}</h3>
+            <p class="muted" style="margin:6px 0 0;">
+              This user will receive the following base access set when the form is submitted.
+            </p>
+            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;">
               {selectedPreset.permissions.map((permission) => (
                 <span class="badge">{permission}</span>
               ))}

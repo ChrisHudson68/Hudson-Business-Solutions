@@ -48,10 +48,21 @@ export const UsersPage: FC<UsersPageProps> = ({
       </div>
 
       <div class="card" style="margin-bottom:16px;">
-        <h2 style="margin-top:0;">Role Presets</h2>
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; margin-bottom:12px;">
+          <div>
+            <h2 style="margin:0;">Role Presets</h2>
+            <p class="muted" style="margin:6px 0 0;">Quick view of your tenant’s active role setup.</p>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            <span class="badge">Users: {users.length}</span>
+            <span class="badge badge-good">Active: {users.filter((user) => user.active).length}</span>
+            <span class="badge badge-bad">Inactive: {users.filter((user) => !user.active).length}</span>
+          </div>
+        </div>
+
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
           {rolePresets.map((preset) => (
-            <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--line);">
+            <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--border);">
               <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
                 <div>
                   <h3 style="margin:0 0 6px 0;">{preset.label}</h3>
@@ -59,7 +70,7 @@ export const UsersPage: FC<UsersPageProps> = ({
                 </div>
                 <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
                   <span class="badge">{preset.permissionCount} perms</span>
-                  {preset.customized ? <span class="badge">Custom</span> : null}
+                  {preset.customized ? <span class="badge">Custom</span> : <span class="badge badge-good">Default</span>}
                 </div>
               </div>
               <div class="muted" style="margin-top:8px;">Users assigned: {countUsersByRole(users, preset.role)}</div>
@@ -97,7 +108,9 @@ export const UsersPage: FC<UsersPageProps> = ({
                     <td>
                       <div style="display:flex; flex-direction:column; gap:4px;">
                         <span>{user.role}</span>
-                        <span class="muted" style="font-size:12px;">{rolePresets.find((preset) => preset.role === user.role)?.permissionCount || 0} permissions</span>
+                        <span class="muted" style="font-size:12px;">
+                          {rolePresets.find((preset) => preset.role === user.role)?.permissionCount || 0} permissions
+                        </span>
                       </div>
                     </td>
                     <td>{user.employee_name || <span class="muted">Not linked</span>}</td>
@@ -117,7 +130,7 @@ export const UsersPage: FC<UsersPageProps> = ({
                 ))
               ) : (
                 <tr>
-                  <td colspan={6} class="muted">No users found.</td>
+                  <td colSpan={6} class="muted">No users found.</td>
                 </tr>
               )}
             </tbody>

@@ -41,7 +41,9 @@ export const UserPermissionsPage: FC<UserPermissionsPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Role Permissions</h1>
-          <p class="muted">Admins can customize the Manager and Employee role permissions for this tenant without editing code.</p>
+          <p class="muted">
+            Admins can customize the Manager and Employee role permissions for this tenant without editing code.
+          </p>
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href="/users">Back to Users</a>
@@ -49,7 +51,10 @@ export const UserPermissionsPage: FC<UserPermissionsPageProps> = ({
       </div>
 
       {notice ? (
-        <div class={`card ${notice.type === 'error' ? '' : ''}`} style={`margin-bottom:16px; border-color:${notice.type === 'error' ? '#fecaca' : '#bbf7d0'}; background:${notice.type === 'error' ? '#fef2f2' : '#f0fdf4'};`}>
+        <div
+          class="card"
+          style={`margin-bottom:16px; border-color:${notice.type === 'error' ? '#fecaca' : '#bbf7d0'}; background:${notice.type === 'error' ? '#fef2f2' : '#f0fdf4'};`}
+        >
           <b>{notice.type === 'error' ? 'Unable to save changes' : 'Permissions updated'}</b>
           <div class="muted" style="margin-top:6px; color:inherit;">{notice.text}</div>
         </div>
@@ -58,7 +63,7 @@ export const UserPermissionsPage: FC<UserPermissionsPageProps> = ({
       <div class="card" style="margin-bottom:16px;">
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
           {rolePresets.map((preset) => (
-            <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--line);">
+            <div class="card" style="margin:0; box-shadow:none; border:1px solid var(--border);">
               <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
                 <div>
                   <h3 style="margin:0 0 6px 0;">{preset.label}</h3>
@@ -93,9 +98,14 @@ export const UserPermissionsPage: FC<UserPermissionsPageProps> = ({
           <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; margin-bottom:14px;">
             <div>
               <h2 style="margin:0;">Permission Matrix</h2>
-              <p class="muted" style="margin:6px 0 0;">Admin always keeps full access. Manager and Employee permissions can be changed below.</p>
+              <p class="muted" style="margin:6px 0 0;">
+                Admin always keeps full access. Manager and Employee permissions can be changed below.
+              </p>
             </div>
-            <button class="btn btn-primary" type="submit">Save Permission Changes</button>
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+              <span class="badge badge-good">Admin = always allowed</span>
+              <button class="btn btn-primary" type="submit">Save Permission Changes</button>
+            </div>
           </div>
 
           <div class="table-wrap table-wrap-tight">
@@ -110,40 +120,46 @@ export const UserPermissionsPage: FC<UserPermissionsPageProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {permissionGroups.map((group) => (
-                  <>
-                    <tr>
-                      <td colspan={CONFIGURABLE_ROLES.length + 2}>
-                        <b>{group.label}</b>
+                {permissionGroups.map((group) => [
+                  (
+                    <tr key={`group-${group.label}`}>
+                      <td colSpan={CONFIGURABLE_ROLES.length + 2}>
+                        <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap;">
+                          <b>{group.label}</b>
+                          <span class="badge">{group.permissions.length} permissions</span>
+                        </div>
                       </td>
                     </tr>
-                    {group.permissions.map((permission) => (
-                      <tr>
-                        <td>{formatPermissionLabel(permission)}</td>
-                        <td>
-                          <span class="badge badge-good">Allowed</span>
-                        </td>
-                        {CONFIGURABLE_ROLES.map((role) => {
-                          const preset = presetByRole.get(role);
-                          const checked = isAllowed(preset, permission);
-                          return (
-                            <td>
-                              <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input
-                                  type="checkbox"
-                                  name={`perm_${role}_${permission}`}
-                                  value="1"
-                                  checked={checked}
-                                />
-                                <span class="muted">Allowed</span>
-                              </label>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </>
-                ))}
+                  ),
+                  ...group.permissions.map((permission) => (
+                    <tr key={permission}>
+                      <td>
+                        <div style="font-weight:600;">{formatPermissionLabel(permission)}</div>
+                        <div class="muted" style="margin-top:4px; font-size:12px;">{permission}</div>
+                      </td>
+                      <td>
+                        <span class="badge badge-good">Allowed</span>
+                      </td>
+                      {CONFIGURABLE_ROLES.map((role) => {
+                        const preset = presetByRole.get(role);
+                        const checked = isAllowed(preset, permission);
+                        return (
+                          <td key={`${role}-${permission}`}>
+                            <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer;">
+                              <input
+                                type="checkbox"
+                                name={`perm_${role}_${permission}`}
+                                value="1"
+                                checked={checked}
+                              />
+                              <span class="muted">Allowed</span>
+                            </label>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  )),
+                ])}
               </tbody>
             </table>
           </div>
@@ -151,9 +167,11 @@ export const UserPermissionsPage: FC<UserPermissionsPageProps> = ({
       </form>
 
       <div class="card" style="margin-top:16px;">
-        <h2 style="margin-top:0;">Reset to Defaults</h2>
-        <p class="muted" style="margin-top:0;">Need to undo a custom role setup? Reset a role back to the built-in defaults.</p>
-        <div class="actions actions-mobile-stack">
+        <h2 style="margin:0;">Reset to Defaults</h2>
+        <p class="muted" style="margin:6px 0 0;">
+          Need to undo a custom role setup? Reset a role back to the built-in defaults.
+        </p>
+        <div class="actions actions-mobile-stack" style="margin-top:14px;">
           {CONFIGURABLE_ROLES.map((role) => (
             <form method="post" action="/users/permissions" style="margin:0;">
               <input type="hidden" name="csrf_token" value={csrfToken} />
