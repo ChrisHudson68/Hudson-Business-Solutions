@@ -27,6 +27,7 @@ import { timesheetRoutes } from './routes/timesheet.js';
 import { invoiceRoutes } from './routes/invoices.js';
 import { paymentRoutes } from './routes/payments.js';
 import { settingsRoutes } from './routes/settings.js';
+import { monthlyBillRoutes } from './routes/monthly-bills.js';
 import { billingRoutes } from './routes/billing.js';
 import { estimateRoutes } from './routes/estimates.js';
 import { publicEstimateRoutes } from './routes/public-estimate.js';
@@ -110,6 +111,7 @@ app.route('/', timesheetRoutes);
 app.route('/', invoiceRoutes);
 app.route('/', paymentRoutes);
 app.route('/', settingsRoutes);
+app.route('/', monthlyBillRoutes);
 
 app.notFound((c) => {
   return c.html(<NotFoundPage />, 404);

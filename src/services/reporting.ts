@@ -1,5 +1,6 @@
 import type { DB } from '../db/connection.js';
 import * as jobs from '../db/queries/jobs.js';
+import * as monthlyBills from '../db/queries/monthly-bills.js';
 
 export type ReportRange = '1w' | '1m' | '1y' | 'custom';
 
@@ -228,6 +229,13 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     job_id: number | null;
   }>;
 
+  const recurringBillRows = monthlyBills.listOccurrencesForRange(db, tenantId, filter.startDate, filter.endDate).map((row) => ({
+    date: row.date,
+    amount: Number(row.amount || 0),
+    category: row.category || 'Static Monthly Bills',
+    job_id: null as number | null,
+  }));
+
   const laborRows = db.prepare(
     `
       SELECT date, labor_cost, job_id
@@ -391,7 +399,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     }
   }
 
-  for (const row of expenseRows) {
+  for (const row of [...expenseRows, ...recurringBillRows]) {
     const amount = Number(row.amount || 0);
     recordedExpenses += amount;
 

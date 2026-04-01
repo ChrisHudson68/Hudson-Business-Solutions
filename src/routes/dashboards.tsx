@@ -6,6 +6,7 @@ import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
 import * as timeEntries from '../db/queries/time-entries.js';
 import * as payments from '../db/queries/payments.js';
+import * as monthlyBills from '../db/queries/monthly-bills.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { DashboardPage } from '../pages/dashboard/DashboardPage.js';
@@ -188,7 +189,9 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
     )
     .get(tenantId, yearMonth) as { total: number };
 
-  const expenseMtd = Number(expenseMtdRow?.total || 0);
+  const expenseMtdBase = Number(expenseMtdRow?.total || 0);
+  const recurringBillsMtd = Number(monthlyBills.sumScheduledByTenantMonthToDate(db, tenantId, yearMonth, now.toISOString().slice(0, 10)) || 0);
+  const expenseMtd = expenseMtdBase + recurringBillsMtd;
 
   const invoicedMtd = sumActiveInvoiceAmountByTenantMonth(db, tenantId, yearMonth);
 

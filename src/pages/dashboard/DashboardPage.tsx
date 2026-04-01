@@ -201,7 +201,7 @@ export const DashboardPage: FC<DashboardPageProps> = ({
           <div class="metric-label">Costs (MTD)</div>
           <div class="metric-value">${fmt(stats.costs_mtd || 0)}</div>
           <div class="muted small" style="margin-top:6px;">
-            ${fmt(stats.labor_mtd || 0)} labor · ${fmt(stats.expenses_mtd || 0)} expenses
+            ${fmt(stats.labor_mtd || 0)} labor · ${fmt(stats.expenses_mtd || 0)} expenses & bills
           </div>
         </div>
 

@@ -680,6 +680,12 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       visible: hasPermission(permissions, 'invoices.view'),
     },
     {
+      label: 'Monthly Bills',
+      href: '/monthly-bills',
+      patterns: ['/monthly-bills'],
+      visible: hasPermission(permissions, 'financials.view'),
+    },
+    {
       label: 'Activity',
       href: '/activity',
       patterns: ['/activity'],
