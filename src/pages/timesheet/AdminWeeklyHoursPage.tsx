@@ -46,12 +46,13 @@ export const AdminWeeklyHoursPage: FC<AdminWeeklyHoursPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Weekly Employee Hours</h1>
-          <p>Admin-only weekly labor summary for all employees. Export the week to CSV for Excel or Google Sheets.</p>
+          <p>Admin-only weekly labor summary for all employees. Export the week to PDF for payroll-ready reporting with logo branding and lunch deduction proof, or use CSV for spreadsheet work.</p>
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href={`/timesheet/admin-hours?start=${prevWeekStart}`}>Previous Week</a>
           <a class="btn" href="/timesheet/admin-hours">This Week</a>
           <a class="btn btn-primary" href={`/timesheet/admin-hours?start=${nextWeekStart}`}>Next Week</a>
+          <a class="btn btn-primary" href={`/timesheet/admin-hours/export.pdf?start=${start}`} target="_blank" rel="noreferrer">Export PDF</a>
           <a class="btn" href={`/timesheet/admin-hours/export.csv?start=${start}`}>Export CSV</a>
         </div>
       </div>

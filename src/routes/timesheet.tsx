@@ -6,6 +6,7 @@ import { TimesheetPage } from '../pages/timesheet/TimesheetPage.js';
 import { AdminWeeklyHoursPage } from '../pages/timesheet/AdminWeeklyHoursPage.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import { generateWeeklyHoursPdf } from '../services/timesheet-weekly-hours-pdf.js';
 
 interface EmployeeOption {
   id: number;
@@ -119,6 +120,19 @@ interface AdminHoursRow {
   entry_count: number;
   approved_at: string | null;
   approved_by_name: string | null;
+}
+
+interface AdminHoursDetailEntry {
+  employee_id: number;
+  employee_name: string;
+  date: string;
+  job_name: string;
+  hours: number;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+  entry_method: string;
+  note: string | null;
+  lunch_deduction_exempt: number;
 }
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
@@ -727,6 +741,34 @@ function csvCell(value: unknown): string {
   return /[",\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
 }
 
+function loadAdminWeeklyHourDetails(db: any, tenantId: number, start: string): AdminHoursDetailEntry[] {
+  const dates = weekDates(start);
+
+  return db.prepare(`
+    SELECT
+      e.id AS employee_id,
+      e.name AS employee_name,
+      t.date,
+      COALESCE(j.job_name, 'Unassigned / General Time') AS job_name,
+      t.hours,
+      t.clock_in_at,
+      t.clock_out_at,
+      t.entry_method,
+      t.note,
+      COALESCE(e.lunch_deduction_exempt, 0) AS lunch_deduction_exempt
+    FROM time_entries t
+    JOIN employees e
+      ON e.id = t.employee_id
+     AND e.tenant_id = t.tenant_id
+    LEFT JOIN jobs j
+      ON j.id = t.job_id
+     AND j.tenant_id = t.tenant_id
+    WHERE t.tenant_id = ?
+      AND t.date BETWEEN ? AND ?
+    ORDER BY e.name ASC, t.date ASC, t.clock_in_at ASC, t.id ASC
+  `).all(tenantId, dates[0], dates[6]) as AdminHoursDetailEntry[];
+}
+
 function buildAdminWeeklyHoursCsv(start: string, rows: AdminHoursRow[]): string {
   const header = [
     'Employee ID',
@@ -886,6 +928,44 @@ timesheetRoutes.get('/timesheet/admin-hours/export.csv', roleRequired('Admin'), 
   c.header('Cache-Control', 'no-store');
 
   return c.body(csv);
+});
+
+timesheetRoutes.get('/timesheet/admin-hours/export.pdf', roleRequired('Admin'), async (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
+
+  const rawStart = c.req.query('start') || toIsoDate(new Date());
+  const start = isRealIsoDate(rawStart) ? weekStart(rawStart) : weekStart(toIsoDate(new Date()));
+  const db = getDb();
+  const rows = loadAdminWeeklyHours(db, tenant.id, start);
+  const detailEntries = loadAdminWeeklyHourDetails(db, tenant.id, start);
+  const end = addDays(start, 6);
+
+  const pdfBytes = await generateWeeklyHoursPdf({
+    tenant: {
+      name: tenant.name,
+      logo_path: tenant.logo_path ?? null,
+    },
+    week: {
+      start,
+      end,
+    },
+    summaries: rows,
+    detailEntries,
+  });
+
+  const safeTenantName = String(tenant.name || 'tenant')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'tenant';
+
+  return new Response(Buffer.from(pdfBytes), {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${safeTenantName}_weekly_employee_hours_${start}.pdf"`,
+      'Cache-Control': 'no-store',
+    },
+  });
 });
 
 timesheetRoutes.post('/timesheet', permissionRequired('time.approve'), async (c) => {
