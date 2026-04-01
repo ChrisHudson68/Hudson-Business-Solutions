@@ -1,9 +1,12 @@
 import type { FC } from 'hono/jsx';
+import { hasPermission } from '../../services/permissions.js';
 
 const fmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 interface DashboardPageProps {
+permissions?: string[];
+
   stats: {
     active_jobs: number;
     on_hold_jobs: number;
@@ -87,6 +90,7 @@ function statusLabel(status: string): string {
 }
 
 export const DashboardPage: FC<DashboardPageProps> = ({
+  permissions,
   stats,
   estimateStats,
   activeJobs,
@@ -174,9 +178,17 @@ export const DashboardPage: FC<DashboardPageProps> = ({
           <p>Quick view of jobs, estimates, billing, costs, and recent labor activity.</p>
         </div>
         <div class="actions actions-mobile-stack">
-          {canManageWorkflow ? <a class="btn" href="/estimates/new">New Estimate</a> : null}
-          <a class="btn" href="/add_invoice">New Invoice</a>
-          <a class="btn btn-primary" href="/add_job">New Job</a>
+          {canManageWorkflow && hasPermission(permissions || [], 'estimates.create') ? (
+            <a class="btn" href="/estimates/new">New Estimate</a>
+          ) : null}
+
+          {hasPermission(permissions || [], 'invoices.create') ? (
+            <a class="btn" href="/add_invoice">New Invoice</a>
+          ) : null}
+
+          {hasPermission(permissions || [], 'jobs.create') ? (
+            <a class="btn btn-primary" href="/add_job">New Job</a>
+          ) : null}
         </div>
       </div>
 

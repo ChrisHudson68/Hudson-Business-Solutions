@@ -1118,7 +1118,7 @@ invoiceRoutes.get('/invoice/:id', permissionRequired('invoices.view'), (c) => {
   return renderInvoiceDetail(c, tenant.id, invoiceId);
 });
 
-invoiceRoutes.get('/invoice-attachments/:id', loginRequired, (c) => {
+invoiceRoutes.get('/invoice-attachments/:id', permissionRequired('invoices.view'), (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) {
@@ -1210,7 +1210,7 @@ invoiceRoutes.get('/invoice-attachments/:id', loginRequired, (c) => {
   }
 });
 
-invoiceRoutes.get('/invoice/:id/pdf', loginRequired, async (c) => {
+invoiceRoutes.get('/invoice/:id/pdf', permissionRequired('invoices.view'), async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 

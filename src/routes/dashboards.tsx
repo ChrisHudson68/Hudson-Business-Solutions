@@ -7,7 +7,7 @@ import * as expenses from '../db/queries/expenses.js';
 import * as timeEntries from '../db/queries/time-entries.js';
 import * as payments from '../db/queries/payments.js';
 import * as monthlyBills from '../db/queries/monthly-bills.js';
-import { loginRequired, roleRequired } from '../middleware/auth.js';
+import { loginRequired, permissionRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { DashboardPage } from '../pages/dashboard/DashboardPage.js';
 import { ProfitDashboardPage } from '../pages/dashboard/ProfitDashboardPage.js';
@@ -385,7 +385,7 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
   );
 });
 
-dashboardRoutes.get('/profit', roleRequired('Admin', 'Manager'), (c) => {
+dashboardRoutes.get('/profit', permissionRequired('financials.view'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();
@@ -469,7 +469,7 @@ dashboardRoutes.get('/profit', roleRequired('Admin', 'Manager'), (c) => {
   );
 });
 
-dashboardRoutes.get('/job_costs', roleRequired('Admin', 'Manager'), (c) => {
+dashboardRoutes.get('/job_costs', permissionRequired('financials.view'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();
@@ -554,7 +554,7 @@ dashboardRoutes.get('/job_costs', roleRequired('Admin', 'Manager'), (c) => {
   );
 });
 
-dashboardRoutes.get('/reports', roleRequired('Admin', 'Manager'), (c) => {
+dashboardRoutes.get('/reports', permissionRequired('reports.view'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();
@@ -585,7 +585,7 @@ dashboardRoutes.get('/reports', roleRequired('Admin', 'Manager'), (c) => {
   );
 });
 
-dashboardRoutes.get('/reports/export.csv', roleRequired('Admin', 'Manager'), (c) => {
+dashboardRoutes.get('/reports/export.csv', permissionRequired('reports.view'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();
@@ -609,7 +609,7 @@ dashboardRoutes.get('/reports/export.csv', roleRequired('Admin', 'Manager'), (c)
   });
 });
 
-dashboardRoutes.get('/reports/print', roleRequired('Admin', 'Manager'), (c) => {
+dashboardRoutes.get('/reports/print', permissionRequired('reports.view'), (c) => {
   const tenant = c.get('tenant');
   const tenantId = tenant!.id;
   const db = getDb();

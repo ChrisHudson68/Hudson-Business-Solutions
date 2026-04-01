@@ -641,7 +641,7 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       label: 'Dashboard',
       href: '/',
       patterns: ['/', '/dashboard'],
-      visible: !!currentUser && currentUser.role !== 'Employee',
+      visible: hasPermission(permissions, 'financials.view'),
     },
     {
       label: 'Jobs',
@@ -692,18 +692,6 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       visible: hasPermission(permissions, 'activity.view'),
     },
     {
-      label: 'My Account',
-      href: '/my-account',
-      patterns: ['/my-account'],
-      visible: !!currentUser,
-    },
-    {
-      label: 'Support',
-      href: '/support',
-      patterns: ['/support'],
-      visible: !!currentUser,
-    },
-    {
       label: 'Users',
       href: '/users',
       patterns: ['/users', '/add_user', '/edit_user/'],
@@ -720,6 +708,18 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       href: '/settings',
       patterns: ['/settings'],
       visible: hasPermission(permissions, 'settings.view'),
+    },
+    {
+      label: 'My Account',
+      href: '/my-account',
+      patterns: ['/my-account'],
+      visible: !!currentUser,
+    },
+    {
+      label: 'Support',
+      href: '/support',
+      patterns: ['/support'],
+      visible: !!currentUser,
     },
   ].filter((item) => item.visible);
 }

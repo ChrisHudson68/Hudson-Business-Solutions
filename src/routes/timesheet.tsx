@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
-import { permissionRequired, roleRequired, userHasPermission } from '../middleware/auth.js';
+import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { TimesheetPage } from '../pages/timesheet/TimesheetPage.js';
 import { AdminWeeklyHoursPage } from '../pages/timesheet/AdminWeeklyHoursPage.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
@@ -849,7 +849,7 @@ function renderTimesheetPage(
       nextWeekStart={state.nextWeekStart}
       error={extras?.error}
       success={extras?.success}
-      showAdminHoursLink={currentUser?.role === 'Admin'}
+      showAdminHoursLink={userHasPermission(currentUser, 'time.approve')}
     />,
     status,
   );
@@ -888,7 +888,7 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
   return renderTimesheetPage(c, state);
 });
 
-timesheetRoutes.get('/timesheet/admin-hours', roleRequired('Admin'), (c) => {
+timesheetRoutes.get('/timesheet/admin-hours', permissionRequired('time.approve'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -914,7 +914,7 @@ timesheetRoutes.get('/timesheet/admin-hours', roleRequired('Admin'), (c) => {
   );
 });
 
-timesheetRoutes.get('/timesheet/admin-hours/export.csv', roleRequired('Admin'), (c) => {
+timesheetRoutes.get('/timesheet/admin-hours/export.csv', permissionRequired('time.approve'), (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
@@ -930,7 +930,7 @@ timesheetRoutes.get('/timesheet/admin-hours/export.csv', roleRequired('Admin'), 
   return c.body(csv);
 });
 
-timesheetRoutes.get('/timesheet/admin-hours/export.pdf', roleRequired('Admin'), async (c) => {
+timesheetRoutes.get('/timesheet/admin-hours/export.pdf', permissionRequired('time.approve'), async (c) => {
   const tenant = c.get('tenant');
   if (!tenant) return c.redirect('/login');
 
