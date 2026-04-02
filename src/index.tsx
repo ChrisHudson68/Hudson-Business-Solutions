@@ -28,6 +28,7 @@ import { invoiceRoutes } from './routes/invoices.js';
 import { paymentRoutes } from './routes/payments.js';
 import { settingsRoutes } from './routes/settings.js';
 import { monthlyBillRoutes } from './routes/monthly-bills.js';
+import { fleetRoutes } from './routes/fleet.js';
 import { billingRoutes } from './routes/billing.js';
 import { estimateRoutes } from './routes/estimates.js';
 import { publicEstimateRoutes } from './routes/public-estimate.js';
@@ -54,6 +55,7 @@ function ensureStartupDirectories(): void {
   fs.mkdirSync(env.uploadDir, { recursive: true });
   fs.mkdirSync(path.join(env.uploadDir, 'receipts'), { recursive: true });
   fs.mkdirSync(path.join(env.uploadDir, 'tenant_logos'), { recursive: true });
+  fs.mkdirSync(path.join(env.uploadDir, 'fleet_receipts'), { recursive: true });
 }
 
 ensureStartupDirectories();
@@ -112,6 +114,7 @@ app.route('/', invoiceRoutes);
 app.route('/', paymentRoutes);
 app.route('/', settingsRoutes);
 app.route('/', monthlyBillRoutes);
+app.route('/', fleetRoutes);
 
 app.notFound((c) => {
   return c.html(<NotFoundPage />, 404);

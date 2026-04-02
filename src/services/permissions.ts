@@ -18,6 +18,8 @@ export const PERMISSIONS = [
   'invoices.edit',
   'invoices.archive',
   'payments.manage',
+  'fleet.view',
+  'fleet.manage',
   'financials.view',
   'financials.edit',
   'reports.view',
@@ -57,6 +59,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<UserRole, readonly PermissionKey[]> = {
     'invoices.create',
     'invoices.edit',
     'payments.manage',
+  'fleet.view',
+  'fleet.manage',
     'financials.view',
     'financials.edit',
     'reports.view',
@@ -371,8 +375,8 @@ export function getPermissionGroups(): Array<{
       permissions: ['invoices.view', 'invoices.create', 'invoices.edit', 'invoices.archive', 'payments.manage'],
     },
     {
-      label: 'Financials & Reports',
-      permissions: ['financials.view', 'financials.edit', 'reports.view', 'activity.view'],
+      label: 'Fleet, Financials & Reports',
+      permissions: ['fleet.view', 'fleet.manage', 'financials.view', 'financials.edit', 'reports.view', 'activity.view'],
     },
     {
       label: 'Users, Billing & Settings',

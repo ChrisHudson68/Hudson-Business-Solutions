@@ -680,6 +680,12 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       visible: hasPermission(permissions, 'invoices.view'),
     },
     {
+      label: 'Fleet',
+      href: '/fleet',
+      patterns: ['/fleet'],
+      visible: hasPermission(permissions, 'fleet.view'),
+    },
+    {
       label: 'Monthly Bills',
       href: '/monthly-bills',
       patterns: ['/monthly-bills'],
@@ -757,6 +763,7 @@ function buildPermissionSummary(currentUser: AppLayoutProps['currentUser']): str
   if (hasPermission(permissions, 'financials.edit')) chips.push('Financial Editing');
   if (hasPermission(permissions, 'time.approve')) chips.push('Time Approval');
   if (hasPermission(permissions, 'billing.manage')) chips.push('Billing Control');
+  if (hasPermission(permissions, 'fleet.manage')) chips.push('Fleet Management');
 
   if (chips.length === 0 && hasPermission(permissions, 'time.clock')) {
     chips.push('Time Clock Access');
