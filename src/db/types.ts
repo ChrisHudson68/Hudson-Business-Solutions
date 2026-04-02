@@ -74,6 +74,8 @@ export interface Job {
   job_code: string | null;
   job_description: string | null;
   client_name: string | null;
+  sold_by?: string | null;
+  commission_percent?: number | null;
   contract_amount: number | null;
   retainage_percent: number | null;
   start_date: string | null;

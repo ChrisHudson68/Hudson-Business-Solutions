@@ -1,0 +1,2 @@
+ALTER TABLE jobs ADD COLUMN sold_by TEXT;
+ALTER TABLE jobs ADD COLUMN commission_percent REAL NOT NULL DEFAULT 0;

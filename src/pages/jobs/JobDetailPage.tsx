@@ -6,6 +6,8 @@ interface Job {
   job_code: string | null;
   job_description: string | null;
   client_name: string | null;
+  sold_by?: string | null;
+  commission_percent?: number | null;
   contract_amount: number | null;
   retainage_percent: number | null;
   start_date: string | null;
@@ -65,6 +67,12 @@ function formatMoney(value: number): string {
   });
 }
 
+function getEstimatedCommission(job: Job): number {
+  const contractAmount = Number(job.contract_amount || 0);
+  const commissionPercent = Number(job.commission_percent || 0);
+  return Number(((contractAmount * commissionPercent) / 100).toFixed(2));
+}
+
 export const JobDetailPage: FC<JobDetailPageProps> = ({
   job,
   incomes,
@@ -80,6 +88,8 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
   retainageHeld,
   csrfToken,
 }) => {
+  const estimatedCommission = getEstimatedCommission(job);
+
   return (
     <div>
       <div class="page-head">
@@ -153,7 +163,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
       </div>
 
-      <div class="grid grid-3 mobile-card-grid" style="margin-bottom:14px;">
+      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
         <div class="card mobile-kpi-card">
           <div class="metric-label">Expenses</div>
           <div class="metric-value">${formatMoney(totalExpenses || 0)}</div>
@@ -167,6 +177,11 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         <div class="card mobile-kpi-card">
           <div class="metric-label">Retainage Held</div>
           <div class="metric-value">${formatMoney(retainageHeld || 0)}</div>
+        </div>
+
+        <div class="card mobile-kpi-card">
+          <div class="metric-label">Commission Est.</div>
+          <div class="metric-value">${formatMoney(estimatedCommission || 0)}</div>
         </div>
       </div>
 
@@ -185,6 +200,18 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
             <div class="mobile-info-row">
               <span class="mobile-info-label">Status</span>
               <span class="mobile-info-value">{job.status || '—'}</span>
+            </div>
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Sold By</span>
+              <span class="mobile-info-value">{job.sold_by || '—'}</span>
+            </div>
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Commission %</span>
+              <span class="mobile-info-value">{Number(job.commission_percent || 0).toFixed(2)}%</span>
+            </div>
+            <div class="mobile-info-row">
+              <span class="mobile-info-label">Estimated Commission</span>
+              <span class="mobile-info-value">${formatMoney(estimatedCommission || 0)}</span>
             </div>
             <div class="mobile-info-row">
               <span class="mobile-info-label">Start Date</span>

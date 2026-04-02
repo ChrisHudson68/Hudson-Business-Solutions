@@ -5,6 +5,8 @@ interface AddJobPageProps {
     job_name?: string;
     job_code?: string;
     client_name?: string;
+    sold_by?: string;
+    commission_percent?: string;
     job_description?: string;
     contract_amount?: string;
     retainage_percent?: string;
@@ -24,6 +26,8 @@ export const AddJobPage: FC<AddJobPageProps> = ({
     job_name: formData?.job_name ?? '',
     job_code: formData?.job_code ?? '',
     client_name: formData?.client_name ?? '',
+    sold_by: formData?.sold_by ?? '',
+    commission_percent: formData?.commission_percent ?? '0',
     job_description: formData?.job_description ?? '',
     contract_amount: formData?.contract_amount ?? '',
     retainage_percent: formData?.retainage_percent ?? '0',
@@ -68,6 +72,29 @@ export const AddJobPage: FC<AddJobPageProps> = ({
 
           <label>Client Name</label>
           <input name="client_name" value={values.client_name} required />
+
+          <div class="row">
+            <div>
+              <label>Sold By</label>
+              <input
+                name="sold_by"
+                value={values.sold_by}
+                placeholder="Optional salesperson or estimator"
+              />
+            </div>
+
+            <div>
+              <label>Commission Percent</label>
+              <input
+                name="commission_percent"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                value={values.commission_percent}
+              />
+            </div>
+          </div>
 
           <label>Job Description</label>
           <textarea

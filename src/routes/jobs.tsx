@@ -158,6 +158,8 @@ function buildJobFormData(source: Record<string, unknown>) {
     job_name: String(source.job_name ?? ''),
     job_code: String(source.job_code ?? ''),
     client_name: String(source.client_name ?? ''),
+    sold_by: String(source.sold_by ?? ''),
+    commission_percent: String(source.commission_percent ?? '0'),
     job_description: String(source.job_description ?? ''),
     contract_amount: String(source.contract_amount ?? ''),
     retainage_percent: String(source.retainage_percent ?? '0'),
@@ -361,6 +363,8 @@ jobRoutes.get('/add_job', roleRequired('Admin', 'Manager'), (c) => {
         job_name: '',
         job_code: '',
         client_name: '',
+        sold_by: '',
+        commission_percent: '0',
         job_description: '',
         contract_amount: '',
         retainage_percent: '0',
@@ -384,6 +388,8 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
     const jobName = requireText(body.job_name, 'Job name', 120);
     const jobCode = normalizeOptionalJobCode(body.job_code);
     const clientName = requireText(body.client_name, 'Client name', 120);
+    const soldBy = normalizeOptionalText(body.sold_by, 'Sold by', 120);
+    const commissionPercent = parsePercent(body.commission_percent, 'Commission percent');
     const jobDescription = normalizeOptionalText(body.job_description, 'Job description', 5000);
     const contractAmount = parseNonNegativeMoney(body.contract_amount, 'Contract amount');
     const retainagePercent = parsePercent(body.retainage_percent, 'Retainage percent');
@@ -396,6 +402,8 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
       job_name: jobName,
       job_code: jobCode,
       client_name: clientName,
+      sold_by: soldBy ?? null,
+      commission_percent: commissionPercent,
       job_description: jobDescription ?? null,
       contract_amount: contractAmount,
       retainage_percent: retainagePercent,
@@ -415,6 +423,8 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
           job_name: jobName,
           job_code: jobCode ?? null,
           client_name: clientName,
+          sold_by: soldBy ?? null,
+          commission_percent: commissionPercent,
           job_description: jobDescription ?? null,
           contract_amount: contractAmount,
           retainage_percent: retainagePercent,
@@ -465,6 +475,8 @@ jobRoutes.get('/edit_job/:id', roleRequired('Admin', 'Manager'), (c) => {
         job_name: job.job_name || '',
         job_code: job.job_code || '',
         client_name: job.client_name || '',
+        sold_by: job.sold_by || '',
+        commission_percent: String(Number(job.commission_percent || 0)),
         job_description: job.job_description || '',
         contract_amount: String(Number(job.contract_amount || 0)),
         retainage_percent: String(Number(job.retainage_percent || 0)),
@@ -499,6 +511,8 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
     const jobName = requireText(body.job_name, 'Job name', 120);
     const jobCode = normalizeOptionalJobCode(body.job_code);
     const clientName = requireText(body.client_name, 'Client name', 120);
+    const soldBy = normalizeOptionalText(body.sold_by, 'Sold by', 120);
+    const commissionPercent = parsePercent(body.commission_percent, 'Commission percent');
     const jobDescription = normalizeOptionalText(body.job_description, 'Job description', 5000);
     const contractAmount = parseNonNegativeMoney(body.contract_amount, 'Contract amount');
     const retainagePercent = parsePercent(body.retainage_percent, 'Retainage percent');
@@ -511,6 +525,8 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
       job_name: jobName,
       job_code: jobCode,
       client_name: clientName,
+      sold_by: soldBy ?? null,
+      commission_percent: commissionPercent,
       job_description: jobDescription ?? null,
       contract_amount: contractAmount,
       retainage_percent: retainagePercent,
@@ -530,6 +546,8 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
           job_name: jobName,
           job_code: jobCode ?? null,
           client_name: clientName,
+          sold_by: soldBy ?? null,
+          commission_percent: commissionPercent,
           job_description: jobDescription ?? null,
           contract_amount: contractAmount,
           retainage_percent: retainagePercent,
