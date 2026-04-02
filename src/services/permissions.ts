@@ -375,8 +375,8 @@ export function getPermissionGroups(): Array<{
       permissions: ['invoices.view', 'invoices.create', 'invoices.edit', 'invoices.archive', 'payments.manage'],
     },
     {
-      label: 'Fleet, Financials & Reports',
-      permissions: ['fleet.view', 'fleet.manage', 'financials.view', 'financials.edit', 'reports.view', 'activity.view'],
+      label: 'Financials & Reports',
+      permissions: ['financials.view', 'financials.edit', 'reports.view', 'activity.view'],
     },
     {
       label: 'Users, Billing & Settings',

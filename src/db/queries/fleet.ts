@@ -50,6 +50,20 @@ export type FleetSummary = {
   archivedRecords: number;
 };
 
+export type FleetVehicleDetailSummary = {
+  totalSpend: number;
+  fuelSpend: number;
+  maintenanceSpend: number;
+  fuelRecordCount: number;
+  maintenanceRecordCount: number;
+  activeRecordCount: number;
+  archivedRecordCount: number;
+  latestEntryDate: string | null;
+  latestOdometer: number | null;
+  fuelGallons: number;
+  avgFuelCostPerGallon: number | null;
+};
+
 function archivedVehicleClause(includeArchived = false): string {
   return includeArchived ? '' : 'AND archived_at IS NULL';
 }
@@ -247,6 +261,44 @@ export function listEntriesByTenant(db: DB, tenantId: number, includeArchived = 
   `).all(tenantId) as FleetEntryRecord[];
 }
 
+export function listEntriesForVehicle(
+  db: DB,
+  tenantId: number,
+  vehicleId: number,
+  includeArchived = true,
+  limit?: number,
+): FleetEntryRecord[] {
+  const limitClause = typeof limit === 'number' && limit > 0 ? `LIMIT ${Math.floor(limit)}` : '';
+  return db.prepare(`
+    SELECT
+      fe.id,
+      fe.tenant_id,
+      fe.vehicle_id,
+      fv.display_name AS vehicle_display_name,
+      fv.unit_number AS vehicle_unit_number,
+      fe.entry_type,
+      fe.entry_date,
+      fe.vendor,
+      fe.amount,
+      fe.odometer,
+      fe.gallons,
+      fe.service_type,
+      fe.notes,
+      fe.receipt_filename,
+      fe.archived_at,
+      fe.archived_by_user_id,
+      fe.created_at,
+      fe.updated_at
+    FROM fleet_entries fe
+    INNER JOIN fleet_vehicles fv ON fv.id = fe.vehicle_id AND fv.tenant_id = fe.tenant_id
+    WHERE fe.tenant_id = ?
+      AND fe.vehicle_id = ?
+      ${includeArchived ? '' : 'AND fe.archived_at IS NULL'}
+    ORDER BY fe.archived_at IS NOT NULL ASC, fe.entry_date DESC, fe.id DESC
+    ${limitClause}
+  `).all(tenantId, vehicleId) as FleetEntryRecord[];
+}
+
 export function findEntryById(db: DB, entryId: number, tenantId: number): FleetEntryRecord | undefined {
   return db.prepare(`
     SELECT
@@ -405,10 +457,8 @@ export function summarizeByTenant(db: DB, tenantId: number, monthStart: string, 
 
   const mtd = db.prepare(`
     SELECT
-      SUM(CASE WHEN entry_type = 'fuel' THEN amount ELSE 0 END) AS fuel_mtd,
-      SUM(CASE WHEN entry_type = 'maintenance' THEN amount ELSE 0 END) AS maintenance_mtd,
-      SUM(CASE WHEN archived_at IS NULL THEN 1 ELSE 0 END) AS active_records,
-      SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived_records
+      SUM(CASE WHEN entry_type = 'fuel' AND archived_at IS NULL THEN amount ELSE 0 END) AS fuel_mtd,
+      SUM(CASE WHEN entry_type = 'maintenance' AND archived_at IS NULL THEN amount ELSE 0 END) AS maintenance_mtd
     FROM fleet_entries
     WHERE tenant_id = ?
       AND entry_date >= ?
@@ -416,8 +466,6 @@ export function summarizeByTenant(db: DB, tenantId: number, monthStart: string, 
   `).get(tenantId, monthStart, monthEnd) as {
     fuel_mtd?: number;
     maintenance_mtd?: number;
-    active_records?: number;
-    archived_records?: number;
   } | undefined;
 
   const recordCounts = db.prepare(`
@@ -435,5 +483,60 @@ export function summarizeByTenant(db: DB, tenantId: number, monthStart: string, 
     maintenanceMtd: Number(mtd?.maintenance_mtd || 0),
     activeRecords: Number(recordCounts?.active_records || 0),
     archivedRecords: Number(recordCounts?.archived_records || 0),
+  };
+}
+
+export function summarizeVehicleById(db: DB, tenantId: number, vehicleId: number): FleetVehicleDetailSummary {
+  const row = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN archived_at IS NULL THEN amount ELSE 0 END), 0) AS total_spend,
+      COALESCE(SUM(CASE WHEN archived_at IS NULL AND entry_type = 'fuel' THEN amount ELSE 0 END), 0) AS fuel_spend,
+      COALESCE(SUM(CASE WHEN archived_at IS NULL AND entry_type = 'maintenance' THEN amount ELSE 0 END), 0) AS maintenance_spend,
+      COALESCE(SUM(CASE WHEN archived_at IS NULL AND entry_type = 'fuel' THEN 1 ELSE 0 END), 0) AS fuel_record_count,
+      COALESCE(SUM(CASE WHEN archived_at IS NULL AND entry_type = 'maintenance' THEN 1 ELSE 0 END), 0) AS maintenance_record_count,
+      COALESCE(SUM(CASE WHEN archived_at IS NULL THEN 1 ELSE 0 END), 0) AS active_record_count,
+      COALESCE(SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS archived_record_count,
+      MAX(CASE WHEN archived_at IS NULL THEN entry_date ELSE NULL END) AS latest_entry_date,
+      COALESCE(SUM(CASE WHEN archived_at IS NULL AND entry_type = 'fuel' THEN gallons ELSE 0 END), 0) AS fuel_gallons
+    FROM fleet_entries
+    WHERE tenant_id = ? AND vehicle_id = ?
+  `).get(tenantId, vehicleId) as {
+    total_spend?: number;
+    fuel_spend?: number;
+    maintenance_spend?: number;
+    fuel_record_count?: number;
+    maintenance_record_count?: number;
+    active_record_count?: number;
+    archived_record_count?: number;
+    latest_entry_date?: string | null;
+    fuel_gallons?: number;
+  } | undefined;
+
+  const latestOdometerRow = db.prepare(`
+    SELECT odometer
+    FROM fleet_entries
+    WHERE tenant_id = ?
+      AND vehicle_id = ?
+      AND archived_at IS NULL
+      AND odometer IS NOT NULL
+    ORDER BY entry_date DESC, id DESC
+    LIMIT 1
+  `).get(tenantId, vehicleId) as { odometer?: number | null } | undefined;
+
+  const fuelSpend = Number(row?.fuel_spend || 0);
+  const fuelGallons = Number(row?.fuel_gallons || 0);
+
+  return {
+    totalSpend: Number(row?.total_spend || 0),
+    fuelSpend,
+    maintenanceSpend: Number(row?.maintenance_spend || 0),
+    fuelRecordCount: Number(row?.fuel_record_count || 0),
+    maintenanceRecordCount: Number(row?.maintenance_record_count || 0),
+    activeRecordCount: Number(row?.active_record_count || 0),
+    archivedRecordCount: Number(row?.archived_record_count || 0),
+    latestEntryDate: row?.latest_entry_date || null,
+    latestOdometer: typeof latestOdometerRow?.odometer === 'number' ? latestOdometerRow.odometer : null,
+    fuelGallons,
+    avgFuelCostPerGallon: fuelGallons > 0 ? Number((fuelSpend / fuelGallons).toFixed(3)) : null,
   };
 }

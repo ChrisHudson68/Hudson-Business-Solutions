@@ -7,6 +7,7 @@ import * as fleet from '../db/queries/fleet.js';
 import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { FleetPage } from '../pages/fleet/FleetPage.js';
+import { FleetVehicleDetailPage } from '../pages/fleet/FleetVehicleDetailPage.js';
 import { getEnv } from '../config/env.js';
 import {
   saveUploadedFile,
@@ -23,7 +24,7 @@ import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 
 const fleetReceiptRootDir = path.join(getEnv().uploadDir, 'fleet_receipts');
 
-function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
+function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 | 404 = 200) {
   return c.html(
     <AppLayout
       currentTenant={c.get('tenant')}
@@ -126,9 +127,9 @@ function buildVehicleFormData(source: Record<string, unknown>) {
   };
 }
 
-function buildRecordFormData(source: Record<string, unknown>, defaults?: { entry_date?: string }) {
+function buildRecordFormData(source: Record<string, unknown>, defaults?: { entry_date?: string; vehicle_id?: string }) {
   return {
-    vehicle_id: String(source.vehicle_id ?? ''),
+    vehicle_id: String(source.vehicle_id ?? defaults?.vehicle_id ?? ''),
     entry_type: String(source.entry_type ?? 'fuel'),
     entry_date: String(source.entry_date ?? defaults?.entry_date ?? new Date().toISOString().slice(0, 10)),
     vendor: String(source.vendor ?? ''),
@@ -213,6 +214,7 @@ fleetRoutes.get('/fleet', permissionRequired('fleet.view'), (c) => {
   const db = getDb();
   const editVehicleId = parsePositiveInt(c.req.query('editVehicle'));
   const editEntryId = parsePositiveInt(c.req.query('editEntry'));
+  const preselectedVehicleId = parsePositiveInt(c.req.query('vehicleId'));
 
   if (editVehicleId) {
     const vehicle = fleet.findVehicleById(db, editVehicleId, tenantId);
@@ -234,7 +236,42 @@ fleetRoutes.get('/fleet', permissionRequired('fleet.view'), (c) => {
     });
   }
 
+  if (preselectedVehicleId) {
+    const vehicle = fleet.findVehicleById(db, preselectedVehicleId, tenantId);
+    if (!vehicle) return renderList(c, { error: 'Vehicle not found.' }, 400);
+    return renderList(c, {
+      success: c.req.query('success') || undefined,
+      recordFormData: buildRecordFormData({}, { entry_date: new Date().toISOString().slice(0, 10), vehicle_id: String(vehicle.id) }),
+    });
+  }
+
   return renderList(c, { success: c.req.query('success') || undefined });
+});
+
+fleetRoutes.get('/fleet/vehicles/:id', permissionRequired('fleet.view'), (c) => {
+  const tenant = c.get('tenant');
+  const tenantId = tenant!.id;
+  const vehicleId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+  if (!vehicleId) return c.text('Vehicle not found', 404);
+
+  const vehicle = fleet.findVehicleById(db, vehicleId, tenantId);
+  if (!vehicle) return c.text('Vehicle not found', 404);
+
+  const summary = fleet.summarizeVehicleById(db, tenantId, vehicleId);
+  const recentEntries = fleet.listEntriesForVehicle(db, tenantId, vehicleId, true, 25);
+
+  return renderApp(
+    c,
+    'Fleet Vehicle Detail',
+    <FleetVehicleDetailPage
+      vehicle={vehicle}
+      summary={summary}
+      recentEntries={recentEntries}
+      csrfToken={c.get('csrfToken')}
+      canManage={userHasPermission(c.get('user'), 'fleet.manage')}
+    />,
+  );
 });
 
 fleetRoutes.post('/fleet/vehicles', permissionRequired('fleet.manage'), async (c) => {
@@ -268,7 +305,7 @@ fleetRoutes.post('/fleet/vehicles', permissionRequired('fleet.manage'), async (c
     });
 
     logActivity(db, {
-      tenantId: tenantId,
+      tenantId,
       actorUserId: currentUser?.id || null,
       eventType: 'fleet.vehicle.created',
       entityType: 'fleet_vehicle',
@@ -324,7 +361,7 @@ fleetRoutes.post('/fleet/vehicles/:id/update', permissionRequired('fleet.manage'
     });
 
     logActivity(db, {
-      tenantId: tenantId,
+      tenantId,
       actorUserId: currentUser?.id || null,
       eventType: 'fleet.vehicle.updated',
       entityType: 'fleet_vehicle',
@@ -334,7 +371,7 @@ fleetRoutes.post('/fleet/vehicles/:id/update', permissionRequired('fleet.manage'
       ipAddress: resolveRequestIp(c),
     });
 
-    return c.redirect('/fleet?success=Vehicle%20updated');
+    return c.redirect(`/fleet/vehicles/${vehicleId}`);
   } catch (error) {
     return renderList(c, {
       error: error instanceof Error ? error.message : 'Unable to update vehicle.',
@@ -356,7 +393,7 @@ fleetRoutes.post('/fleet/vehicles/:id/archive', permissionRequired('fleet.manage
   if (!existing.archived_at) {
     fleet.archiveVehicle(db, vehicleId, tenantId, currentUser!.id);
     logActivity(db, {
-      tenantId: tenantId,
+      tenantId,
       actorUserId: currentUser!.id,
       eventType: 'fleet.vehicle.archived',
       entityType: 'fleet_vehicle',
@@ -380,7 +417,7 @@ fleetRoutes.post('/fleet/vehicles/:id/restore', permissionRequired('fleet.manage
   if (existing.archived_at) {
     fleet.restoreVehicle(db, vehicleId, tenantId);
     logActivity(db, {
-      tenantId: tenantId,
+      tenantId,
       actorUserId: currentUser!.id,
       eventType: 'fleet.vehicle.restored',
       entityType: 'fleet_vehicle',
@@ -389,7 +426,7 @@ fleetRoutes.post('/fleet/vehicles/:id/restore', permissionRequired('fleet.manage
       ipAddress: resolveRequestIp(c),
     });
   }
-  return c.redirect('/fleet?success=Vehicle%20restored');
+  return c.redirect(`/fleet/vehicles/${vehicleId}`);
 });
 
 fleetRoutes.post('/fleet/entries', permissionRequired('fleet.manage'), async (c) => {
@@ -398,25 +435,29 @@ fleetRoutes.post('/fleet/entries', permissionRequired('fleet.manage'), async (c)
   const currentUser = c.get('user');
   const db = getDb();
   const body = (await c.req.parseBody()) as Record<string, unknown>;
+  let receiptFilename: string | null = null;
 
   try {
     const vehicleId = parsePositiveInt(body.vehicle_id);
     if (!vehicleId) throw new Error('Vehicle is required.');
+
     const vehicle = fleet.findVehicleById(db, vehicleId, tenantId);
-    if (!vehicle || vehicle.archived_at) throw new Error('Vehicle not found.');
+    if (!vehicle || vehicle.archived_at) throw new Error('Selected vehicle is not available.');
 
     const entryType = String(body.entry_type ?? 'fuel') === 'maintenance' ? 'maintenance' : 'fuel';
     const entryDate = requireDate(body.entry_date, 'Date');
     const vendor = optionalText(body.vendor, 'Vendor', 120);
     const amount = parsePositiveMoney(body.amount, 'Amount');
     const odometer = parseOptionalInt(body.odometer, 'Odometer');
-    const gallons = parseOptionalDecimal(body.gallons, 'Gallons', 3);
+    const gallons = parseOptionalDecimal(body.gallons, 'Gallons');
     const serviceType = optionalText(body.service_type, 'Service type', 120);
-    const notes = optionalText(body.notes, 'Notes', 600);
-    if (entryType === 'fuel' && gallons === null) throw new Error('Gallons is required for fuel records.');
-    if (entryType === 'maintenance' && !serviceType) throw new Error('Service type is required for maintenance records.');
+    const notes = optionalText(body.notes, 'Notes', 1000);
 
-    const receiptStoredPath = await maybeSaveReceipt(tenantId, body.receipt);
+    if (entryType === 'fuel' && gallons !== null && gallons <= 0) {
+      throw new Error('Gallons must be greater than 0 when provided.');
+    }
+
+    receiptFilename = await maybeSaveReceipt(tenantId, body.receipt);
 
     const entryId = fleet.createEntry(db, tenantId, {
       vehicle_id: vehicleId,
@@ -428,22 +469,23 @@ fleetRoutes.post('/fleet/entries', permissionRequired('fleet.manage'), async (c)
       gallons: entryType === 'fuel' ? gallons : null,
       service_type: entryType === 'maintenance' ? serviceType : null,
       notes,
-      receipt_filename: receiptStoredPath,
+      receipt_filename: receiptFilename,
     });
 
     logActivity(db, {
-      tenantId: tenantId,
+      tenantId,
       actorUserId: currentUser?.id || null,
-      eventType: 'fleet.entry.created',
+      eventType: `fleet.entry.${entryType}.created`,
       entityType: 'fleet_entry',
       entityId: entryId,
       description: `Added ${entryType} record for ${vehicle.display_name}.`,
-      metadata: { vehicle_id: vehicleId, entry_type: entryType, amount },
+      metadata: { vehicle_id: vehicleId, amount, vendor },
       ipAddress: resolveRequestIp(c),
     });
 
-    return c.redirect('/fleet?success=Fleet%20record%20added');
+    return c.redirect(`/fleet/vehicles/${vehicleId}`);
   } catch (error) {
+    if (receiptFilename) deleteUploadedFile(receiptFilename, fleetReceiptRootDir);
     return renderList(c, {
       error: error instanceof Error ? error.message : 'Unable to save fleet record.',
       recordFormData: buildRecordFormData(body),
@@ -464,39 +506,34 @@ fleetRoutes.post('/fleet/entries/:id/update', permissionRequired('fleet.manage')
   if (!existing) return renderList(c, { error: 'Fleet record not found.' }, 400);
 
   let nextReceiptFilename = existing.receipt_filename;
+  let uploadedReplacement: string | null = null;
 
   try {
     const vehicleId = parsePositiveInt(body.vehicle_id);
     if (!vehicleId) throw new Error('Vehicle is required.');
+
     const vehicle = fleet.findVehicleById(db, vehicleId, tenantId);
-    if (!vehicle || vehicle.archived_at) throw new Error('Vehicle not found.');
+    if (!vehicle || vehicle.archived_at) throw new Error('Selected vehicle is not available.');
 
     const entryType = String(body.entry_type ?? 'fuel') === 'maintenance' ? 'maintenance' : 'fuel';
     const entryDate = requireDate(body.entry_date, 'Date');
     const vendor = optionalText(body.vendor, 'Vendor', 120);
     const amount = parsePositiveMoney(body.amount, 'Amount');
     const odometer = parseOptionalInt(body.odometer, 'Odometer');
-    const gallons = parseOptionalDecimal(body.gallons, 'Gallons', 3);
+    const gallons = parseOptionalDecimal(body.gallons, 'Gallons');
     const serviceType = optionalText(body.service_type, 'Service type', 120);
-    const notes = optionalText(body.notes, 'Notes', 600);
+    const notes = optionalText(body.notes, 'Notes', 1000);
     const removeReceipt = String(body.remove_receipt ?? '') === '1';
 
-    if (entryType === 'fuel' && gallons === null) throw new Error('Gallons is required for fuel records.');
-    if (entryType === 'maintenance' && !serviceType) throw new Error('Service type is required for maintenance records.');
-
-    const uploadedReceipt = body.receipt;
-    const newReceipt = await maybeSaveReceipt(tenantId, uploadedReceipt);
-
-    if (removeReceipt && existing.receipt_filename) {
-      deleteUploadedFile(existing.receipt_filename, fleetReceiptRootDir);
-      nextReceiptFilename = null;
+    if (entryType === 'fuel' && gallons !== null && gallons <= 0) {
+      throw new Error('Gallons must be greater than 0 when provided.');
     }
 
-    if (newReceipt) {
-      if (existing.receipt_filename) {
-        deleteUploadedFile(existing.receipt_filename, fleetReceiptRootDir);
-      }
-      nextReceiptFilename = newReceipt;
+    uploadedReplacement = await maybeSaveReceipt(tenantId, body.receipt);
+    if (uploadedReplacement) {
+      nextReceiptFilename = uploadedReplacement;
+    } else if (removeReceipt) {
+      nextReceiptFilename = null;
     }
 
     fleet.updateEntry(db, entryId, tenantId, {
@@ -512,19 +549,24 @@ fleetRoutes.post('/fleet/entries/:id/update', permissionRequired('fleet.manage')
       receipt_filename: nextReceiptFilename,
     });
 
+    if ((uploadedReplacement || removeReceipt) && existing.receipt_filename && existing.receipt_filename !== nextReceiptFilename) {
+      deleteUploadedFile(existing.receipt_filename, fleetReceiptRootDir);
+    }
+
     logActivity(db, {
-      tenantId: tenantId,
+      tenantId,
       actorUserId: currentUser?.id || null,
       eventType: 'fleet.entry.updated',
       entityType: 'fleet_entry',
       entityId: entryId,
-      description: `Updated ${entryType} record for ${vehicle.display_name}.`,
-      metadata: { vehicle_id: vehicleId, entry_type: entryType, amount },
+      description: `Updated ${entryType} fleet record for ${vehicle.display_name}.`,
+      metadata: { vehicle_id: vehicleId, amount, vendor },
       ipAddress: resolveRequestIp(c),
     });
 
-    return c.redirect('/fleet?success=Fleet%20record%20updated');
+    return c.redirect(`/fleet/vehicles/${vehicleId}`);
   } catch (error) {
+    if (uploadedReplacement) deleteUploadedFile(uploadedReplacement, fleetReceiptRootDir);
     return renderList(c, {
       error: error instanceof Error ? error.message : 'Unable to update fleet record.',
       editingEntryId: entryId,
@@ -545,7 +587,7 @@ fleetRoutes.post('/fleet/entries/:id/archive', permissionRequired('fleet.manage'
   if (!existing.archived_at) {
     fleet.archiveEntry(db, entryId, tenantId, currentUser!.id);
     logActivity(db, {
-      tenantId: tenantId,
+      tenantId,
       actorUserId: currentUser!.id,
       eventType: 'fleet.entry.archived',
       entityType: 'fleet_entry',
@@ -554,7 +596,7 @@ fleetRoutes.post('/fleet/entries/:id/archive', permissionRequired('fleet.manage'
       ipAddress: resolveRequestIp(c),
     });
   }
-  return c.redirect('/fleet?success=Fleet%20record%20archived');
+  return c.redirect(`/fleet/vehicles/${existing.vehicle_id}`);
 });
 
 fleetRoutes.post('/fleet/entries/:id/restore', permissionRequired('fleet.manage'), (c) => {
@@ -569,7 +611,7 @@ fleetRoutes.post('/fleet/entries/:id/restore', permissionRequired('fleet.manage'
   if (existing.archived_at) {
     fleet.restoreEntry(db, entryId, tenantId);
     logActivity(db, {
-      tenantId: tenantId,
+      tenantId,
       actorUserId: currentUser!.id,
       eventType: 'fleet.entry.restored',
       entityType: 'fleet_entry',
@@ -578,7 +620,7 @@ fleetRoutes.post('/fleet/entries/:id/restore', permissionRequired('fleet.manage'
       ipAddress: resolveRequestIp(c),
     });
   }
-  return c.redirect('/fleet?success=Fleet%20record%20restored');
+  return c.redirect(`/fleet/vehicles/${existing.vehicle_id}`);
 });
 
 fleetRoutes.get('/fleet/entries/:id/receipt', permissionRequired('fleet.view'), (c) => {
