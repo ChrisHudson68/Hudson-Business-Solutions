@@ -4,11 +4,13 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
 import * as fleet from '../db/queries/fleet.js';
+import * as employees from '../db/queries/employees.js';
 import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { FleetPage } from '../pages/fleet/FleetPage.js';
 import { FleetVehicleDetailPage } from '../pages/fleet/FleetVehicleDetailPage.js';
 import { FleetSchedulePage } from '../pages/fleet/FleetSchedulePage.js';
+import { FleetPacketPage } from '../pages/fleet/FleetPacketPage.js';
 import { getEnv } from '../config/env.js';
 import {
   saveUploadedFile,
@@ -137,6 +139,8 @@ function buildVehicleFormData(source: Record<string, unknown>) {
     model: String(source.model ?? ''),
     license_plate: String(source.license_plate ?? ''),
     vin: String(source.vin ?? ''),
+    assigned_employee_id: String(source.assigned_employee_id ?? ''),
+    assigned_driver_name: String(source.assigned_driver_name ?? ''),
     active: String(source.active ?? '1'),
     notes: String(source.notes ?? ''),
   };
@@ -190,6 +194,8 @@ function loadPageData(db: any, tenantId: number, filters: fleet.FleetFilters) {
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
   const summary = fleet.summarizeByTenant(db, tenantId, monthStart, monthEnd);
   const reminderSettings = fleet.getFleetReminderSettings(db, tenantId);
+  const assignmentSummary = fleet.summarizeAssignmentsByTenant(db, tenantId);
+  const expiringDocuments = fleet.listExpiringDocumentWidgetsByTenant(db, tenantId, 30);
 
   const dueReminders: Array<{ vehicleId: number; vehicleName: string; label: string; reason: string; isDue: boolean }> = [];
   for (const vehicle of vehicles.filter((row) => !row.archived_at)) {
@@ -206,7 +212,7 @@ function loadPageData(db: any, tenantId: number, filters: fleet.FleetFilters) {
     });
   }
 
-  return { vehicles, entries, summary, dueReminders };
+  return { vehicles, entries, summary, dueReminders, assignmentSummary, expiringDocuments };
 }
 
 function maintenanceCategoryOptions() {
@@ -234,7 +240,7 @@ function renderList(
   const currentUser = c.get('user');
   const db = getDb();
   const filters = buildFilters(c);
-  const { vehicles, entries, summary, dueReminders } = loadPageData(db, tenantId, filters);
+  const { vehicles, entries, summary, dueReminders, assignmentSummary, expiringDocuments } = loadPageData(db, tenantId, filters);
   const defaultDate = new Date().toISOString().slice(0, 10);
 
   return renderApp(
@@ -245,6 +251,10 @@ function renderList(
       entries={entries}
       summary={summary}
       dueReminders={dueReminders}
+      assignmentSummary={assignmentSummary}
+      expiringDocuments={expiringDocuments}
+      getDocumentTypeLabel={fleet.getFleetDocumentTypeLabel}
+      driverOptions={fleet.listFleetDriverOptions(db, tenantId)}
       filters={buildFilterFormValues(filters)}
       maintenanceCategoryOptions={maintenanceCategoryOptions()}
       vehicleFormData={options?.vehicleFormData || buildVehicleFormData({})}
@@ -424,9 +434,42 @@ fleetRoutes.get('/fleet/vehicles/:id', permissionRequired('fleet.view'), (c) => 
       recentEntries={recentEntries}
       reminders={reminders}
       documents={documents}
+      driverOptions={fleet.listFleetDriverOptions(db, tenant!.id)}
+      assignmentFormData={{ assigned_employee_id: vehicle.assigned_employee_id ? String(vehicle.assigned_employee_id) : '', assigned_driver_name: vehicle.assigned_driver_name || '' }}
       attachmentHistory={attachmentHistory}
       csrfToken={c.get('csrfToken')}
       canManage={userHasPermission(c.get('user'), 'fleet.manage')}
+      getCategoryLabel={fleet.getMaintenanceCategoryLabel}
+      getDocumentTypeLabel={fleet.getFleetDocumentTypeLabel}
+    />,
+  );
+});
+
+
+
+fleetRoutes.get('/fleet/vehicles/:id/packet', permissionRequired('fleet.view'), (c) => {
+  const tenant = c.get('tenant');
+  const db = getDb();
+  const vehicleId = parsePositiveInt(c.req.param('id'));
+  if (!vehicleId) return c.text('Vehicle not found', 404);
+  const vehicle = fleet.findVehicleById(db, vehicleId, tenant!.id);
+  if (!vehicle) return c.text('Vehicle not found', 404);
+
+  const summary = fleet.summarizeVehicleById(db, tenant!.id, vehicleId);
+  const recentEntries = fleet.listEntriesForVehicle(db, tenant!.id, vehicleId, true, 25);
+  const reminderSettings = fleet.getFleetReminderSettings(db, tenant!.id);
+  const reminders = fleet.getVehicleReminderStatuses(db, tenant!.id, vehicleId, reminderSettings, summary.latestOdometer);
+  const documents = fleet.listDocumentsForVehicle(db, tenant!.id, vehicleId, true);
+
+  return renderApp(
+    c,
+    `${vehicle.display_name} Packet`,
+    <FleetPacketPage
+      vehicle={vehicle}
+      summary={summary}
+      reminders={reminders}
+      documents={documents}
+      recentEntries={recentEntries}
       getCategoryLabel={fleet.getMaintenanceCategoryLabel}
       getDocumentTypeLabel={fleet.getFleetDocumentTypeLabel}
     />,
@@ -447,6 +490,8 @@ fleetRoutes.post('/fleet/vehicles', permissionRequired('fleet.manage'), async (c
       model: optionalText(body.model, 'Model', 60),
       license_plate: optionalText(body.license_plate, 'License plate', 40),
       vin: optionalText(body.vin, 'VIN', 40),
+      assigned_employee_id: parsePositiveInt(body.assigned_employee_id),
+      assigned_driver_name: optionalText(body.assigned_driver_name, 'Driver label', 120),
       active: String(body.active ?? '1') === '0' ? 0 : 1,
       notes: optionalText(body.notes, 'Notes', 2000),
     });
@@ -490,6 +535,8 @@ fleetRoutes.post('/fleet/vehicles/:id/update', permissionRequired('fleet.manage'
       model: optionalText(body.model, 'Model', 60),
       license_plate: optionalText(body.license_plate, 'License plate', 40),
       vin: optionalText(body.vin, 'VIN', 40),
+      assigned_employee_id: parsePositiveInt(body.assigned_employee_id),
+      assigned_driver_name: optionalText(body.assigned_driver_name, 'Driver label', 120),
       active: String(body.active ?? '1') === '0' ? 0 : 1,
       notes: optionalText(body.notes, 'Notes', 2000),
     });
@@ -513,6 +560,51 @@ fleetRoutes.post('/fleet/vehicles/:id/update', permissionRequired('fleet.manage'
       vehicleFormData: buildVehicleFormData(body),
     }, 400);
   }
+});
+
+
+
+fleetRoutes.post('/fleet/vehicles/:id/assignment', permissionRequired('fleet.manage'), async (c) => {
+  const tenant = c.get('tenant');
+  const vehicleId = parsePositiveInt(c.req.param('id'));
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  if (!vehicleId) return c.redirect('/fleet');
+
+  const db = getDb();
+  const vehicle = fleet.findVehicleById(db, vehicleId, tenant!.id);
+  if (!vehicle) return c.redirect('/fleet');
+
+  const assignedEmployeeId = parsePositiveInt(body.assigned_employee_id);
+  if (assignedEmployeeId && !employees.findById(db, assignedEmployeeId, tenant!.id)) {
+    return c.redirect(`/fleet/vehicles/${vehicleId}`);
+  }
+
+  fleet.updateVehicle(db, vehicleId, tenant!.id, {
+    display_name: vehicle.display_name,
+    unit_number: vehicle.unit_number,
+    year: vehicle.year,
+    make: vehicle.make,
+    model: vehicle.model,
+    license_plate: vehicle.license_plate,
+    vin: vehicle.vin,
+    assigned_employee_id: assignedEmployeeId,
+    assigned_driver_name: optionalText(body.assigned_driver_name, 'Driver label', 120),
+    active: vehicle.active,
+    notes: vehicle.notes,
+  });
+
+  await logActivity(db, {
+    tenantId: tenant!.id,
+    userId: c.get('user')?.id,
+    action: 'fleet.vehicle_assignment_updated',
+    entityType: 'fleet_vehicle',
+    entityId: vehicleId,
+    summary: `Updated driver assignment for ${vehicle.display_name}`,
+    detailsJson: JSON.stringify({ vehicleId, assignedEmployeeId }),
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(`/fleet/vehicles/${vehicleId}`);
 });
 
 fleetRoutes.post('/fleet/vehicles/:id/archive', permissionRequired('fleet.manage'), async (c) => {

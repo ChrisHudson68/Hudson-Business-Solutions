@@ -24,6 +24,9 @@ interface FleetVehicleDetailPageProps {
     model: string | null;
     license_plate: string | null;
     vin: string | null;
+    assigned_employee_id: number | null;
+    assigned_employee_name: string | null;
+    assigned_driver_name: string | null;
     active: number;
     notes: string | null;
     archived_at: string | null;
@@ -66,6 +69,11 @@ interface FleetVehicleDetailPageProps {
     notes: string | null;
     archived_at: string | null;
   }>;
+  driverOptions: Array<{ id: number; name: string }>;
+  assignmentFormData: {
+    assigned_employee_id: string;
+    assigned_driver_name: string;
+  };
   attachmentHistory: Array<{
     source_type: 'receipt' | 'document';
     id: number;
@@ -105,6 +113,8 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
   recentEntries,
   reminders,
   documents,
+  driverOptions,
+  assignmentFormData,
   attachmentHistory,
   csrfToken,
   canManage,
@@ -112,6 +122,8 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
   getDocumentTypeLabel,
 }) => {
   const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'No year / make / model';
+  const assignedDriverLabel = vehicle.assigned_employee_name || vehicle.assigned_driver_name || 'Unassigned';
+
   return (
     <div>
       <style>{`
@@ -142,11 +154,13 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
               {vehicle.archived_at ? <span class="badge">Archived</span> : vehicle.active ? <span class="badge badge-good">Active</span> : <span class="badge badge-warn">Inactive</span>}
             </div>
             <div class="muted" style="margin-top:8px;">{vehicleLabel}</div>
+            <div class="muted" style="margin-top:8px;">Assigned driver: {assignedDriverLabel}</div>
             {vehicle.notes ? <div style="margin-top:12px;">{vehicle.notes}</div> : null}
           </div>
           <div>
             <div class="actions" style="justify-content:flex-end;">
               <a class="btn" href={`/fleet?vehicleId=${vehicle.id}`}>Add Record</a>
+              <a class="btn" href={`/fleet/vehicles/${vehicle.id}/packet`} target="_blank" rel="noreferrer">Print Packet</a>
               <a class="btn" href="/fleet/schedule">Schedule View</a>
               {canManage ? <a class="btn" href={`/fleet?editVehicle=${vehicle.id}`}>Edit Vehicle</a> : null}
               <a class="btn" href="/fleet">Back to Fleet</a>
@@ -193,6 +207,7 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
             <div class="meta-item"><b>Unit Number</b>{vehicle.unit_number || '—'}</div>
             <div class="meta-item"><b>License Plate</b>{vehicle.license_plate || '—'}</div>
             <div class="meta-item"><b>VIN</b>{vehicle.vin || '—'}</div>
+            <div class="meta-item"><b>Assigned Driver</b>{assignedDriverLabel}</div>
             <div class="meta-item"><b>Latest Entry Date</b>{summary.latestEntryDate || '—'}</div>
           </div>
           <div class="meta">
@@ -202,6 +217,41 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
             <div class="meta-item"><b>Maintenance Share</b>{summary.totalSpend > 0 ? `${((summary.maintenanceSpend / summary.totalSpend) * 100).toFixed(1)}%` : '0.0%'}</div>
           </div>
         </div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
+          <b>Driver Assignment</b>
+          <span class="badge">{assignedDriverLabel === 'Unassigned' ? 'Unassigned' : 'Assigned'}</span>
+        </div>
+        <div class="meta" style="margin-bottom:12px;">
+          <div class="meta-item"><b>Assigned Employee</b>{vehicle.assigned_employee_name || '—'}</div>
+          <div class="meta-item"><b>Driver Label</b>{vehicle.assigned_driver_name || '—'}</div>
+          <div class="meta-item"><b>Printable Packet</b><a href={`/fleet/vehicles/${vehicle.id}/packet`} target="_blank" rel="noreferrer">Open packet</a></div>
+          <div class="meta-item"><b>Status</b>{vehicle.archived_at ? 'Archived' : vehicle.active ? 'Active' : 'Inactive'}</div>
+        </div>
+
+        {canManage ? (
+          <form method="post" action={`/fleet/vehicles/${vehicle.id}/assignment`}>
+            <input type="hidden" name="csrf_token" value={csrfToken} />
+            <div class="meta" style="margin-bottom:12px;">
+              <div>
+                <label>Assigned Employee</label>
+                <select name="assigned_employee_id">
+                  <option value="">Unassigned</option>
+                  {driverOptions.map((option) => <option value={String(option.id)} selected={assignmentFormData.assigned_employee_id === String(option.id)}>{option.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>Driver Label</label>
+                <input name="assigned_driver_name" value={assignmentFormData.assigned_driver_name} maxLength={120} placeholder="Optional backup label / nickname" />
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn" type="submit">Save Assignment</button>
+            </div>
+          </form>
+        ) : null}
       </div>
 
       <div class="grid-2" style="margin-bottom:14px;">

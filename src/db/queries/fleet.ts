@@ -27,12 +27,25 @@ export type FleetVehicleRecord = {
   model: string | null;
   license_plate: string | null;
   vin: string | null;
+  assigned_employee_id: number | null;
+  assigned_employee_name: string | null;
+  assigned_driver_name: string | null;
   active: number;
   notes: string | null;
   archived_at: string | null;
   archived_by_user_id: number | null;
   created_at: string;
   updated_at: string;
+};
+
+export type FleetAssignmentSummary = {
+  assignedVehicles: number;
+  unassignedVehicles: number;
+};
+
+export type FleetDriverOption = {
+  id: number;
+  name: string;
 };
 
 export type FleetEntryRecord = {
@@ -175,6 +188,9 @@ export function listVehiclesByTenant(db: DB, tenantId: number, includeArchived =
       model,
       license_plate,
       vin,
+      assigned_employee_id,
+      (SELECT name FROM employees e WHERE e.id = fleet_vehicles.assigned_employee_id AND e.tenant_id = fleet_vehicles.tenant_id LIMIT 1) AS assigned_employee_name,
+      assigned_driver_name,
       active,
       notes,
       archived_at,
@@ -201,6 +217,9 @@ export function findVehicleById(db: DB, vehicleId: number, tenantId: number): Fl
       model,
       license_plate,
       vin,
+      assigned_employee_id,
+      (SELECT name FROM employees e WHERE e.id = fleet_vehicles.assigned_employee_id AND e.tenant_id = fleet_vehicles.tenant_id LIMIT 1) AS assigned_employee_name,
+      assigned_driver_name,
       active,
       notes,
       archived_at,
@@ -224,6 +243,8 @@ export function createVehicle(
     model?: string | null;
     license_plate?: string | null;
     vin?: string | null;
+    assigned_employee_id?: number | null;
+    assigned_driver_name?: string | null;
     active?: number;
     notes?: string | null;
   },
@@ -238,13 +259,15 @@ export function createVehicle(
       model,
       license_plate,
       vin,
+      assigned_employee_id,
+      assigned_driver_name,
       active,
       notes,
       archived_at,
       archived_by_user_id,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `).run(
     tenantId,
     data.display_name,
@@ -254,6 +277,8 @@ export function createVehicle(
     data.model || null,
     data.license_plate || null,
     data.vin || null,
+    data.assigned_employee_id ?? null,
+    data.assigned_driver_name || null,
     data.active === 0 ? 0 : 1,
     data.notes || null,
   );
@@ -273,6 +298,8 @@ export function updateVehicle(
     model?: string | null;
     license_plate?: string | null;
     vin?: string | null;
+    assigned_employee_id?: number | null;
+    assigned_driver_name?: string | null;
     active?: number;
     notes?: string | null;
   },
@@ -287,6 +314,8 @@ export function updateVehicle(
       model = ?,
       license_plate = ?,
       vin = ?,
+      assigned_employee_id = ?,
+      assigned_driver_name = ?,
       active = ?,
       notes = ?,
       updated_at = CURRENT_TIMESTAMP
@@ -299,6 +328,8 @@ export function updateVehicle(
     data.model || null,
     data.license_plate || null,
     data.vin || null,
+    data.assigned_employee_id ?? null,
+    data.assigned_driver_name || null,
     data.active === 0 ? 0 : 1,
     data.notes || null,
     vehicleId,
@@ -846,6 +877,63 @@ export function getVehicleReminderStatuses(
       reason,
     };
   });
+}
+
+
+export function listFleetDriverOptions(db: DB, tenantId: number): FleetDriverOption[] {
+  return db.prepare(`
+    SELECT id, name
+    FROM employees
+    WHERE tenant_id = ? AND active = 1
+    ORDER BY LOWER(name) ASC, id ASC
+  `).all(tenantId) as FleetDriverOption[];
+}
+
+export function summarizeAssignmentsByTenant(db: DB, tenantId: number): FleetAssignmentSummary {
+  const row = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN archived_at IS NULL AND assigned_employee_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS assignedVehicles,
+      COALESCE(SUM(CASE WHEN archived_at IS NULL AND assigned_employee_id IS NULL THEN 1 ELSE 0 END), 0) AS unassignedVehicles
+    FROM fleet_vehicles
+    WHERE tenant_id = ?
+  `).get(tenantId) as Record<string, unknown>;
+
+  return {
+    assignedVehicles: Number(row?.assignedVehicles || 0),
+    unassignedVehicles: Number(row?.unassignedVehicles || 0),
+  };
+}
+
+export type FleetExpiringDocumentWidgetItem = {
+  id: number;
+  vehicle_id: number;
+  vehicle_display_name: string;
+  title: string;
+  document_type: FleetDocumentType;
+  expiration_date: string | null;
+  days_remaining: number | null;
+};
+
+export function listExpiringDocumentWidgetsByTenant(db: DB, tenantId: number, daysAhead = 30): FleetExpiringDocumentWidgetItem[] {
+  return listExpiringDocumentsByTenant(db, tenantId, daysAhead)
+    .map((document) => {
+      const vehicle = findVehicleById(db, document.vehicle_id, tenantId);
+      return {
+        id: document.id,
+        vehicle_id: document.vehicle_id,
+        vehicle_display_name: vehicle?.display_name || `Vehicle #${document.vehicle_id}`,
+        title: document.title,
+        document_type: document.document_type,
+        expiration_date: document.expiration_date,
+        days_remaining: document.expiration_date ? daysUntil(document.expiration_date) : null,
+      };
+    })
+    .sort((a, b) => {
+      const aDays = a.days_remaining ?? 999999;
+      const bDays = b.days_remaining ?? 999999;
+      if (aDays !== bDays) return aDays - bDays;
+      return a.vehicle_display_name.localeCompare(b.vehicle_display_name);
+    });
 }
 
 export const FLEET_DOCUMENT_TYPES = [

@@ -18,6 +18,9 @@ interface FleetPageProps {
     model: string | null;
     license_plate: string | null;
     vin: string | null;
+    assigned_employee_id: number | null;
+    assigned_employee_name: string | null;
+    assigned_driver_name: string | null;
     active: number;
     notes: string | null;
     archived_at: string | null;
@@ -48,6 +51,21 @@ interface FleetPageProps {
     archivedRecords: number;
   };
   dueReminders: ReminderListItem[];
+  assignmentSummary: {
+    assignedVehicles: number;
+    unassignedVehicles: number;
+  };
+  expiringDocuments: Array<{
+    id: number;
+    vehicle_id: number;
+    vehicle_display_name: string;
+    title: string;
+    document_type: string;
+    expiration_date: string | null;
+    days_remaining: number | null;
+  }>;
+  getDocumentTypeLabel: (value: string | null) => string;
+  driverOptions: Array<{ id: number; name: string }>;
   filters: {
     vehicle_id: string;
     entry_type: string;
@@ -66,6 +84,8 @@ interface FleetPageProps {
     model: string;
     license_plate: string;
     vin: string;
+    assigned_employee_id: string;
+    assigned_driver_name: string;
     active: string;
     notes: string;
   };
@@ -112,6 +132,10 @@ export const FleetPage: FC<FleetPageProps> = ({
   entries,
   summary,
   dueReminders,
+  assignmentSummary,
+  expiringDocuments,
+  getDocumentTypeLabel,
+  driverOptions,
   filters,
   maintenanceCategoryOptions,
   vehicleFormData,
@@ -153,7 +177,7 @@ export const FleetPage: FC<FleetPageProps> = ({
 
       <div class="stats">
         <div class="stat"><div class="label">Active Vehicles</div><div class="value">{summary.activeVehicles}</div></div>
-        <div class="stat"><div class="label">Archived Vehicles</div><div class="value">{summary.archivedVehicles}</div></div>
+        <div class="stat"><div class="label">Assigned Drivers</div><div class="value">{assignmentSummary.assignedVehicles}</div></div>
         <div class="stat"><div class="label">Fuel MTD</div><div class="value">{fmtMoney(summary.fuelMtd)}</div></div>
         <div class="stat"><div class="label">Maintenance MTD</div><div class="value">{fmtMoney(summary.maintenanceMtd)}</div></div>
       </div>
@@ -173,15 +197,25 @@ export const FleetPage: FC<FleetPageProps> = ({
         </div>
 
         <div class="card">
-          <div class="card-head"><b>Record Activity</b></div>
-          <div class="muted small">Active records: {summary.activeRecords}</div>
-          <div class="muted small" style="margin-top:6px;">Archived records: {summary.archivedRecords}</div>
-          <div class="muted small" style="margin-top:12px;">Service reminders use the thresholds in Company Settings → Fleet Service Reminders.</div>
+          <div class="card-head"><b>Renewal Watch</b><span class="badge">{expiringDocuments.length}</span></div>
+          {expiringDocuments.length > 0 ? expiringDocuments.slice(0, 5).map((document) => (
+            <div style="padding:10px 0;border-top:1px solid var(--border);">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                <a href={`/fleet/vehicles/${document.vehicle_id}`}><b>{document.vehicle_display_name}</b></a>
+                <span class={document.days_remaining !== null && document.days_remaining <= 7 ? 'badge badge-danger' : 'badge badge-warn'}>
+                  {document.days_remaining === null ? 'Needs Date' : document.days_remaining < 0 ? `${Math.abs(document.days_remaining)}d past` : `${document.days_remaining}d`}
+                </span>
+              </div>
+              <div class="muted small" style="margin-top:4px;">{document.title} • {getDocumentTypeLabel(document.document_type)} • {document.expiration_date || 'No expiration'}</div>
+            </div>
+          )) : <div class="muted">No registration or insurance renewals are coming due soon.</div>}
         </div>
 
         <div class="card">
           <div class="card-head"><b>Quick Links</b></div>
-          <div class="actions">
+          <div class="muted small">Unassigned vehicles: {assignmentSummary.unassignedVehicles}</div>
+          <div class="muted small" style="margin-top:6px;">Archived records: {summary.archivedRecords}</div>
+          <div class="actions" style="margin-top:12px;">
             <a class="btn" href="/settings">Fleet Reminder Settings</a>
             <a class="btn" href="/fleet/export.csv">Export CSV</a>
           </div>
