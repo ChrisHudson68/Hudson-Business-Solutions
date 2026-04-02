@@ -130,6 +130,20 @@ function normalizeMaintenanceCategory(value: unknown): fleet.FleetMaintenanceCat
   throw new Error('Maintenance category is invalid.');
 }
 
+
+function quickCompletionServiceType(category: 'oil_change' | 'tire_rotation' | 'inspection'): string {
+  switch (category) {
+    case 'oil_change':
+      return 'Oil Change';
+    case 'tire_rotation':
+      return 'Tire Rotation';
+    case 'inspection':
+      return 'Inspection';
+    default:
+      return 'Maintenance';
+  }
+}
+
 function buildVehicleFormData(source: Record<string, unknown>) {
   return {
     display_name: String(source.display_name ?? ''),
@@ -401,6 +415,8 @@ fleetRoutes.get('/fleet/schedule', permissionRequired('fleet.view'), (c) => {
     <FleetSchedulePage
       rows={rows}
       getDocumentTypeLabel={fleet.getFleetDocumentTypeLabel}
+      csrfToken={c.get('csrfToken')}
+      canManage={userHasPermission(c.get('user'), 'fleet.manage')}
     />,
   );
 });
@@ -424,6 +440,7 @@ fleetRoutes.get('/fleet/vehicles/:id', permissionRequired('fleet.view'), (c) => 
   const reminders = fleet.getVehicleReminderStatuses(db, tenant!.id, vehicleId, reminderSettings, summary.latestOdometer);
   const documents = fleet.listDocumentsForVehicle(db, tenant!.id, vehicleId, true);
   const attachmentHistory = fleet.listAttachmentHistoryForVehicle(db, tenant!.id, vehicleId, true, 50);
+  const assignmentHistory = fleet.listAssignmentHistoryForVehicle(db, tenant!.id, vehicleId, 20);
 
   return renderApp(
     c,
@@ -436,6 +453,7 @@ fleetRoutes.get('/fleet/vehicles/:id', permissionRequired('fleet.view'), (c) => 
       documents={documents}
       driverOptions={fleet.listFleetDriverOptions(db, tenant!.id)}
       assignmentFormData={{ assigned_employee_id: vehicle.assigned_employee_id ? String(vehicle.assigned_employee_id) : '', assigned_driver_name: vehicle.assigned_driver_name || '' }}
+      assignmentHistory={assignmentHistory}
       attachmentHistory={attachmentHistory}
       csrfToken={c.get('csrfToken')}
       canManage={userHasPermission(c.get('user'), 'fleet.manage')}
@@ -579,6 +597,11 @@ fleetRoutes.post('/fleet/vehicles/:id/assignment', permissionRequired('fleet.man
     return c.redirect(`/fleet/vehicles/${vehicleId}`);
   }
 
+  const newDriverName = optionalText(body.assigned_driver_name, 'Driver label', 120);
+  const assignmentChanged =
+    (vehicle.assigned_employee_id ?? null) !== (assignedEmployeeId ?? null)
+    || String(vehicle.assigned_driver_name || '') !== String(newDriverName || '');
+
   fleet.updateVehicle(db, vehicleId, tenant!.id, {
     display_name: vehicle.display_name,
     unit_number: vehicle.unit_number,
@@ -588,10 +611,22 @@ fleetRoutes.post('/fleet/vehicles/:id/assignment', permissionRequired('fleet.man
     license_plate: vehicle.license_plate,
     vin: vehicle.vin,
     assigned_employee_id: assignedEmployeeId,
-    assigned_driver_name: optionalText(body.assigned_driver_name, 'Driver label', 120),
+    assigned_driver_name: newDriverName,
     active: vehicle.active,
     notes: vehicle.notes,
   });
+
+  if (assignmentChanged) {
+    fleet.createAssignmentHistory(db, tenant!.id, {
+      vehicle_id: vehicleId,
+      previous_employee_id: vehicle.assigned_employee_id,
+      new_employee_id: assignedEmployeeId,
+      previous_driver_name: vehicle.assigned_driver_name,
+      new_driver_name: newDriverName,
+      note: 'Updated from vehicle detail page',
+      changed_by_user_id: c.get('user')?.id ?? null,
+    });
+  }
 
   await logActivity(db, {
     tenantId: tenant!.id,
@@ -605,6 +640,57 @@ fleetRoutes.post('/fleet/vehicles/:id/assignment', permissionRequired('fleet.man
   });
 
   return c.redirect(`/fleet/vehicles/${vehicleId}`);
+});
+
+
+
+fleetRoutes.post('/fleet/vehicles/:id/reminders/complete', permissionRequired('fleet.manage'), async (c) => {
+  const tenant = c.get('tenant');
+  const vehicleId = parsePositiveInt(c.req.param('id'));
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const returnTo = String(body.return_to || `/fleet/vehicles/${vehicleId || ''}`);
+
+  if (!vehicleId) return c.redirect('/fleet/schedule');
+
+  try {
+    const db = getDb();
+    const vehicle = fleet.findVehicleById(db, vehicleId, tenant!.id);
+    if (!vehicle) throw new Error('Vehicle not found.');
+
+    const rawCategory = String(body.category || '').trim();
+    if (rawCategory !== 'oil_change' && rawCategory !== 'tire_rotation' && rawCategory !== 'inspection') {
+      throw new Error('Reminder category is invalid.');
+    }
+
+    const entryId = fleet.createEntry(db, tenant!.id, {
+      vehicle_id: vehicleId,
+      entry_type: 'maintenance',
+      entry_date: requireDate(body.entry_date, 'Date'),
+      vendor: optionalText(body.vendor, 'Vendor', 120),
+      amount: parsePositiveMoney(body.amount, 'Amount'),
+      odometer: parseOptionalInt(body.odometer, 'Odometer'),
+      gallons: null,
+      service_type: quickCompletionServiceType(rawCategory),
+      maintenance_category: rawCategory,
+      notes: optionalText(body.notes, 'Notes', 2000) || 'Completed from fleet schedule view.',
+      receipt_filename: null,
+    });
+
+    await logActivity(db, {
+      tenantId: tenant!.id,
+      userId: c.get('user')?.id,
+      action: 'fleet.reminder_completed',
+      entityType: 'fleet_entry',
+      entityId: entryId,
+      summary: `Completed ${quickCompletionServiceType(rawCategory)} for ${vehicle.display_name}`,
+      detailsJson: JSON.stringify({ entryId, vehicleId, category: rawCategory }),
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.redirect(returnTo || `/fleet/vehicles/${vehicleId}`);
+  } catch (error) {
+    return c.redirect(`/fleet/vehicles/${vehicleId}`);
+  }
 });
 
 fleetRoutes.post('/fleet/vehicles/:id/archive', permissionRequired('fleet.manage'), async (c) => {

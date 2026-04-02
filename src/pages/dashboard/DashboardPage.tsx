@@ -73,6 +73,12 @@ permissions?: string[];
   companyConfigured?: boolean;
   csrfToken: string;
   canManageWorkflow?: boolean;
+  fleetAlerts?: {
+    registrationExpiringSoon: number;
+    registrationOverdue: number;
+    insuranceExpiringSoon: number;
+    insuranceOverdue: number;
+  };
 }
 
 function badgeClass(status: string): string {
@@ -99,6 +105,7 @@ export const DashboardPage: FC<DashboardPageProps> = ({
   recentEstimates,
   companyConfigured = false,
   canManageWorkflow = false,
+  fleetAlerts,
 }) => {
   const onboardingSteps = [
     {
@@ -295,6 +302,39 @@ export const DashboardPage: FC<DashboardPageProps> = ({
           </div>
         </div>
       </div>
+
+{fleetAlerts && (fleetAlerts.registrationExpiringSoon > 0 || fleetAlerts.registrationOverdue > 0 || fleetAlerts.insuranceExpiringSoon > 0 || fleetAlerts.insuranceOverdue > 0) ? (
+  <div class="card" style="margin-top:14px; border-color:#FDE68A; background:#FFFBEB;">
+    <div class="card-head">
+      <div>
+        <b>Fleet Renewal Watch</b>
+        <div class="muted small" style="margin-top:4px;">
+          Registration and insurance documents that need attention in the next 30 days.
+        </div>
+      </div>
+      <a class="btn" href="/fleet/schedule">Open Fleet Schedule</a>
+    </div>
+
+    <div class="grid grid-4 mobile-card-grid" style="margin-top:14px;">
+      <div class="card mobile-kpi-card">
+        <div class="metric-label">Registration Overdue</div>
+        <div class="metric-value">{fleetAlerts.registrationOverdue || 0}</div>
+      </div>
+      <div class="card mobile-kpi-card">
+        <div class="metric-label">Registration Due Soon</div>
+        <div class="metric-value">{fleetAlerts.registrationExpiringSoon || 0}</div>
+      </div>
+      <div class="card mobile-kpi-card">
+        <div class="metric-label">Insurance Overdue</div>
+        <div class="metric-value">{fleetAlerts.insuranceOverdue || 0}</div>
+      </div>
+      <div class="card mobile-kpi-card">
+        <div class="metric-label">Insurance Due Soon</div>
+        <div class="metric-value">{fleetAlerts.insuranceExpiringSoon || 0}</div>
+      </div>
+    </div>
+  </div>
+) : null}
 
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card">

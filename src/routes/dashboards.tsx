@@ -7,6 +7,7 @@ import * as expenses from '../db/queries/expenses.js';
 import * as timeEntries from '../db/queries/time-entries.js';
 import * as payments from '../db/queries/payments.js';
 import * as monthlyBills from '../db/queries/monthly-bills.js';
+import * as fleet from '../db/queries/fleet.js';
 import { loginRequired, permissionRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { DashboardPage } from '../pages/dashboard/DashboardPage.js';
@@ -360,6 +361,7 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
     } | undefined;
 
   const companyConfigured = isCompanyProfileComplete(tenantProfile);
+  const fleetAlerts = fleet.summarizeDashboardAlertsByTenant(db, tenantId, 30);
 
   return renderApp(
     c,
@@ -381,6 +383,7 @@ dashboardRoutes.get('/dashboard', loginRequired, (c) => {
       companyConfigured={companyConfigured}
       csrfToken={c.get('csrfToken')}
       canManageWorkflow={canManageWorkflow(currentUser)}
+      fleetAlerts={fleetAlerts}
     />,
   );
 });

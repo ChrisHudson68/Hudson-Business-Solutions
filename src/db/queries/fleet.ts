@@ -48,6 +48,30 @@ export type FleetDriverOption = {
   name: string;
 };
 
+export type FleetAssignmentHistoryRecord = {
+  id: number;
+  tenant_id: number;
+  vehicle_id: number;
+  previous_employee_id: number | null;
+  previous_employee_name: string | null;
+  new_employee_id: number | null;
+  new_employee_name: string | null;
+  previous_driver_name: string | null;
+  new_driver_name: string | null;
+  note: string | null;
+  changed_by_user_id: number | null;
+  changed_by_user_name: string | null;
+  changed_at: string;
+};
+
+export type FleetDashboardAlertSummary = {
+  registrationExpiringSoon: number;
+  registrationOverdue: number;
+  insuranceExpiringSoon: number;
+  insuranceOverdue: number;
+};
+
+
 export type FleetEntryRecord = {
   id: number;
   tenant_id: number;
@@ -1313,4 +1337,130 @@ export function listFleetScheduleRows(
       if (aDays !== bDays) return aDays - bDays;
       return a.vehicle_display_name.localeCompare(b.vehicle_display_name);
     });
+}
+
+
+export function createAssignmentHistory(
+  db: DB,
+  tenantId: number,
+  data: {
+    vehicle_id: number;
+    previous_employee_id?: number | null;
+    new_employee_id?: number | null;
+    previous_driver_name?: string | null;
+    new_driver_name?: string | null;
+    note?: string | null;
+    changed_by_user_id?: number | null;
+  },
+): number {
+  const result = db.prepare(`
+    INSERT INTO fleet_vehicle_assignment_history (
+      tenant_id,
+      vehicle_id,
+      previous_employee_id,
+      new_employee_id,
+      previous_driver_name,
+      new_driver_name,
+      note,
+      changed_by_user_id,
+      changed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).run(
+    tenantId,
+    data.vehicle_id,
+    data.previous_employee_id ?? null,
+    data.new_employee_id ?? null,
+    data.previous_driver_name || null,
+    data.new_driver_name || null,
+    data.note || null,
+    data.changed_by_user_id ?? null,
+  );
+
+  return Number(result.lastInsertRowid);
+}
+
+export function listAssignmentHistoryForVehicle(
+  db: DB,
+  tenantId: number,
+  vehicleId: number,
+  limit = 20,
+): FleetAssignmentHistoryRecord[] {
+  const limitValue = Math.max(1, Math.min(limit, 100));
+  const rows = db.prepare(`
+    SELECT
+      h.id,
+      h.tenant_id,
+      h.vehicle_id,
+      h.previous_employee_id,
+      prev_emp.name AS previous_employee_name,
+      h.new_employee_id,
+      new_emp.name AS new_employee_name,
+      h.previous_driver_name,
+      h.new_driver_name,
+      h.note,
+      h.changed_by_user_id,
+      changed_user.name AS changed_by_user_name,
+      h.changed_at
+    FROM fleet_vehicle_assignment_history h
+    LEFT JOIN employees prev_emp
+      ON prev_emp.id = h.previous_employee_id
+     AND prev_emp.tenant_id = h.tenant_id
+    LEFT JOIN employees new_emp
+      ON new_emp.id = h.new_employee_id
+     AND new_emp.tenant_id = h.tenant_id
+    LEFT JOIN users changed_user
+      ON changed_user.id = h.changed_by_user_id
+     AND changed_user.tenant_id = h.tenant_id
+    WHERE h.tenant_id = ?
+      AND h.vehicle_id = ?
+    ORDER BY h.changed_at DESC, h.id DESC
+    LIMIT ?
+  `).all(tenantId, vehicleId, limitValue) as Record<string, unknown>[];
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    tenant_id: Number(row.tenant_id),
+    vehicle_id: Number(row.vehicle_id),
+    previous_employee_id: typeof row.previous_employee_id === 'number' ? row.previous_employee_id : row.previous_employee_id === null ? null : Number(row.previous_employee_id || 0),
+    previous_employee_name: row.previous_employee_name ? String(row.previous_employee_name) : null,
+    new_employee_id: typeof row.new_employee_id === 'number' ? row.new_employee_id : row.new_employee_id === null ? null : Number(row.new_employee_id || 0),
+    new_employee_name: row.new_employee_name ? String(row.new_employee_name) : null,
+    previous_driver_name: row.previous_driver_name ? String(row.previous_driver_name) : null,
+    new_driver_name: row.new_driver_name ? String(row.new_driver_name) : null,
+    note: row.note ? String(row.note) : null,
+    changed_by_user_id: typeof row.changed_by_user_id === 'number' ? row.changed_by_user_id : row.changed_by_user_id === null ? null : Number(row.changed_by_user_id || 0),
+    changed_by_user_name: row.changed_by_user_name ? String(row.changed_by_user_name) : null,
+    changed_at: String(row.changed_at || ''),
+  }));
+}
+
+export function summarizeDashboardAlertsByTenant(db: DB, tenantId: number, daysAhead = 30): FleetDashboardAlertSummary {
+  const docs = listExpiringDocumentWidgetsByTenant(db, tenantId, daysAhead);
+
+  const summary: FleetDashboardAlertSummary = {
+    registrationExpiringSoon: 0,
+    registrationOverdue: 0,
+    insuranceExpiringSoon: 0,
+    insuranceOverdue: 0,
+  };
+
+  for (const doc of docs) {
+    const daysRemaining = doc.days_remaining;
+    if (doc.document_type === 'registration') {
+      if (daysRemaining !== null && daysRemaining < 0) {
+        summary.registrationOverdue += 1;
+      } else {
+        summary.registrationExpiringSoon += 1;
+      }
+    }
+    if (doc.document_type === 'insurance') {
+      if (daysRemaining !== null && daysRemaining < 0) {
+        summary.insuranceOverdue += 1;
+      } else {
+        summary.insuranceExpiringSoon += 1;
+      }
+    }
+  }
+
+  return summary;
 }

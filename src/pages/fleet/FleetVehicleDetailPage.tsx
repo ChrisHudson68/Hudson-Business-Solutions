@@ -74,6 +74,16 @@ interface FleetVehicleDetailPageProps {
     assigned_employee_id: string;
     assigned_driver_name: string;
   };
+  assignmentHistory: Array<{
+    id: number;
+    previous_employee_name: string | null;
+    new_employee_name: string | null;
+    previous_driver_name: string | null;
+    new_driver_name: string | null;
+    note: string | null;
+    changed_by_user_name: string | null;
+    changed_at: string;
+  }>;
   attachmentHistory: Array<{
     source_type: 'receipt' | 'document';
     id: number;
@@ -115,6 +125,7 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
   documents,
   driverOptions,
   assignmentFormData,
+  assignmentHistory,
   attachmentHistory,
   csrfToken,
   canManage,
@@ -253,6 +264,52 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
           </form>
         ) : null}
       </div>
+
+<div class="card" style="margin-bottom:14px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
+    <b>Assignment History</b>
+    <span class="badge">{assignmentHistory.length}</span>
+  </div>
+  {assignmentHistory.length > 0 ? (
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Changed</th>
+            <th>Employee</th>
+            <th>Driver Label</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {assignmentHistory.map((item) => (
+            <tr>
+              <td>
+                <div><b>{item.changed_at}</b></div>
+                <div class="muted small" style="margin-top:4px;">by {item.changed_by_user_name || 'System'}</div>
+              </td>
+              <td>
+                <div class="muted small">From</div>
+                <div>{item.previous_employee_name || 'Unassigned'}</div>
+                <div class="muted small" style="margin-top:6px;">To</div>
+                <div>{item.new_employee_name || 'Unassigned'}</div>
+              </td>
+              <td>
+                <div class="muted small">From</div>
+                <div>{item.previous_driver_name || '—'}</div>
+                <div class="muted small" style="margin-top:6px;">To</div>
+                <div>{item.new_driver_name || '—'}</div>
+              </td>
+              <td>{item.note || 'Assignment updated'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <div class="muted">No assignment history yet.</div>
+  )}
+</div>
 
       <div class="grid-2" style="margin-bottom:14px;">
         <div class="card">
