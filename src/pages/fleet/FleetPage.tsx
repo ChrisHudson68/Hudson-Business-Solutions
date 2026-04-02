@@ -142,6 +142,7 @@ export const FleetPage: FC<FleetPageProps> = ({
           <p>Track company vehicles, fuel receipts, truck maintenance, service reminders, and fleet operating costs.</p>
         </div>
         <div class="actions">
+          <a class="btn" href="/fleet/schedule">Schedule View</a>
           <a class="btn" href="/fleet/export.csv">Export Current Fleet CSV</a>
           {canManage ? <a class="btn btn-primary" href="#fleet-forms">Add / Edit Records</a> : null}
         </div>

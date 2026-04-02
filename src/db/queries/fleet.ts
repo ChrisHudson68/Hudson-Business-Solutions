@@ -847,3 +847,382 @@ export function getVehicleReminderStatuses(
     };
   });
 }
+
+export const FLEET_DOCUMENT_TYPES = [
+  'registration',
+  'insurance',
+  'inspection',
+  'service_contract',
+  'other',
+] as const;
+
+export type FleetDocumentType = (typeof FLEET_DOCUMENT_TYPES)[number];
+
+export type FleetDocumentRecord = {
+  id: number;
+  tenant_id: number;
+  vehicle_id: number;
+  document_type: FleetDocumentType;
+  title: string;
+  file_filename: string;
+  original_filename: string | null;
+  expiration_date: string | null;
+  notes: string | null;
+  archived_at: string | null;
+  archived_by_user_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FleetAttachmentHistoryItem = {
+  source_type: 'receipt' | 'document';
+  id: number;
+  entry_or_document_date: string | null;
+  label: string;
+  kind: string;
+  filename: string;
+  archived_at: string | null;
+};
+
+export type FleetScheduleRow = {
+  vehicle_id: number;
+  vehicle_display_name: string;
+  current_odometer: number | null;
+  reminder: FleetReminderStatus;
+  expiringDocuments: FleetDocumentRecord[];
+};
+
+function mapDocumentRow(row: Record<string, unknown>): FleetDocumentRecord {
+  return {
+    id: Number(row.id),
+    tenant_id: Number(row.tenant_id),
+    vehicle_id: Number(row.vehicle_id),
+    document_type: String(row.document_type || 'other') as FleetDocumentType,
+    title: String(row.title || ''),
+    file_filename: String(row.file_filename || ''),
+    original_filename: row.original_filename ? String(row.original_filename) : null,
+    expiration_date: row.expiration_date ? String(row.expiration_date) : null,
+    notes: row.notes ? String(row.notes) : null,
+    archived_at: row.archived_at ? String(row.archived_at) : null,
+    archived_by_user_id: typeof row.archived_by_user_id === 'number'
+      ? row.archived_by_user_id
+      : row.archived_by_user_id === null
+        ? null
+        : Number(row.archived_by_user_id || 0),
+    created_at: String(row.created_at || ''),
+    updated_at: String(row.updated_at || ''),
+  };
+}
+
+export function getFleetDocumentTypeLabel(documentType: FleetDocumentType | null | undefined): string {
+  switch (documentType) {
+    case 'registration':
+      return 'Registration';
+    case 'insurance':
+      return 'Insurance';
+    case 'inspection':
+      return 'Inspection';
+    case 'service_contract':
+      return 'Service Contract';
+    case 'other':
+    default:
+      return 'Other';
+  }
+}
+
+export function listDocumentsForVehicle(
+  db: DB,
+  tenantId: number,
+  vehicleId: number,
+  includeArchived = false,
+): FleetDocumentRecord[] {
+  const rows = db.prepare(`
+    SELECT
+      id,
+      tenant_id,
+      vehicle_id,
+      document_type,
+      title,
+      file_filename,
+      original_filename,
+      expiration_date,
+      notes,
+      archived_at,
+      archived_by_user_id,
+      created_at,
+      updated_at
+    FROM fleet_documents
+    WHERE tenant_id = ?
+      AND vehicle_id = ?
+      ${includeArchived ? '' : 'AND archived_at IS NULL'}
+    ORDER BY archived_at IS NOT NULL ASC,
+             expiration_date IS NULL ASC,
+             expiration_date ASC,
+             created_at DESC,
+             id DESC
+  `).all(tenantId, vehicleId) as Record<string, unknown>[];
+
+  return rows.map(mapDocumentRow);
+}
+
+export function listExpiringDocumentsByTenant(
+  db: DB,
+  tenantId: number,
+  daysAhead = 30,
+): FleetDocumentRecord[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const cutoffDate = addDays(today, daysAhead) || today;
+  const rows = db.prepare(`
+    SELECT
+      id,
+      tenant_id,
+      vehicle_id,
+      document_type,
+      title,
+      file_filename,
+      original_filename,
+      expiration_date,
+      notes,
+      archived_at,
+      archived_by_user_id,
+      created_at,
+      updated_at
+    FROM fleet_documents
+    WHERE tenant_id = ?
+      AND archived_at IS NULL
+      AND expiration_date IS NOT NULL
+      AND expiration_date <= ?
+    ORDER BY expiration_date ASC, id ASC
+  `).all(tenantId, cutoffDate) as Record<string, unknown>[];
+
+  return rows.map(mapDocumentRow);
+}
+
+export function findDocumentById(db: DB, documentId: number, tenantId: number): FleetDocumentRecord | undefined {
+  const row = db.prepare(`
+    SELECT
+      id,
+      tenant_id,
+      vehicle_id,
+      document_type,
+      title,
+      file_filename,
+      original_filename,
+      expiration_date,
+      notes,
+      archived_at,
+      archived_by_user_id,
+      created_at,
+      updated_at
+    FROM fleet_documents
+    WHERE id = ? AND tenant_id = ?
+    LIMIT 1
+  `).get(documentId, tenantId) as Record<string, unknown> | undefined;
+
+  return row ? mapDocumentRow(row) : undefined;
+}
+
+export function createDocument(
+  db: DB,
+  tenantId: number,
+  data: {
+    vehicle_id: number;
+    document_type: FleetDocumentType;
+    title: string;
+    file_filename: string;
+    original_filename?: string | null;
+    expiration_date?: string | null;
+    notes?: string | null;
+  },
+): number {
+  const result = db.prepare(`
+    INSERT INTO fleet_documents (
+      tenant_id,
+      vehicle_id,
+      document_type,
+      title,
+      file_filename,
+      original_filename,
+      expiration_date,
+      notes,
+      archived_at,
+      archived_by_user_id,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `).run(
+    tenantId,
+    data.vehicle_id,
+    data.document_type,
+    data.title,
+    data.file_filename,
+    data.original_filename || null,
+    data.expiration_date || null,
+    data.notes || null,
+  );
+
+  return Number(result.lastInsertRowid);
+}
+
+export function updateDocument(
+  db: DB,
+  documentId: number,
+  tenantId: number,
+  data: {
+    vehicle_id: number;
+    document_type: FleetDocumentType;
+    title: string;
+    file_filename?: string | null;
+    original_filename?: string | null;
+    expiration_date?: string | null;
+    notes?: string | null;
+  },
+): void {
+  const fields = [
+    'vehicle_id = ?',
+    'document_type = ?',
+    'title = ?',
+    'expiration_date = ?',
+    'notes = ?',
+    'updated_at = CURRENT_TIMESTAMP',
+  ];
+  const values: unknown[] = [
+    data.vehicle_id,
+    data.document_type,
+    data.title,
+    data.expiration_date || null,
+    data.notes || null,
+  ];
+
+  if (data.file_filename !== undefined) {
+    fields.splice(3, 0, 'file_filename = ?', 'original_filename = ?');
+    values.splice(3, 0, data.file_filename, data.original_filename || null);
+  }
+
+  values.push(documentId, tenantId);
+
+  db.prepare(`
+    UPDATE fleet_documents
+    SET ${fields.join(', ')}
+    WHERE id = ? AND tenant_id = ?
+  `).run(...values);
+}
+
+export function archiveDocument(db: DB, documentId: number, tenantId: number, archivedByUserId: number): void {
+  db.prepare(`
+    UPDATE fleet_documents
+    SET archived_at = CURRENT_TIMESTAMP,
+        archived_by_user_id = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+  `).run(archivedByUserId, documentId, tenantId);
+}
+
+export function restoreDocument(db: DB, documentId: number, tenantId: number): void {
+  db.prepare(`
+    UPDATE fleet_documents
+    SET archived_at = NULL,
+        archived_by_user_id = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ?
+  `).run(documentId, tenantId);
+}
+
+export function listAttachmentHistoryForVehicle(
+  db: DB,
+  tenantId: number,
+  vehicleId: number,
+  includeArchived = true,
+  limit = 50,
+): FleetAttachmentHistoryItem[] {
+  const limitValue = Math.max(1, Math.min(limit, 200));
+  const receiptRows = db.prepare(`
+    SELECT
+      'receipt' AS source_type,
+      id,
+      entry_date AS entry_or_document_date,
+      CASE
+        WHEN entry_type = 'fuel' THEN 'Fuel Receipt'
+        ELSE COALESCE(service_type, 'Maintenance Receipt')
+      END AS label,
+      entry_type AS kind,
+      receipt_filename AS filename,
+      archived_at
+    FROM fleet_entries
+    WHERE tenant_id = ?
+      AND vehicle_id = ?
+      AND receipt_filename IS NOT NULL
+      ${includeArchived ? '' : 'AND archived_at IS NULL'}
+  `).all(tenantId, vehicleId) as Record<string, unknown>[];
+
+  const documentRows = db.prepare(`
+    SELECT
+      'document' AS source_type,
+      id,
+      COALESCE(expiration_date, created_at) AS entry_or_document_date,
+      title AS label,
+      document_type AS kind,
+      file_filename AS filename,
+      archived_at
+    FROM fleet_documents
+    WHERE tenant_id = ?
+      AND vehicle_id = ?
+      ${includeArchived ? '' : 'AND archived_at IS NULL'}
+  `).all(tenantId, vehicleId) as Record<string, unknown>[];
+
+  return [...receiptRows, ...documentRows]
+    .map((row) => ({
+      source_type: String(row.source_type || 'document') === 'receipt' ? 'receipt' : 'document',
+      id: Number(row.id),
+      entry_or_document_date: row.entry_or_document_date ? String(row.entry_or_document_date) : null,
+      label: String(row.label || ''),
+      kind: String(row.kind || ''),
+      filename: String(row.filename || ''),
+      archived_at: row.archived_at ? String(row.archived_at) : null,
+    }))
+    .sort((a, b) => {
+      const aDate = a.entry_or_document_date || '';
+      const bDate = b.entry_or_document_date || '';
+      if (aDate === bDate) return b.id - a.id;
+      return bDate.localeCompare(aDate);
+    })
+    .slice(0, limitValue);
+}
+
+export function listFleetScheduleRows(
+  db: DB,
+  tenantId: number,
+  daysAhead = 30,
+): FleetScheduleRow[] {
+  const vehicles = listVehiclesByTenant(db, tenantId, false);
+  const settings = getFleetReminderSettings(db, tenantId);
+
+  return vehicles
+    .map((vehicle) => {
+      const summary = summarizeVehicleById(db, tenantId, vehicle.id);
+      const reminders = getVehicleReminderStatuses(db, tenantId, vehicle.id, settings, summary.latestOdometer);
+      const expiringDocuments = listDocumentsForVehicle(db, tenantId, vehicle.id, false).filter((doc) => {
+        if (!doc.expiration_date) return false;
+        const days = daysUntil(doc.expiration_date);
+        return days !== null && days <= daysAhead;
+      });
+
+      return reminders.map((reminder) => ({
+        vehicle_id: vehicle.id,
+        vehicle_display_name: vehicle.display_name,
+        current_odometer: summary.latestOdometer,
+        reminder,
+        expiringDocuments,
+      }));
+    })
+    .flat()
+    .sort((a, b) => {
+      if (a.reminder.isDue !== b.reminder.isDue) {
+        return a.reminder.isDue ? -1 : 1;
+      }
+      const aDays = a.reminder.daysRemaining ?? 999999;
+      const bDays = b.reminder.daysRemaining ?? 999999;
+      if (aDays !== bDays) return aDays - bDays;
+      return a.vehicle_display_name.localeCompare(b.vehicle_display_name);
+    });
+}

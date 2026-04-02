@@ -8,14 +8,19 @@ import { permissionRequired, userHasPermission } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { FleetPage } from '../pages/fleet/FleetPage.js';
 import { FleetVehicleDetailPage } from '../pages/fleet/FleetVehicleDetailPage.js';
+import { FleetSchedulePage } from '../pages/fleet/FleetSchedulePage.js';
 import { getEnv } from '../config/env.js';
 import {
   saveUploadedFile,
   deleteUploadedFile,
+  DOCUMENT_ATTACHMENT_EXTENSIONS,
+  DOCUMENT_ATTACHMENT_MIME_TYPES,
   RECEIPT_EXTENSIONS,
   RECEIPT_MIME_TYPES,
   buildTenantReceiptUploadDir,
   buildTenantReceiptStoredPath,
+  buildTenantScopedUploadDir,
+  buildTenantScopedStoredPath,
   resolveUploadedFilePath,
   inferMimeTypeFromStoredFilename,
   buildSafeDownloadFilename,
@@ -23,6 +28,7 @@ import {
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 
 const fleetReceiptRootDir = path.join(getEnv().uploadDir, 'fleet_receipts');
+const fleetDocumentRootDir = path.join(getEnv().uploadDir, 'fleet_documents');
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 | 404 = 200) {
   return c.html(
@@ -270,6 +276,27 @@ async function maybeSaveReceipt(tenantId: number, uploadedReceipt: unknown): Pro
   return buildTenantReceiptStoredPath(tenantId, filename);
 }
 
+async function maybeSaveDocument(
+  tenantId: number,
+  uploadedDocument: unknown,
+): Promise<{ storedFilename: string; originalFilename: string } | null> {
+  if (!(uploadedDocument instanceof File) || uploadedDocument.size <= 0) {
+    return null;
+  }
+
+  const tenantUploadDir = buildTenantScopedUploadDir(fleetDocumentRootDir, tenantId);
+  const filename = await saveUploadedFile(uploadedDocument, tenantUploadDir, {
+    allowedExtensions: DOCUMENT_ATTACHMENT_EXTENSIONS,
+    allowedMimeTypes: DOCUMENT_ATTACHMENT_MIME_TYPES,
+    maxBytes: getEnv().maxUploadBytes,
+  });
+
+  return {
+    storedFilename: buildTenantScopedStoredPath(tenantId, filename),
+    originalFilename: uploadedDocument.name || filename,
+  };
+}
+
 function csvEscape(value: unknown): string {
   const stringValue = String(value ?? '');
   return `"${stringValue.replace(/"/g, '""')}"`;
@@ -352,6 +379,22 @@ fleetRoutes.get('/fleet/export.csv', permissionRequired('fleet.view'), (c) => {
   return c.body(csv);
 });
 
+
+fleetRoutes.get('/fleet/schedule', permissionRequired('fleet.view'), (c) => {
+  const tenant = c.get('tenant');
+  const db = getDb();
+  const rows = fleet.listFleetScheduleRows(db, tenant!.id, 30);
+
+  return renderApp(
+    c,
+    'Fleet Schedule',
+    <FleetSchedulePage
+      rows={rows}
+      getDocumentTypeLabel={fleet.getFleetDocumentTypeLabel}
+    />,
+  );
+});
+
 fleetRoutes.get('/fleet/vehicles/:id', permissionRequired('fleet.view'), (c) => {
   const tenant = c.get('tenant');
   const db = getDb();
@@ -369,6 +412,8 @@ fleetRoutes.get('/fleet/vehicles/:id', permissionRequired('fleet.view'), (c) => 
   const recentEntries = fleet.listEntriesForVehicle(db, tenant!.id, vehicleId, true, 25);
   const reminderSettings = fleet.getFleetReminderSettings(db, tenant!.id);
   const reminders = fleet.getVehicleReminderStatuses(db, tenant!.id, vehicleId, reminderSettings, summary.latestOdometer);
+  const documents = fleet.listDocumentsForVehicle(db, tenant!.id, vehicleId, true);
+  const attachmentHistory = fleet.listAttachmentHistoryForVehicle(db, tenant!.id, vehicleId, true, 50);
 
   return renderApp(
     c,
@@ -378,9 +423,12 @@ fleetRoutes.get('/fleet/vehicles/:id', permissionRequired('fleet.view'), (c) => 
       summary={summary}
       recentEntries={recentEntries}
       reminders={reminders}
+      documents={documents}
+      attachmentHistory={attachmentHistory}
       csrfToken={c.get('csrfToken')}
       canManage={userHasPermission(c.get('user'), 'fleet.manage')}
       getCategoryLabel={fleet.getMaintenanceCategoryLabel}
+      getDocumentTypeLabel={fleet.getFleetDocumentTypeLabel}
     />,
   );
 });
@@ -550,14 +598,14 @@ fleetRoutes.post('/fleet/entries/:id/update', permissionRequired('fleet.manage')
     let receiptFilename = existingEntry.receipt_filename;
 
     if (String(body.remove_receipt || '') === '1' && receiptFilename) {
-      deleteUploadedFile(resolveUploadedFilePath(fleetReceiptRootDir, receiptFilename));
+      deleteUploadedFile(receiptFilename, fleetReceiptRootDir);
       receiptFilename = null;
     }
 
     const newReceiptFilename = await maybeSaveReceipt(tenant!.id, body.receipt);
     if (newReceiptFilename) {
       if (receiptFilename) {
-        deleteUploadedFile(resolveUploadedFilePath(fleetReceiptRootDir, receiptFilename));
+        deleteUploadedFile(receiptFilename, fleetReceiptRootDir);
       }
       receiptFilename = newReceiptFilename;
     }
@@ -624,10 +672,97 @@ fleetRoutes.get('/fleet/entries/:id/receipt', permissionRequired('fleet.view'), 
   const entry = fleet.findEntryById(db, entryId, tenant!.id);
   if (!entry?.receipt_filename) return c.text('Receipt not found', 404);
 
-  const filePath = resolveUploadedFilePath(fleetReceiptRootDir, entry.receipt_filename);
+  const filePath = resolveUploadedFilePath(entry.receipt_filename, fleetReceiptRootDir);
   if (!fs.existsSync(filePath)) return c.text('Receipt not found', 404);
 
   c.header('Content-Type', inferMimeTypeFromStoredFilename(entry.receipt_filename));
-  c.header('Content-Disposition', `inline; filename="${buildSafeDownloadFilename(entry.receipt_filename)}"`);
+  c.header('Content-Disposition', `inline; filename="${buildSafeDownloadFilename('fleet-receipt', entry.receipt_filename)}"`);
+  return c.body(fs.readFileSync(filePath));
+});
+
+fleetRoutes.post('/fleet/documents', permissionRequired('fleet.manage'), async (c) => {
+  const tenant = c.get('tenant');
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+
+  try {
+    const db = getDb();
+    const vehicleId = parsePositiveInt(body.vehicle_id);
+    if (!vehicleId) throw new Error('Vehicle is required.');
+    const vehicle = fleet.findVehicleById(db, vehicleId, tenant!.id);
+    if (!vehicle) throw new Error('Vehicle not found.');
+
+    const uploadedDocument = await maybeSaveDocument(tenant!.id, body.document);
+    if (!uploadedDocument) throw new Error('Document file is required.');
+
+    const documentTypeRaw = String(body.document_type || '').trim();
+    if (!(fleet.FLEET_DOCUMENT_TYPES as readonly string[]).includes(documentTypeRaw)) {
+      throw new Error('Document type is invalid.');
+    }
+
+    const expirationDateRaw = String(body.expiration_date || '').trim();
+    const expirationDate = expirationDateRaw ? requireDate(expirationDateRaw, 'Expiration date') : null;
+
+    const documentId = fleet.createDocument(db, tenant!.id, {
+      vehicle_id: vehicleId,
+      document_type: documentTypeRaw as fleet.FleetDocumentType,
+      title: requireText(body.title, 'Title', 160),
+      file_filename: uploadedDocument.storedFilename,
+      original_filename: uploadedDocument.originalFilename,
+      expiration_date: expirationDate,
+      notes: optionalText(body.notes, 'Notes', 2000),
+    });
+
+    await logActivity(db, {
+      tenantId: tenant!.id,
+      userId: c.get('user')?.id,
+      action: 'fleet.document_created',
+      entityType: 'fleet_document',
+      entityId: documentId,
+      summary: `Uploaded fleet document for ${vehicle.display_name}`,
+      detailsJson: JSON.stringify({ documentId, vehicleId }),
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.redirect(`/fleet/vehicles/${vehicleId}`);
+  } catch (error) {
+    return renderList(c, { error: error instanceof Error ? error.message : 'Unable to upload fleet document.' }, 400);
+  }
+});
+
+fleetRoutes.post('/fleet/documents/:id/archive', permissionRequired('fleet.manage'), async (c) => {
+  const tenant = c.get('tenant');
+  const documentId = parsePositiveInt(c.req.param('id'));
+  if (!documentId) return c.redirect('/fleet');
+  const db = getDb();
+  const document = fleet.findDocumentById(db, documentId, tenant!.id);
+  if (!document) return c.redirect('/fleet');
+  fleet.archiveDocument(db, documentId, tenant!.id, c.get('user')!.id);
+  return c.redirect(`/fleet/vehicles/${document.vehicle_id}`);
+});
+
+fleetRoutes.post('/fleet/documents/:id/restore', permissionRequired('fleet.manage'), async (c) => {
+  const tenant = c.get('tenant');
+  const documentId = parsePositiveInt(c.req.param('id'));
+  if (!documentId) return c.redirect('/fleet');
+  const db = getDb();
+  const document = fleet.findDocumentById(db, documentId, tenant!.id);
+  if (!document) return c.redirect('/fleet');
+  fleet.restoreDocument(db, documentId, tenant!.id);
+  return c.redirect(`/fleet/vehicles/${document.vehicle_id}`);
+});
+
+fleetRoutes.get('/fleet/documents/:id/file', permissionRequired('fleet.view'), (c) => {
+  const tenant = c.get('tenant');
+  const documentId = parsePositiveInt(c.req.param('id'));
+  if (!documentId) return c.text('Document not found', 404);
+  const db = getDb();
+  const document = fleet.findDocumentById(db, documentId, tenant!.id);
+  if (!document?.file_filename) return c.text('Document not found', 404);
+
+  const filePath = resolveUploadedFilePath(document.file_filename, fleetDocumentRootDir);
+  if (!fs.existsSync(filePath)) return c.text('Document not found', 404);
+
+  c.header('Content-Type', inferMimeTypeFromStoredFilename(document.file_filename));
+  c.header('Content-Disposition', `inline; filename="${buildSafeDownloadFilename('fleet-document', document.file_filename)}"`);
   return c.body(fs.readFileSync(filePath));
 });

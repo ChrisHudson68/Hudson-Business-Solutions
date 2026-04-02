@@ -57,9 +57,27 @@ interface FleetVehicleDetailPageProps {
     archived_at: string | null;
   }>;
   reminders: ReminderStatus[];
+  documents: Array<{
+    id: number;
+    document_type: string;
+    title: string;
+    original_filename: string | null;
+    expiration_date: string | null;
+    notes: string | null;
+    archived_at: string | null;
+  }>;
+  attachmentHistory: Array<{
+    source_type: 'receipt' | 'document';
+    id: number;
+    entry_or_document_date: string | null;
+    label: string;
+    kind: string;
+    archived_at: string | null;
+  }>;
   csrfToken: string;
   canManage: boolean;
   getCategoryLabel: (value: string | null) => string;
+  getDocumentTypeLabel: (value: string | null) => string;
 }
 
 function fmtMoney(value: number): string {
@@ -71,14 +89,27 @@ function fmtMoney(value: number): string {
   }).format(Number(value || 0));
 }
 
+function daysUntil(dateIso: string | null): number | null {
+  if (!dateIso) return null;
+  const target = new Date(`${dateIso}T00:00:00Z`);
+  if (Number.isNaN(target.getTime())) return null;
+  const now = new Date();
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const targetUtc = Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), target.getUTCDate());
+  return Math.round((targetUtc - todayUtc) / 86400000);
+}
+
 export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
   vehicle,
   summary,
   recentEntries,
   reminders,
+  documents,
+  attachmentHistory,
   csrfToken,
   canManage,
   getCategoryLabel,
+  getDocumentTypeLabel,
 }) => {
   const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'No year / make / model';
   return (
@@ -94,7 +125,10 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
         .meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.meta-item{padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc}.meta-item b{display:block;margin-bottom:6px;font-size:12px;text-transform:uppercase;color:var(--muted)}
         .actions{display:flex;gap:8px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);font-weight:700;text-decoration:none;cursor:pointer}.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#eef2ff;font-size:12px;font-weight:700}.badge-good{background:#ecfdf3;color:#166534}.badge-warn{background:#fff7ed;color:#9a3412}.badge-danger{background:#FEF2F2;color:#991B1B}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;border-top:1px solid var(--border);vertical-align:top}.table th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left}.right{text-align:right}.muted{color:var(--muted)}.small{font-size:12px}
         .reminders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px}.reminder{border:1px solid var(--border);border-radius:16px;padding:16px;background:#fff;box-shadow:var(--shadow)}
-        @media (max-width:1100px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-grid,.meta,.reminders{grid-template-columns:1fr}}
+        .grid-2{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
+        label{display:block;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+        input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text)}
+        @media (max-width:1100px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-grid,.meta,.reminders,.grid-2{grid-template-columns:1fr}}
         @media (max-width:700px){.stats{grid-template-columns:1fr}}
       `}</style>
 
@@ -113,6 +147,7 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
           <div>
             <div class="actions" style="justify-content:flex-end;">
               <a class="btn" href={`/fleet?vehicleId=${vehicle.id}`}>Add Record</a>
+              <a class="btn" href="/fleet/schedule">Schedule View</a>
               {canManage ? <a class="btn" href={`/fleet?editVehicle=${vehicle.id}`}>Edit Vehicle</a> : null}
               <a class="btn" href="/fleet">Back to Fleet</a>
             </div>
@@ -166,6 +201,139 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
             <div class="meta-item"><b>Fuel Share</b>{summary.totalSpend > 0 ? `${((summary.fuelSpend / summary.totalSpend) * 100).toFixed(1)}%` : '0.0%'}</div>
             <div class="meta-item"><b>Maintenance Share</b>{summary.totalSpend > 0 ? `${((summary.maintenanceSpend / summary.totalSpend) * 100).toFixed(1)}%` : '0.0%'}</div>
           </div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:14px;">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
+            <b>Vehicle Documents</b>
+            <span class="badge">{documents.length}</span>
+          </div>
+
+          {documents.length > 0 ? (
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Document</th>
+                    <th>Expiration</th>
+                    <th>Status</th>
+                    <th class="right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {documents.map((document) => {
+                    const days = daysUntil(document.expiration_date);
+                    const statusLabel = document.archived_at
+                      ? 'Archived'
+                      : days === null
+                        ? 'No Expiration'
+                        : days < 0
+                          ? `${Math.abs(days)} days expired`
+                          : days === 0
+                            ? 'Expires today'
+                            : `${days} days left`;
+
+                    const statusClass = document.archived_at
+                      ? 'badge'
+                      : days !== null && days <= 7
+                        ? 'badge badge-danger'
+                        : days !== null && days <= 30
+                          ? 'badge badge-warn'
+                          : 'badge badge-good';
+
+                    return (
+                      <tr>
+                        <td>
+                          <div><b>{document.title}</b></div>
+                          <div class="muted small" style="margin-top:4px;">{getDocumentTypeLabel(document.document_type)}</div>
+                          {document.original_filename ? <div class="muted small" style="margin-top:4px;">{document.original_filename}</div> : null}
+                          {document.notes ? <div class="muted small" style="margin-top:4px;">{document.notes}</div> : null}
+                        </td>
+                        <td>{document.expiration_date || '—'}</td>
+                        <td><span class={statusClass}>{statusLabel}</span></td>
+                        <td class="right">
+                          <div class="actions" style="justify-content:flex-end;">
+                            <a class="btn" href={`/fleet/documents/${document.id}/file`}>Open</a>
+                            {canManage && !document.archived_at ? (
+                              <form method="post" action={`/fleet/documents/${document.id}/archive`}>
+                                <input type="hidden" name="csrf_token" value={csrfToken} />
+                                <button class="btn" type="submit">Archive</button>
+                              </form>
+                            ) : null}
+                            {canManage && document.archived_at ? (
+                              <form method="post" action={`/fleet/documents/${document.id}/restore`}>
+                                <input type="hidden" name="csrf_token" value={csrfToken} />
+                                <button class="btn" type="submit">Restore</button>
+                              </form>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : <div class="muted">No registration, insurance, or truck documents have been uploaded yet.</div>}
+
+          {canManage ? (
+            <form method="post" action="/fleet/documents" enctype="multipart/form-data" style="margin-top:16px;">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+              <input type="hidden" name="vehicle_id" value={String(vehicle.id)} />
+
+              <div class="meta" style="margin-bottom:12px;">
+                <div>
+                  <label>Document Type</label>
+                  <select name="document_type">
+                    <option value="registration">Registration</option>
+                    <option value="insurance">Insurance</option>
+                    <option value="inspection">Inspection</option>
+                    <option value="service_contract">Service Contract</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Expiration Date</label>
+                  <input type="date" name="expiration_date" />
+                </div>
+              </div>
+
+              <label>Title</label>
+              <input name="title" placeholder="Example: 2026 registration card" required />
+
+              <label style="margin-top:12px;">Notes</label>
+              <textarea name="notes" rows={3} placeholder="Optional notes"></textarea>
+
+              <label style="margin-top:12px;">Document File</label>
+              <input type="file" name="document" accept=".png,.jpg,.jpeg,.webp,.pdf" required />
+
+              <div class="actions" style="margin-top:12px;">
+                <button class="btn" type="submit">Upload Document</button>
+              </div>
+            </form>
+          ) : null}
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
+            <b>Attachment History</b>
+            <span class="badge">{attachmentHistory.length}</span>
+          </div>
+          {attachmentHistory.length > 0 ? attachmentHistory.map((item) => (
+            <div style="padding:10px 0;border-top:1px solid var(--border);">
+              <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;">
+                <div>
+                  <div><b>{item.label}</b></div>
+                  <div class="muted small" style="margin-top:4px;">{item.entry_or_document_date || '—'} • {item.source_type === 'receipt' ? 'Receipt' : 'Document'} • {item.kind}</div>
+                </div>
+                <div class="actions">
+                  <a class="btn" href={item.source_type === 'receipt' ? `/fleet/entries/${item.id}/receipt` : `/fleet/documents/${item.id}/file`}>Open</a>
+                </div>
+              </div>
+            </div>
+          )) : <div class="muted">No receipts or fleet documents have been uploaded for this vehicle yet.</div>}
         </div>
       </div>
 
