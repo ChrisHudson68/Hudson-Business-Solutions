@@ -15,6 +15,11 @@ interface TenantInfo {
   proposal_default_acknowledgment: string | null;
   default_tax_rate: number;
   default_labor_rate: number;
+  fleet_oil_change_miles: number;
+  fleet_oil_change_days: number;
+  fleet_tire_rotation_miles: number;
+  fleet_tire_rotation_days: number;
+  fleet_inspection_days: number;
 }
 
 interface SettingsPageProps {
@@ -58,7 +63,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Company Settings</h1>
-          <p>Manage your workspace branding, invoice defaults, company details, and proposal template content.</p>
+          <p>Manage branding, invoice defaults, proposal content, and fleet reminder thresholds.</p>
         </div>
       </div>
 
@@ -114,9 +119,9 @@ export const SettingsPage: FC<SettingsPageProps> = ({
                   </div>
                 </div>
                 <div class="list-item">
-                  <b>3. Keep invoice and labor defaults current</b>
+                  <b>3. Configure fleet reminder thresholds</b>
                   <div class="muted small" style="margin-top:4px;">
-                    Default values reduce repetitive setup and keep daily operations faster.
+                    Oil change, tire rotation, and inspection reminder settings power the new Fleet reminder cards.
                   </div>
                 </div>
               </div>
@@ -128,7 +133,7 @@ export const SettingsPage: FC<SettingsPageProps> = ({
           class="card"
           style="margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;"
         >
-          Your company setup looks complete. Your workspace branding, defaults, and proposal template content are in good shape.
+          Your company setup looks complete. Branding, defaults, and proposal template content are in good shape.
         </div>
       )}
 
@@ -209,7 +214,12 @@ export const SettingsPage: FC<SettingsPageProps> = ({
             <input name="company_phone" value={tenant.company_phone || ''} disabled={readOnly} />
 
             <label>Company Website</label>
-            <input name="company_website" value={tenant.company_website || ''} disabled={readOnly} placeholder="https://example.com" />
+            <input
+              name="company_website"
+              value={tenant.company_website || ''}
+              disabled={readOnly}
+              placeholder="https://example.com"
+            />
 
             <label>Company Address</label>
             <textarea name="company_address" rows={4} disabled={readOnly}>
@@ -217,7 +227,12 @@ export const SettingsPage: FC<SettingsPageProps> = ({
             </textarea>
 
             <label>License / Certification Footer Text</label>
-            <textarea name="proposal_license_info" rows={4} disabled={readOnly} placeholder="Mechanical license number 33053&#10;Plumbing license number 35627">
+            <textarea
+              name="proposal_license_info"
+              rows={4}
+              disabled={readOnly}
+              placeholder="Mechanical license number 33053&#10;Plumbing license number 35627"
+            >
               {tenant.proposal_license_info || ''}
             </textarea>
           </div>
@@ -262,52 +277,94 @@ export const SettingsPage: FC<SettingsPageProps> = ({
               value={String(tenant.default_labor_rate || 0)}
               disabled={readOnly}
             />
-
-            <div class="muted small" style="margin-top:10px;">
-              This can be used later for faster job costing and default employee setup.
-            </div>
           </div>
         </div>
 
-        <div class="grid grid-2" style="margin-top:14px; align-items:start;">
+        <div class="grid grid-2" style="margin-top:14px;">
           <div class="card">
-            <h3 style="margin-top:0;">Proposal Template Defaults</h3>
+            <h3 style="margin-top:0;">Proposal Defaults</h3>
             <div class="muted small" style="margin-bottom:10px;">
-              These values are reused by proposal PDFs unless an individual estimate overrides them.
+              These default terms and acknowledgment notes are prefilled into proposals for estimators.
             </div>
 
-            <label>Default Terms &amp; Conditions</label>
-            <textarea
-              name="proposal_default_terms"
-              rows={10}
-              disabled={readOnly}
-              placeholder="Enter one section per paragraph or use bullet lines starting with - or *"
-            >
+            <label>Default Proposal Terms</label>
+            <textarea name="proposal_default_terms" rows={10} disabled={readOnly}>
               {tenant.proposal_default_terms || ''}
+            </textarea>
+
+            <label>Default Acknowledgment Text</label>
+            <textarea name="proposal_default_acknowledgment" rows={6} disabled={readOnly}>
+              {tenant.proposal_default_acknowledgment || ''}
             </textarea>
           </div>
 
           <div class="card">
-            <h3 style="margin-top:0;">Proposal Acknowledgment</h3>
+            <h3 style="margin-top:0;">Fleet Service Reminders</h3>
             <div class="muted small" style="margin-bottom:10px;">
-              This text appears near the end of the proposal PDF and is useful for acceptance language.
+              Set the mileage and date thresholds that mark fleet maintenance items as due.
             </div>
 
-            <label>Default Acknowledgment Text</label>
-            <textarea
-              name="proposal_default_acknowledgment"
-              rows={10}
+            <label>Oil Change Miles</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              name="fleet_oil_change_miles"
+              value={String(tenant.fleet_oil_change_miles || 0)}
               disabled={readOnly}
-              placeholder="By accepting delivery of materials, allowing work to commence, or making any payments..."
-            >
-              {tenant.proposal_default_acknowledgment || ''}
-            </textarea>
+            />
+
+            <label>Oil Change Days</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              name="fleet_oil_change_days"
+              value={String(tenant.fleet_oil_change_days || 0)}
+              disabled={readOnly}
+            />
+
+            <label>Tire Rotation Miles</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              name="fleet_tire_rotation_miles"
+              value={String(tenant.fleet_tire_rotation_miles || 0)}
+              disabled={readOnly}
+            />
+
+            <label>Tire Rotation Days</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              name="fleet_tire_rotation_days"
+              value={String(tenant.fleet_tire_rotation_days || 0)}
+              disabled={readOnly}
+            />
+
+            <label>Inspection Days</label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              name="fleet_inspection_days"
+              value={String(tenant.fleet_inspection_days || 0)}
+              disabled={readOnly}
+            />
+
+            <div class="muted small" style="margin-top:10px;">
+              Set any field to 0 to effectively disable that threshold. Oil change and tire rotation can use miles and days together.
+            </div>
           </div>
         </div>
 
         {!readOnly ? (
-          <div class="actions actions-mobile-stack" style="margin-top:16px;">
-            <button class="btn btn-primary" type="submit">Save Settings</button>
+          <div style="margin-top:14px; display:flex; justify-content:flex-end;">
+            <button class="btn btn-primary" type="submit">
+              Save Settings
+            </button>
           </div>
         ) : null}
       </form>

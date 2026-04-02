@@ -1,5 +1,13 @@
 import type { FC } from 'hono/jsx';
 
+interface ReminderListItem {
+  vehicleId: number;
+  vehicleName: string;
+  label: string;
+  reason: string;
+  isDue: boolean;
+}
+
 interface FleetPageProps {
   vehicles: Array<{
     id: number;
@@ -26,10 +34,30 @@ interface FleetPageProps {
     odometer: number | null;
     gallons: number | null;
     service_type: string | null;
+    maintenance_category: string | null;
     notes: string | null;
     receipt_filename: string | null;
     archived_at: string | null;
   }>;
+  summary: {
+    activeVehicles: number;
+    archivedVehicles: number;
+    fuelMtd: number;
+    maintenanceMtd: number;
+    activeRecords: number;
+    archivedRecords: number;
+  };
+  dueReminders: ReminderListItem[];
+  filters: {
+    vehicle_id: string;
+    entry_type: string;
+    archived: string;
+    maintenance_category: string;
+    date_from: string;
+    date_to: string;
+    search: string;
+  };
+  maintenanceCategoryOptions: Array<{ value: string; label: string }>;
   vehicleFormData: {
     display_name: string;
     unit_number: string;
@@ -50,23 +78,20 @@ interface FleetPageProps {
     odometer: string;
     gallons: string;
     service_type: string;
+    maintenance_category: string;
     notes: string;
     remove_receipt: string;
   };
   editingVehicleId?: number | null;
   editingEntryId?: number | null;
+  editingEntry?: {
+    id: number;
+    receipt_filename: string | null;
+  } | null;
   error?: string;
   success?: string;
   csrfToken: string;
   canManage: boolean;
-  summary: {
-    activeVehicles: number;
-    archivedVehicles: number;
-    fuelMtd: number;
-    maintenanceMtd: number;
-    activeRecords: number;
-    archivedRecords: number;
-  };
 }
 
 function fmtMoney(value: number): string {
@@ -85,56 +110,140 @@ function vehicleSubtitle(vehicle: FleetPageProps['vehicles'][number]): string {
 export const FleetPage: FC<FleetPageProps> = ({
   vehicles,
   entries,
+  summary,
+  dueReminders,
+  filters,
+  maintenanceCategoryOptions,
   vehicleFormData,
   recordFormData,
   editingVehicleId,
   editingEntryId,
+  editingEntry,
   error,
   success,
   csrfToken,
   canManage,
-  summary,
 }) => {
-  const editingVehicle = editingVehicleId ? vehicles.find((v) => v.id === editingVehicleId) : null;
-  const editingEntry = editingEntryId ? entries.find((entry) => entry.id === editingEntryId) : null;
-  const isEditingVehicle = !!editingVehicle;
-  const isEditingEntry = !!editingEntry;
+  const isEditingVehicle = Boolean(editingVehicleId);
+  const isEditingEntry = Boolean(editingEntryId);
 
   return (
     <div>
       <style>{`
-        .fleet-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px}
-        .fleet-stat{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
-        .fleet-stat .label{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-        .fleet-stat .value{font-size:26px;font-weight:800;margin-top:8px}
-        .card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
-        .card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
-        .stack{display:grid;gap:14px;margin-bottom:14px}
-        .row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-        .row.two{grid-template-columns:repeat(2,minmax(0,1fr))}
-        label{display:block;font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
-        input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;font:inherit;background:#fff}
-        textarea{resize:vertical}
-        .actions{display:flex;gap:8px;flex-wrap:wrap}
-        .btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);font-weight:700;text-decoration:none;cursor:pointer}
-        .btn-primary{background:var(--navy);border-color:var(--navy);color:#fff}
-        .table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;border-top:1px solid var(--border);vertical-align:top}.table th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left}.right{text-align:right}.muted{color:var(--muted)}.small{font-size:12px}.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#eef2ff;font-size:12px;font-weight:700}.badge-good{background:#ecfdf3;color:#166534}.badge-warn{background:#fff7ed;color:#9a3412}.alert{padding:12px 14px;border-radius:12px;margin-bottom:14px;font-weight:700}.alert-good{background:#ecfdf3;color:#166534}.alert-bad{background:#fef2f2;color:#991b1b}
-        @media (max-width:1100px){.fleet-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.row,.row.two{grid-template-columns:1fr}}
-        @media (max-width:700px){.fleet-grid{grid-template-columns:1fr}}
+        .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px}.stat,.card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:var(--shadow)}.label{font-size:12px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em}.value{font-size:24px;font-weight:800;margin-top:8px}.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.row.two{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}.filters .wide{grid-column:span 2}.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}.muted{color:var(--muted)}.small{font-size:12px}.badge{display:inline-flex;align-items:center;justify-content:center;padding:5px 8px;border-radius:999px;background:#eef2ff;font-size:12px;font-weight:700}.badge-good{background:#ecfdf3;color:#166534}.badge-warn{background:#fff7ed;color:#9a3412}.badge-danger{background:#FEF2F2;color:#991B1B}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;border-top:1px solid var(--border);vertical-align:top}.table th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left}.right{text-align:right}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);font-weight:700;text-decoration:none;cursor:pointer}.btn-primary{background:var(--navy);color:#fff;border-color:var(--navy)}label{display:block;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text)}
+        .reminders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px}
+        @media (max-width:1100px){.stats,.filters,.reminders{grid-template-columns:repeat(2,minmax(0,1fr))}.row,.row.two{grid-template-columns:1fr}}
+        @media (max-width:700px){.stats,.filters,.reminders{grid-template-columns:1fr}}
       `}</style>
 
-      {error ? <div class="alert alert-bad">{error}</div> : null}
-      {success ? <div class="alert alert-good">{success}</div> : null}
+      <div class="page-head">
+        <div>
+          <h1>Fleet</h1>
+          <p>Track company vehicles, fuel receipts, truck maintenance, service reminders, and fleet operating costs.</p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="/fleet/export.csv">Export Current Fleet CSV</a>
+          {canManage ? <a class="btn btn-primary" href="#fleet-forms">Add / Edit Records</a> : null}
+        </div>
+      </div>
 
-      <div class="fleet-grid">
-        <div class="fleet-stat"><div class="label">Active Vehicles</div><div class="value">{summary.activeVehicles}</div></div>
-        <div class="fleet-stat"><div class="label">Fuel Spend MTD</div><div class="value">{fmtMoney(summary.fuelMtd)}</div></div>
-        <div class="fleet-stat"><div class="label">Maintenance MTD</div><div class="value">{fmtMoney(summary.maintenanceMtd)}</div></div>
-        <div class="fleet-stat"><div class="label">Active Records</div><div class="value">{summary.activeRecords}</div></div>
+      {error ? <div class="card" style="margin-bottom:14px;border-color:#FECACA;background:#FEF2F2;color:#991B1B;">{error}</div> : null}
+      {success ? <div class="card" style="margin-bottom:14px;border-color:#BBF7D0;background:#F0FDF4;color:#166534;">{success}</div> : null}
+
+      <div class="stats">
+        <div class="stat"><div class="label">Active Vehicles</div><div class="value">{summary.activeVehicles}</div></div>
+        <div class="stat"><div class="label">Archived Vehicles</div><div class="value">{summary.archivedVehicles}</div></div>
+        <div class="stat"><div class="label">Fuel MTD</div><div class="value">{fmtMoney(summary.fuelMtd)}</div></div>
+        <div class="stat"><div class="label">Maintenance MTD</div><div class="value">{fmtMoney(summary.maintenanceMtd)}</div></div>
+      </div>
+
+      <div class="reminders">
+        <div class="card">
+          <div class="card-head"><b>Service Reminders</b><span class="badge">{dueReminders.length}</span></div>
+          {dueReminders.length > 0 ? dueReminders.slice(0, 5).map((item) => (
+            <div style="padding:10px 0;border-top:1px solid var(--border);">
+              <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+                <a href={`/fleet/vehicles/${item.vehicleId}`}><b>{item.vehicleName}</b></a>
+                <span class={item.isDue ? 'badge badge-danger' : 'badge badge-good'}>{item.label}</span>
+              </div>
+              <div class="muted small" style="margin-top:4px;">{item.reason}</div>
+            </div>
+          )) : <div class="muted">No due service reminders right now.</div>}
+        </div>
+
+        <div class="card">
+          <div class="card-head"><b>Record Activity</b></div>
+          <div class="muted small">Active records: {summary.activeRecords}</div>
+          <div class="muted small" style="margin-top:6px;">Archived records: {summary.archivedRecords}</div>
+          <div class="muted small" style="margin-top:12px;">Service reminders use the thresholds in Company Settings → Fleet Service Reminders.</div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><b>Quick Links</b></div>
+          <div class="actions">
+            <a class="btn" href="/settings">Fleet Reminder Settings</a>
+            <a class="btn" href="/fleet/export.csv">Export CSV</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px;">
+        <div class="card-head"><b>Filter Fleet Records</b></div>
+        <form method="get" action="/fleet">
+          <div class="filters">
+            <div>
+              <label>Vehicle</label>
+              <select name="vehicleId">
+                <option value="">All vehicles</option>
+                {vehicles.map((vehicle) => <option value={String(vehicle.id)} selected={filters.vehicle_id === String(vehicle.id)}>{vehicle.display_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>Type</label>
+              <select name="entryType">
+                <option value="all" selected={filters.entry_type === 'all'}>All</option>
+                <option value="fuel" selected={filters.entry_type === 'fuel'}>Fuel</option>
+                <option value="maintenance" selected={filters.entry_type === 'maintenance'}>Maintenance</option>
+              </select>
+            </div>
+            <div>
+              <label>Status</label>
+              <select name="archived">
+                <option value="all" selected={filters.archived === 'all'}>All</option>
+                <option value="active" selected={filters.archived === 'active'}>Active</option>
+                <option value="archived" selected={filters.archived === 'archived'}>Archived</option>
+              </select>
+            </div>
+            <div>
+              <label>Maintenance Category</label>
+              <select name="maintenanceCategory">
+                <option value="all" selected={filters.maintenance_category === 'all'}>All</option>
+                {maintenanceCategoryOptions.map((option) => <option value={option.value} selected={filters.maintenance_category === option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label>Date From</label>
+              <input type="date" name="dateFrom" value={filters.date_from} />
+            </div>
+            <div>
+              <label>Date To</label>
+              <input type="date" name="dateTo" value={filters.date_to} />
+            </div>
+            <div class="wide">
+              <label>Search</label>
+              <input type="text" name="search" value={filters.search} placeholder="Vehicle, vendor, service, notes..." />
+            </div>
+          </div>
+          <div class="actions" style="margin-top:14px;">
+            <button class="btn btn-primary" type="submit">Apply Filters</button>
+            <a class="btn" href="/fleet">Reset</a>
+            <a class="btn" href={`/fleet/export.csv?vehicleId=${encodeURIComponent(filters.vehicle_id)}&entryType=${encodeURIComponent(filters.entry_type)}&archived=${encodeURIComponent(filters.archived)}&maintenanceCategory=${encodeURIComponent(filters.maintenance_category)}&dateFrom=${encodeURIComponent(filters.date_from)}&dateTo=${encodeURIComponent(filters.date_to)}&search=${encodeURIComponent(filters.search)}`}>Export Filtered CSV</a>
+          </div>
+        </form>
       </div>
 
       {canManage ? (
-        <div class="stack" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+        <div id="fleet-forms" class="grid grid-2" style="margin-bottom:14px;">
           <div class="card">
             <div class="card-head">
               <b>{isEditingVehicle ? 'Edit Vehicle' : 'Add Vehicle'}</b>
@@ -189,7 +298,16 @@ export const FleetPage: FC<FleetPageProps> = ({
               <div class="row">
                 <div><label>Odometer</label><input type="number" name="odometer" value={recordFormData.odometer} min="0" step="1" /></div>
                 <div><label>Gallons</label><input type="number" name="gallons" value={recordFormData.gallons} min="0" step="0.001" /></div>
-                <div><label>Service Type</label><input type="text" name="service_type" value={recordFormData.service_type} /></div>
+                <div><label>Service Type</label><input type="text" name="service_type" value={recordFormData.service_type} placeholder="Oil and filter, state inspection, brake pads..." /></div>
+              </div>
+              <div class="row two">
+                <div>
+                  <label>Maintenance Category</label>
+                  <select name="maintenance_category">
+                    <option value="">Not applicable / fuel</option>
+                    {maintenanceCategoryOptions.map((option) => <option value={option.value} selected={recordFormData.maintenance_category === option.value}>{option.label}</option>)}
+                  </select>
+                </div>
               </div>
               <label>Notes</label>
               <textarea name="notes" rows={3}>{recordFormData.notes}</textarea>
@@ -244,7 +362,7 @@ export const FleetPage: FC<FleetPageProps> = ({
       </div>
 
       <div class="card">
-        <div class="card-head"><b>Fuel & Maintenance Records</b><span class="badge">{entries.length} total</span></div>
+        <div class="card-head"><b>Fuel & Maintenance Records</b><span class="badge">{entries.length} shown</span></div>
         <div class="table-wrap">
           <table class="table">
             <thead><tr><th>Date / Type</th><th>Vehicle</th><th>Vendor / Detail</th><th class="right">Amount</th><th>Status</th><th class="right">Actions</th></tr></thead>
@@ -255,7 +373,7 @@ export const FleetPage: FC<FleetPageProps> = ({
                   <td><div><b>{entry.vehicle_display_name}</b></div><div class="muted small" style="margin-top:4px;">{entry.vehicle_unit_number || 'No unit number'}</div></td>
                   <td>
                     <div>{entry.vendor || 'No vendor listed'}</div>
-                    <div class="muted small" style="margin-top:4px;">Odometer: {entry.odometer ?? '—'}{entry.entry_type === 'fuel' ? ` • Gallons: ${entry.gallons ?? '—'}` : ''}{entry.entry_type === 'maintenance' ? ` • Service: ${entry.service_type || '—'}` : ''}</div>
+                    <div class="muted small" style="margin-top:4px;">Odometer: {entry.odometer ?? '—'}{entry.entry_type === 'fuel' ? ` • Gallons: ${entry.gallons ?? '—'}` : ''}{entry.entry_type === 'maintenance' ? ` • Service: ${entry.service_type || '—'} • Category: ${maintenanceCategoryOptions.find((option) => option.value === entry.maintenance_category)?.label || 'Uncategorized'}` : ''}</div>
                     {entry.notes ? <div class="muted small" style="margin-top:4px;">{entry.notes}</div> : null}
                   </td>
                   <td class="right"><b>{fmtMoney(entry.amount)}</b></td>
@@ -270,7 +388,7 @@ export const FleetPage: FC<FleetPageProps> = ({
                     </div>
                   </td>
                 </tr>
-              )) : <tr><td colspan={6} class="muted">No fleet records added yet.</td></tr>}
+              )) : <tr><td colspan={6} class="muted">No fleet records matched the current filters.</td></tr>}
             </tbody>
           </table>
         </div>

@@ -1,5 +1,19 @@
 import type { FC } from 'hono/jsx';
 
+interface ReminderStatus {
+  category: 'oil_change' | 'tire_rotation' | 'inspection';
+  label: string;
+  lastServiceDate: string | null;
+  lastServiceOdometer: number | null;
+  currentOdometer: number | null;
+  dueAtDate: string | null;
+  dueAtOdometer: number | null;
+  milesRemaining: number | null;
+  daysRemaining: number | null;
+  isDue: boolean;
+  reason: string;
+}
+
 interface FleetVehicleDetailPageProps {
   vehicle: {
     id: number;
@@ -37,12 +51,15 @@ interface FleetVehicleDetailPageProps {
     odometer: number | null;
     gallons: number | null;
     service_type: string | null;
+    maintenance_category: string | null;
     notes: string | null;
     receipt_filename: string | null;
     archived_at: string | null;
   }>;
+  reminders: ReminderStatus[];
   csrfToken: string;
   canManage: boolean;
+  getCategoryLabel: (value: string | null) => string;
 }
 
 function fmtMoney(value: number): string {
@@ -54,7 +71,15 @@ function fmtMoney(value: number): string {
   }).format(Number(value || 0));
 }
 
-export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({ vehicle, summary, recentEntries, csrfToken, canManage }) => {
+export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
+  vehicle,
+  summary,
+  recentEntries,
+  reminders,
+  csrfToken,
+  canManage,
+  getCategoryLabel,
+}) => {
   const vehicleLabel = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || 'No year / make / model';
   return (
     <div>
@@ -67,8 +92,9 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({ vehicl
         .label{font-size:12px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em}.value{font-size:24px;font-weight:800;margin-top:8px}
         .small-value{font-size:18px;font-weight:800;margin-top:8px}
         .meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.meta-item{padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc}.meta-item b{display:block;margin-bottom:6px;font-size:12px;text-transform:uppercase;color:var(--muted)}
-        .actions{display:flex;gap:8px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);font-weight:700;text-decoration:none;cursor:pointer}.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#eef2ff;font-size:12px;font-weight:700}.badge-good{background:#ecfdf3;color:#166534}.badge-warn{background:#fff7ed;color:#9a3412}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;border-top:1px solid var(--border);vertical-align:top}.table th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left}.right{text-align:right}.muted{color:var(--muted)}.small{font-size:12px}
-        @media (max-width:1100px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-grid,.meta{grid-template-columns:1fr}}
+        .actions{display:flex;gap:8px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);font-weight:700;text-decoration:none;cursor:pointer}.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#eef2ff;font-size:12px;font-weight:700}.badge-good{background:#ecfdf3;color:#166534}.badge-warn{background:#fff7ed;color:#9a3412}.badge-danger{background:#FEF2F2;color:#991B1B}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;border-top:1px solid var(--border);vertical-align:top}.table th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left}.right{text-align:right}.muted{color:var(--muted)}.small{font-size:12px}
+        .reminders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px}.reminder{border:1px solid var(--border);border-radius:16px;padding:16px;background:#fff;box-shadow:var(--shadow)}
+        @media (max-width:1100px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-grid,.meta,.reminders{grid-template-columns:1fr}}
         @media (max-width:700px){.stats{grid-template-columns:1fr}}
       `}</style>
 
@@ -92,6 +118,24 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({ vehicl
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="reminders">
+        {reminders.map((reminder) => (
+          <div class="reminder">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+              <b>{reminder.label}</b>
+              <span class={reminder.isDue ? 'badge badge-danger' : 'badge badge-good'}>{reminder.isDue ? 'Due' : 'On Track'}</span>
+            </div>
+            <div class="muted small" style="margin-top:8px;">{reminder.reason}</div>
+            <div class="meta" style="margin-top:12px;">
+              <div class="meta-item"><b>Last Service</b>{reminder.lastServiceDate || '—'}</div>
+              <div class="meta-item"><b>Last Odometer</b>{reminder.lastServiceOdometer ?? '—'}</div>
+              <div class="meta-item"><b>Due Date</b>{reminder.dueAtDate || '—'}</div>
+              <div class="meta-item"><b>Due Mileage</b>{reminder.dueAtOdometer ?? '—'}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div class="stats">
@@ -139,7 +183,11 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({ vehicl
                   <td><div><b>{entry.entry_date}</b></div><div class="muted small" style="margin-top:4px;text-transform:capitalize;">{entry.entry_type}</div></td>
                   <td>
                     <div>{entry.vendor || 'No vendor listed'}</div>
-                    <div class="muted small" style="margin-top:4px;">Odometer: {entry.odometer ?? '—'}{entry.entry_type === 'fuel' ? ` • Gallons: ${entry.gallons ?? '—'}` : ''}{entry.entry_type === 'maintenance' ? ` • Service: ${entry.service_type || '—'}` : ''}</div>
+                    <div class="muted small" style="margin-top:4px;">
+                      Odometer: {entry.odometer ?? '—'}
+                      {entry.entry_type === 'fuel' ? ` • Gallons: ${entry.gallons ?? '—'}` : ''}
+                      {entry.entry_type === 'maintenance' ? ` • Service: ${entry.service_type || '—'} • Category: ${getCategoryLabel(entry.maintenance_category)}` : ''}
+                    </div>
                     {entry.notes ? <div class="muted small" style="margin-top:4px;">{entry.notes}</div> : null}
                   </td>
                   <td class="right"><b>{fmtMoney(entry.amount)}</b></td>

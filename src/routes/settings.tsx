@@ -37,7 +37,9 @@ function isValidEmail(value: string): boolean {
 function isValidWebsite(value: string): boolean {
   if (!value) return true;
   try {
-    const parsed = new URL(value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`);
+    const parsed = new URL(
+      value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`,
+    );
     return Boolean(parsed.hostname);
   } catch {
     return false;
@@ -94,6 +96,19 @@ function parsePercent(value: unknown, fieldLabel: string): number {
   return parsed;
 }
 
+function parseNonNegativeWholeNumber(value: unknown, fieldLabel: string): number {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${fieldLabel} must be a whole number.`);
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${fieldLabel} must be 0 or greater.`);
+  }
+  return parsed;
+}
+
 function normalizeTextarea(value: unknown, maxLength: number, fieldLabel: string): string {
   const parsed = String(value ?? '').replace(/\r/g, '').trim();
   if (!parsed) return '';
@@ -111,7 +126,10 @@ function getTenantSettings(db: any, tenantId: number) {
            company_email, company_phone, company_address,
            company_website, proposal_license_info,
            proposal_default_terms, proposal_default_acknowledgment,
-           default_tax_rate, default_labor_rate
+           default_tax_rate, default_labor_rate,
+           fleet_oil_change_miles, fleet_oil_change_days,
+           fleet_tire_rotation_miles, fleet_tire_rotation_days,
+           fleet_inspection_days
     FROM tenants
     WHERE id = ?
   `,
@@ -135,6 +153,11 @@ function buildTenantFormValues(source: any) {
     proposal_default_acknowledgment: source?.proposal_default_acknowledgment ? String(source.proposal_default_acknowledgment) : '',
     default_tax_rate: Number(source?.default_tax_rate || 0),
     default_labor_rate: Number(source?.default_labor_rate || 0),
+    fleet_oil_change_miles: Number(source?.fleet_oil_change_miles || 0),
+    fleet_oil_change_days: Number(source?.fleet_oil_change_days || 0),
+    fleet_tire_rotation_miles: Number(source?.fleet_tire_rotation_miles || 0),
+    fleet_tire_rotation_days: Number(source?.fleet_tire_rotation_days || 0),
+    fleet_inspection_days: Number(source?.fleet_inspection_days || 0),
   };
 }
 
@@ -190,6 +213,11 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
     proposal_default_acknowledgment: String(body.proposal_default_acknowledgment ?? tenantRow.proposal_default_acknowledgment ?? '').trim(),
     default_tax_rate: String(body.default_tax_rate ?? tenantRow.default_tax_rate ?? '0'),
     default_labor_rate: String(body.default_labor_rate ?? tenantRow.default_labor_rate ?? '0'),
+    fleet_oil_change_miles: String(body.fleet_oil_change_miles ?? tenantRow.fleet_oil_change_miles ?? '0'),
+    fleet_oil_change_days: String(body.fleet_oil_change_days ?? tenantRow.fleet_oil_change_days ?? '0'),
+    fleet_tire_rotation_miles: String(body.fleet_tire_rotation_miles ?? tenantRow.fleet_tire_rotation_miles ?? '0'),
+    fleet_tire_rotation_days: String(body.fleet_tire_rotation_days ?? tenantRow.fleet_tire_rotation_days ?? '0'),
+    fleet_inspection_days: String(body.fleet_inspection_days ?? tenantRow.fleet_inspection_days ?? '0'),
   });
 
   try {
@@ -233,10 +261,12 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
     const proposalDefaultAcknowledgment = normalizeTextarea(body.proposal_default_acknowledgment, 4000, 'Default acknowledgment text');
     const invoicePrefix = normalizeInvoicePrefix(String(body.invoice_prefix ?? ''));
     const defaultTaxRate = parsePercent(body.default_tax_rate, 'Default tax rate');
-    const defaultLaborRate = parseNonNegativeNumber(
-      body.default_labor_rate,
-      'Default labor rate',
-    );
+    const defaultLaborRate = parseNonNegativeNumber(body.default_labor_rate, 'Default labor rate');
+    const fleetOilChangeMiles = parseNonNegativeWholeNumber(body.fleet_oil_change_miles, 'Oil change miles');
+    const fleetOilChangeDays = parseNonNegativeWholeNumber(body.fleet_oil_change_days, 'Oil change days');
+    const fleetTireRotationMiles = parseNonNegativeWholeNumber(body.fleet_tire_rotation_miles, 'Tire rotation miles');
+    const fleetTireRotationDays = parseNonNegativeWholeNumber(body.fleet_tire_rotation_days, 'Tire rotation days');
+    const fleetInspectionDays = parseNonNegativeWholeNumber(body.fleet_inspection_days, 'Inspection days');
 
     let logoPath = tenantRow.logo_path;
 
@@ -267,7 +297,12 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
           proposal_default_terms = ?,
           proposal_default_acknowledgment = ?,
           default_tax_rate = ?,
-          default_labor_rate = ?
+          default_labor_rate = ?,
+          fleet_oil_change_miles = ?,
+          fleet_oil_change_days = ?,
+          fleet_tire_rotation_miles = ?,
+          fleet_tire_rotation_days = ?,
+          fleet_inspection_days = ?
       WHERE id = ?
     `,
     ).run(
@@ -283,6 +318,11 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
       proposalDefaultAcknowledgment || null,
       defaultTaxRate,
       defaultLaborRate,
+      fleetOilChangeMiles,
+      fleetOilChangeDays,
+      fleetTireRotationMiles,
+      fleetTireRotationDays,
+      fleetInspectionDays,
       tenantId,
     );
 
