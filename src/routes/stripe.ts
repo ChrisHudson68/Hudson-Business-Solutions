@@ -22,12 +22,27 @@ function resolveTenantFromMetadata(metadata: Record<string, string> | null | und
   return Number.parseInt(raw, 10);
 }
 
+function mapStripeState(status: string | null | undefined): string {
+  const normalized = String(status || '').trim().toLowerCase();
+
+  if (normalized === 'active') return 'active';
+  if (normalized === 'trialing') return 'trialing';
+  if (normalized === 'past_due') return 'grace_period';
+  if (normalized === 'canceled' || normalized === 'unpaid' || normalized === 'paused') return 'canceled';
+
+  return 'suspended';
+}
+
 function syncSubscriptionToTenant(
   subscription: Stripe.Subscription,
   tenantId: number,
 ) {
   const db = getDb();
   const env = getEnv();
+  const normalizedStatus = String(subscription.status || '').trim().toLowerCase();
+  const graceUntil = normalizedStatus === 'past_due'
+    ? addGracePeriodDaysFromNow(env.stripeGracePeriodDays)
+    : null;
 
   tenantQueries.updateBillingState(db, tenantId, {
     billing_plan: 'pro',
@@ -36,10 +51,9 @@ function syncSubscriptionToTenant(
     billing_subscription_status: subscription.status,
     billing_status: mapStripeSubscriptionStatus(subscription.status),
     billing_trial_ends_at: unixToSqliteUtcTimestamp(subscription.trial_end),
-    billing_grace_ends_at:
-      subscription.status === 'past_due'
-        ? addGracePeriodDaysFromNow(env.stripeGracePeriodDays)
-        : null,
+    billing_grace_ends_at: graceUntil,
+    billing_state: mapStripeState(subscription.status),
+    billing_grace_until: graceUntil,
   });
 }
 
@@ -57,6 +71,7 @@ function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
     billing_customer_id: getObjectStringId(session.customer),
     billing_subscription_id: getObjectStringId(session.subscription as string | Stripe.Subscription | null),
     billing_subscription_status: 'checkout_completed',
+    billing_updated_at: null,
   });
 }
 
@@ -115,6 +130,8 @@ function handleCustomerSubscriptionDeleted(subscription: Stripe.Subscription) {
     billing_status: 'canceled',
     billing_trial_ends_at: null,
     billing_grace_ends_at: null,
+    billing_state: 'canceled',
+    billing_grace_until: null,
   });
 }
 
@@ -142,12 +159,15 @@ function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     billing_subscription_status: 'active',
     billing_status: 'active',
     billing_grace_ends_at: null,
+    billing_state: 'active',
+    billing_grace_until: null,
   });
 }
 
 function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   const db = getDb();
   const env = getEnv();
+  const graceUntil = addGracePeriodDaysFromNow(env.stripeGracePeriodDays);
 
   const subscriptionId = getObjectStringId(invoice.subscription as string | Stripe.Subscription | null);
   const customerId = getObjectStringId(invoice.customer as string | Stripe.Customer | null);
@@ -169,7 +189,9 @@ function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     billing_subscription_id: subscriptionId,
     billing_subscription_status: 'past_due',
     billing_status: 'past_due',
-    billing_grace_ends_at: addGracePeriodDaysFromNow(env.stripeGracePeriodDays),
+    billing_grace_ends_at: graceUntil,
+    billing_state: 'grace_period',
+    billing_grace_until: graceUntil,
   });
 }
 

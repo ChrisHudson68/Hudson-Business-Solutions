@@ -265,7 +265,7 @@ billingRoutes.post('/billing/checkout', roleRequired('Admin'), async (c) => {
     const stripe = getStripeClient();
     let customerId = billing.billing_customer_id;
 
-    if (!customerId) {
+    const createCustomer = async () => {
       const customer = await stripe.customers.create({
         name: billing.name,
         email: user.email || undefined,
@@ -276,12 +276,37 @@ billingRoutes.post('/billing/checkout', roleRequired('Admin'), async (c) => {
         },
       });
 
-      customerId = customer.id;
-
       tenantQueries.updateBillingState(db, tenant.id, {
-        billing_customer_id: customerId,
+        billing_customer_id: customer.id,
         billing_plan: 'pro',
       });
+
+      return customer.id;
+    };
+
+    if (customerId) {
+      try {
+        const existingCustomer = await stripe.customers.retrieve(customerId);
+        if ((existingCustomer as any)?.deleted) {
+          throw new Error(`No such customer: '${customerId}'`);
+        }
+      } catch (error: any) {
+        const message = String(error?.message || '');
+        if (/no such customer/i.test(message)) {
+          tenantQueries.updateBillingState(db, tenant.id, {
+            billing_customer_id: null,
+            billing_subscription_id: null,
+            billing_subscription_status: null,
+          });
+          customerId = null;
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    if (!customerId) {
+      customerId = await createCustomer();
     }
 
     const origin = resolveOrigin(c);
@@ -369,6 +394,15 @@ billingRoutes.post('/billing/portal', roleRequired('Admin'), async (c) => {
 
     if (/portal configuration/i.test(rawMessage) || /No configuration provided/i.test(rawMessage)) {
       return c.redirect('/billing?error=portal-config');
+    }
+
+    if (/no such customer/i.test(rawMessage)) {
+      tenantQueries.updateBillingState(db, tenant.id, {
+        billing_customer_id: null,
+        billing_subscription_id: null,
+        billing_subscription_status: null,
+      });
+      return c.redirect('/billing?portal=unavailable');
     }
 
     return c.redirect(`/billing?error=stripe-request&stripe_message=${safeMessage}`);

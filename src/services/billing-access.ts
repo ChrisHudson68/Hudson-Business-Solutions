@@ -41,8 +41,6 @@ export type BillingAccessResult = {
   reason?: BillingBlockReason;
 };
 
-/* -------------------- Helpers -------------------- */
-
 function parseDate(value: string | null | undefined): Date | null {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -77,19 +75,17 @@ function normalizeAdvancedState(value: string | null | undefined): AdvancedBilli
   }
 }
 
-/* -------------------- NEW AUTHORITATIVE LOGIC -------------------- */
-
 export function resolveEffectiveBillingState(
   tenant: BillingTenantLike,
 ): Exclude<BillingAccessResult['effectiveStatus'], 'exempt' | 'incomplete'> | 'exempt' {
-
-  // ⭐ FIRST: Advanced billing state (authoritative)
   const advanced = normalizeAdvancedState(tenant.billing_state);
 
   if (advanced === 'billing_exempt') return 'exempt';
+  if (advanced === 'grace_period') {
+    return hasFutureDate(tenant.billing_grace_until) ? 'grace_period' : 'suspended';
+  }
   if (advanced) return advanced;
 
-  // ⭐ SECOND: Legacy exempt/internal flags
   if (Number(tenant.billing_exempt || 0) === 1) {
     return 'exempt';
   }
@@ -99,13 +95,15 @@ export function resolveEffectiveBillingState(
   if (legacy === 'internal') return 'internal';
   if (legacy === 'active') return 'active';
   if (legacy === 'trialing') return 'trialing';
-  if (legacy === 'past_due') return 'past_due';
+  if (legacy === 'past_due') {
+    return hasFutureDate(tenant.billing_grace_until || tenant.billing_grace_ends_at)
+      ? 'grace_period'
+      : 'suspended';
+  }
   if (legacy === 'canceled') return 'canceled';
 
   return 'trialing';
 }
-
-/* -------------------- Access Rules -------------------- */
 
 export function getBillingAccess(tenant: BillingTenantLike): BillingAccessResult {
   const effective = resolveEffectiveBillingState(tenant);
@@ -135,11 +133,19 @@ export function getBillingAccess(tenant: BillingTenantLike): BillingAccessResult
   }
 
   if (effective === 'past_due') {
-    return { allowed: true, effectiveStatus: 'past_due' };
+    if (hasFutureDate(tenant.billing_grace_until || tenant.billing_grace_ends_at)) {
+      return { allowed: true, effectiveStatus: 'past_due' };
+    }
+
+    return {
+      allowed: false,
+      effectiveStatus: 'past_due',
+      reason: 'grace-ended',
+    };
   }
 
   if (effective === 'grace_period') {
-    if (!tenant.billing_grace_until || hasFutureDate(tenant.billing_grace_until)) {
+    if (hasFutureDate(tenant.billing_grace_until || tenant.billing_grace_ends_at)) {
       return { allowed: true, effectiveStatus: 'grace_period' };
     }
 

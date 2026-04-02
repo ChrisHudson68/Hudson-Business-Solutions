@@ -69,7 +69,7 @@ function clearSessionCookie(c: any) {
   });
 }
 
-function resolveRequestUser(c: any): AuthenticatedUser | null {
+export function resolveRequestUser(c: any): AuthenticatedUser | null {
   const env = getEnv();
   const cookie = getCookie(c, SESSION_COOKIE_NAME);
 
