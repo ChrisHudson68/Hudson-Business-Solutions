@@ -277,6 +277,7 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
         allowedExtensions: LOGO_EXTENSIONS,
         allowedMimeTypes: LOGO_MIME_TYPES,
         maxBytes: env.maxLogoUploadBytes,
+        processingMode: 'logo',
       });
 
       logoPath = `/uploads/logos/${filename}`;
