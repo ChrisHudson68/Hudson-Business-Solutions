@@ -6,6 +6,7 @@ import { getDb } from '../db/connection.js';
 import * as jobs from '../db/queries/jobs.js';
 import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
+import * as receiptOcrResults from '../db/queries/receipt-ocr-results.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import {
   saveUploadedFile,
@@ -24,6 +25,7 @@ import { AddIncomePage } from '../pages/jobs/AddIncomePage.js';
 import { AddExpensePage } from '../pages/jobs/AddExpensePage.js';
 import { EditExpensePage } from '../pages/jobs/EditExpensePage.js';
 import { getEnv } from '../config/env.js';
+import { hasUsefulReceiptSuggestions, runReceiptOcr, type ParsedReceipt } from '../services/receipt-ocr.js';
 
 const receiptRootDir = path.join(getEnv().uploadDir, 'receipts');
 
@@ -147,6 +149,54 @@ function buildExpenseFormData(source: Record<string, unknown>) {
     amount: String(source.amount ?? ''),
     date: String(source.date ?? ''),
   };
+}
+
+function parsePendingReceiptFilename(value: unknown, tenantId: number): string | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  const parts = raw.split('/');
+  if (parts.length < 2) return null;
+
+  const pathTenantId = Number.parseInt(parts[0] || '0', 10);
+  if (!Number.isInteger(pathTenantId) || pathTenantId !== tenantId) {
+    return null;
+  }
+
+  try {
+    return buildTenantReceiptStoredPath(tenantId, parts.slice(1).join('/'));
+  } catch {
+    return null;
+  }
+}
+
+function formatMoneyInput(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return '';
+  }
+
+  return value.toFixed(2);
+}
+
+function mergeExpenseFormDataWithParsedReceipt(
+  formData: Record<string, string>,
+  parsedReceipt: ParsedReceipt | null | undefined,
+) {
+  if (!parsedReceipt) {
+    return formData;
+  }
+
+  return {
+    category: formData.category || '',
+    vendor: formData.vendor || parsedReceipt.vendorName || '',
+    amount: formData.amount || formatMoneyInput(parsedReceipt.total ?? parsedReceipt.subtotal),
+    date: formData.date || parsedReceipt.receiptDate || '',
+  };
+}
+
+function buildReceiptOcrErrorMessage(errorMessage?: string | null): string | null {
+  const clean = String(errorMessage ?? '').trim();
+  return clean ? clean : null;
 }
 
 export const jobFinancialRoutes = new Hono<AppEnv>();
@@ -357,6 +407,10 @@ jobFinancialRoutes.get('/add_expense/:id', roleRequired('Admin', 'Manager'), (c)
       jobId={jobId}
       job={job}
       formData={{ category: '', vendor: '', amount: '', date: '' }}
+      pendingReceiptFilename={null}
+      parsedReceipt={null}
+      receiptOcrError={null}
+      receiptReviewPending={false}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -380,15 +434,14 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
   }
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
-  const formData = buildExpenseFormData(body);
+  const originalFormData = buildExpenseFormData(body);
+  const pendingReceiptFilename = parsePendingReceiptFilename(body.pending_receipt_filename, tenantId);
+  const confirmReceiptData = String(body.confirm_receipt_data ?? '').trim() === '1';
 
   try {
-    const category = requireText(body.category, 'Category', 120);
-    const vendor = optionalText(body.vendor, 'Vendor', 120);
-    const amount = parsePositiveMoney(body.amount, 'Amount');
-    const date = requireDate(body.date, 'Date');
-
-    let receiptFilename: string | undefined;
+    let receiptFilename = pendingReceiptFilename || undefined;
+    let parsedReceipt: ParsedReceipt | null = null;
+    let receiptOcrError: string | null = null;
 
     const file = body.receipt;
     if (file && file instanceof File && file.size > 0) {
@@ -400,7 +453,53 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
       });
 
       receiptFilename = buildTenantReceiptStoredPath(tenantId, savedFilename);
+
+      if (pendingReceiptFilename && pendingReceiptFilename !== receiptFilename) {
+        deleteUploadedFile(pendingReceiptFilename, receiptRootDir);
+      }
+
+      const absoluteReceiptPath = resolveUploadedFilePath(receiptFilename, receiptRootDir);
+      const ocrResult = await runReceiptOcr(absoluteReceiptPath);
+
+      receiptOcrResults.upsertByReceipt(db, tenantId, receiptFilename, {
+        status: ocrResult.status,
+        rawText: ocrResult.rawText,
+        parsed: ocrResult.parsed,
+        errorMessage: ocrResult.errorMessage,
+        ocrEngine: ocrResult.ocrEngine,
+      });
+
+      parsedReceipt = ocrResult.parsed;
+      receiptOcrError = buildReceiptOcrErrorMessage(ocrResult.errorMessage);
+    } else if (pendingReceiptFilename) {
+      const existingOcr = receiptOcrResults.findLatestByReceipt(db, tenantId, pendingReceiptFilename);
+      parsedReceipt = receiptOcrResults.parseParsedReceipt(existingOcr);
+      receiptOcrError = buildReceiptOcrErrorMessage(existingOcr?.error_message);
+      receiptFilename = pendingReceiptFilename;
     }
+
+    if (receiptFilename && !confirmReceiptData) {
+      return renderApp(
+        c,
+        'Add Expense',
+        <AddExpensePage
+          jobId={jobId}
+          job={job}
+          formData={mergeExpenseFormDataWithParsedReceipt(originalFormData, parsedReceipt)}
+          parsedReceipt={parsedReceipt}
+          receiptOcrError={receiptOcrError}
+          pendingReceiptFilename={receiptFilename}
+          receiptReviewPending={true}
+          csrfToken={c.get('csrfToken')}
+        />,
+        400,
+      );
+    }
+
+    const category = requireText(body.category, 'Category', 120);
+    const vendor = optionalText(body.vendor, 'Vendor', 120);
+    const amount = parsePositiveMoney(body.amount, 'Amount');
+    const date = requireDate(body.date, 'Date');
 
     const expenseId = expenses.create(db, tenantId, {
       job_id: jobId,
@@ -410,6 +509,10 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
       date,
       receipt_filename: receiptFilename,
     });
+
+    if (receiptFilename) {
+      receiptOcrResults.attachToExpense(db, tenantId, receiptFilename, expenseId);
+    }
 
     if (currentUser && receiptFilename) {
       logActivity(db, {
@@ -427,6 +530,7 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
           amount,
           date,
           receipt_filename: receiptFilename,
+          receipt_ocr_status: receiptFilename ? receiptOcrResults.findLatestByReceipt(db, tenantId, receiptFilename)?.status ?? null : null,
         },
         ipAddress: resolveRequestIp(c),
       });
@@ -442,7 +546,8 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
       <AddExpensePage
         jobId={jobId}
         job={job}
-        formData={formData}
+        formData={originalFormData}
+        pendingReceiptFilename={pendingReceiptFilename}
         error={message}
         csrfToken={c.get('csrfToken')}
       />,
@@ -475,6 +580,10 @@ jobFinancialRoutes.get('/edit_expense/:id', roleRequired('Admin', 'Manager'), (c
     return c.redirect(`/job/${expense.job_id}`);
   }
 
+  const existingOcr = expense.receipt_filename
+    ? receiptOcrResults.findLatestByReceipt(db, tenantId, expense.receipt_filename)
+    : undefined;
+
   return renderApp(
     c,
     'Edit Expense',
@@ -488,6 +597,10 @@ jobFinancialRoutes.get('/edit_expense/:id', roleRequired('Admin', 'Manager'), (c
         date: String(expense.date ?? ''),
       }}
       currentReceiptFilename={expense.receipt_filename}
+      parsedReceipt={receiptOcrResults.parseParsedReceipt(existingOcr)}
+      receiptOcrError={buildReceiptOcrErrorMessage(existingOcr?.error_message)}
+      pendingReceiptFilename={null}
+      receiptReviewPending={false}
       csrfToken={c.get('csrfToken')}
     />,
   );
@@ -520,16 +633,15 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
   }
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
-  const formData = buildExpenseFormData(body);
+  const originalFormData = buildExpenseFormData(body);
+  const pendingReceiptFilename = parsePendingReceiptFilename(body.pending_receipt_filename, tenantId);
+  const confirmReceiptData = String(body.confirm_receipt_data ?? '').trim() === '1';
 
   try {
-    const category = requireText(body.category, 'Category', 120);
-    const vendor = optionalText(body.vendor, 'Vendor', 120);
-    const amount = parsePositiveMoney(body.amount, 'Amount');
-    const date = requireDate(body.date, 'Date');
-
-    let nextReceiptFilename = existingExpense.receipt_filename || null;
+    let nextReceiptFilename = pendingReceiptFilename ?? existingExpense.receipt_filename ?? null;
     let oldReceiptToDelete: string | null = null;
+    let parsedReceipt: ParsedReceipt | null = null;
+    let receiptOcrError: string | null = null;
 
     const file = body.receipt;
     if (file && file instanceof File && file.size > 0) {
@@ -541,8 +653,63 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
       });
 
       nextReceiptFilename = buildTenantReceiptStoredPath(tenantId, savedFilename);
-      oldReceiptToDelete = existingExpense.receipt_filename || null;
+
+      if (pendingReceiptFilename && pendingReceiptFilename !== nextReceiptFilename) {
+        deleteUploadedFile(pendingReceiptFilename, receiptRootDir);
+      }
+
+      const absoluteReceiptPath = resolveUploadedFilePath(nextReceiptFilename, receiptRootDir);
+      const ocrResult = await runReceiptOcr(absoluteReceiptPath);
+
+      receiptOcrResults.upsertByReceipt(db, tenantId, nextReceiptFilename, {
+        expenseId,
+        status: ocrResult.status,
+        rawText: ocrResult.rawText,
+        parsed: ocrResult.parsed,
+        errorMessage: ocrResult.errorMessage,
+        ocrEngine: ocrResult.ocrEngine,
+      });
+
+      parsedReceipt = ocrResult.parsed;
+      receiptOcrError = buildReceiptOcrErrorMessage(ocrResult.errorMessage);
+
+      if (existingExpense.receipt_filename && existingExpense.receipt_filename !== nextReceiptFilename) {
+        oldReceiptToDelete = existingExpense.receipt_filename;
+      }
+    } else if (pendingReceiptFilename) {
+      const existingOcr = receiptOcrResults.findLatestByReceipt(db, tenantId, pendingReceiptFilename);
+      parsedReceipt = receiptOcrResults.parseParsedReceipt(existingOcr);
+      receiptOcrError = buildReceiptOcrErrorMessage(existingOcr?.error_message);
+      nextReceiptFilename = pendingReceiptFilename;
+
+      if (existingExpense.receipt_filename && existingExpense.receipt_filename !== pendingReceiptFilename) {
+        oldReceiptToDelete = existingExpense.receipt_filename;
+      }
     }
+
+    if (nextReceiptFilename && !confirmReceiptData) {
+      return renderApp(
+        c,
+        'Edit Expense',
+        <EditExpensePage
+          expenseId={existingExpense.id}
+          job={job}
+          formData={mergeExpenseFormDataWithParsedReceipt(originalFormData, parsedReceipt)}
+          currentReceiptFilename={existingExpense.receipt_filename}
+          parsedReceipt={parsedReceipt}
+          receiptOcrError={receiptOcrError}
+          pendingReceiptFilename={nextReceiptFilename}
+          receiptReviewPending={true}
+          csrfToken={c.get('csrfToken')}
+        />,
+        400,
+      );
+    }
+
+    const category = requireText(body.category, 'Category', 120);
+    const vendor = optionalText(body.vendor, 'Vendor', 120);
+    const amount = parsePositiveMoney(body.amount, 'Amount');
+    const date = requireDate(body.date, 'Date');
 
     expenses.update(db, expenseId, tenantId, {
       category,
@@ -551,6 +718,10 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
       date,
       receipt_filename: nextReceiptFilename,
     });
+
+    if (nextReceiptFilename) {
+      receiptOcrResults.attachToExpense(db, tenantId, nextReceiptFilename, expenseId);
+    }
 
     if (oldReceiptToDelete) {
       deleteUploadedFile(oldReceiptToDelete, receiptRootDir);
@@ -580,7 +751,7 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
         ipAddress: resolveRequestIp(c),
       });
 
-      if (file && file instanceof File && file.size > 0) {
+      if (nextReceiptFilename && nextReceiptFilename !== existingExpense.receipt_filename) {
         logActivity(db, {
           tenantId,
           actorUserId: currentUser.id,
@@ -597,6 +768,7 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
             date,
             previous_receipt_filename: existingExpense.receipt_filename,
             receipt_filename: nextReceiptFilename,
+            receipt_ocr_status: receiptOcrResults.findLatestByReceipt(db, tenantId, nextReceiptFilename)?.status ?? null,
           },
           ipAddress: resolveRequestIp(c),
         });
@@ -606,6 +778,9 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
     return c.redirect(`/job/${job.id}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to update expense entry.';
+    const existingOcr = existingExpense.receipt_filename
+      ? receiptOcrResults.findLatestByReceipt(db, tenantId, existingExpense.receipt_filename)
+      : undefined;
 
     return renderApp(
       c,
@@ -613,8 +788,12 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
       <EditExpensePage
         expenseId={existingExpense.id}
         job={job}
-        formData={formData}
+        formData={originalFormData}
         currentReceiptFilename={existingExpense.receipt_filename}
+        parsedReceipt={receiptOcrResults.parseParsedReceipt(existingOcr)}
+        receiptOcrError={buildReceiptOcrErrorMessage(existingOcr?.error_message)}
+        pendingReceiptFilename={pendingReceiptFilename}
+        receiptReviewPending={false}
         error={message}
         csrfToken={c.get('csrfToken')}
       />,

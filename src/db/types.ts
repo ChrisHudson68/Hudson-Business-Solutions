@@ -162,6 +162,30 @@ export interface Expense {
   tenant_id: number;
 }
 
+
+export interface ParsedReceipt {
+  vendorName?: string;
+  normalizedVendorName?: string;
+  suggestedCategory?: string;
+  receiptDate?: string;
+  subtotal?: number;
+  tax?: number;
+  total?: number;
+  receiptNumber?: string;
+  paymentMethod?: string;
+  cardLast4?: string;
+  rawText: string;
+  confidence?: {
+    vendorName?: number;
+    receiptDate?: number;
+    subtotal?: number;
+    tax?: number;
+    total?: number;
+    receiptNumber?: number;
+    suggestedCategory?: number;
+  };
+}
+
 export interface Employee {
   id: number;
   name: string;
