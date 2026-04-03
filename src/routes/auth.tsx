@@ -518,45 +518,61 @@ authRoutes.post('/signup', async (c) => {
 
   const passwordHash = hashPassword(password);
 
-  const tenantInsert = db.prepare(`
-    INSERT INTO tenants (
-      name,
-      subdomain,
-      billing_status,
-      billing_plan,
-      billing_trial_ends_at,
-      billing_exempt,
-      created_at
-    ) VALUES (?, ?, 'trialing', 'standard', ?, 0, CURRENT_TIMESTAMP)
-  `).run(companyName, subdomain, buildTenantTrialEndDate());
+  const createTenantAndAdmin = db.transaction(() => {
+    const tenantInsert = db.prepare(`
+      INSERT INTO tenants (
+        name,
+        subdomain,
+        invoice_prefix,
+        billing_status,
+        billing_plan,
+        billing_trial_ends_at,
+        billing_exempt,
+        created_at
+      ) VALUES (?, ?, 'INV', 'trialing', 'standard', ?, 0, CURRENT_TIMESTAMP)
+    `).run(companyName, subdomain, buildTenantTrialEndDate());
 
-  const tenantId = Number(tenantInsert.lastInsertRowid);
+    const tenantId = Number(tenantInsert.lastInsertRowid);
 
-  const userInsert = db.prepare(`
-    INSERT INTO users (
-      tenant_id,
-      name,
-      email,
-      password_hash,
-      role,
-      active,
-      created_at
-    ) VALUES (?, ?, ?, ?, 'Admin', 1, CURRENT_TIMESTAMP)
-  `).run(tenantId, adminName, adminEmail, passwordHash);
+    const userInsert = db.prepare(`
+      INSERT INTO users (
+        tenant_id,
+        name,
+        email,
+        password_hash,
+        role,
+        active
+      ) VALUES (?, ?, ?, ?, 'Admin', 1)
+    `).run(tenantId, adminName, adminEmail, passwordHash);
 
-  const userId = Number(userInsert.lastInsertRowid);
+    return {
+      tenantId,
+      userId: Number(userInsert.lastInsertRowid),
+    };
+  });
 
-  db.prepare(`
-    INSERT INTO settings (
-      tenant_id,
-      key,
-      value,
-      created_at,
-      updated_at
-    ) VALUES
-      (?, 'company_name', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-      (?, 'invoice_prefix', 'INV', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  `).run(tenantId, companyName, tenantId);
+  let tenantId = 0;
+  let userId = 0;
+
+  try {
+    const created = createTenantAndAdmin();
+    tenantId = created.tenantId;
+    userId = created.userId;
+  } catch (error) {
+    console.error('[signup] failed to create tenant/admin', error);
+
+    return c.html(
+      renderPublicLayout(
+        <SignupPage
+          error="We could not finish creating your workspace. Please try again."
+          formData={formData}
+          csrfToken={c.get('csrfToken')}
+          inviteOnly={inviteOnly}
+        />,
+      ),
+      500,
+    );
+  }
 
   logActivity(db, {
     tenantId,
