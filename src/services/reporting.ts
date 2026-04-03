@@ -194,17 +194,21 @@ export function parseReportFilter(query: {
 }
 
 export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFilter): AdvancedReportsData {
-  const allJobs = jobs.listByTenant(db, tenantId, true);
+  const allJobs = jobs.listByTenant(db, tenantId, false);
 
   const incomeRows = db.prepare(
     `
-      SELECT date, amount, job_id
-      FROM income
-      WHERE tenant_id = ?
-        AND archived_at IS NULL
-        AND date >= ?
-        AND date <= ?
-      ORDER BY date ASC, id ASC
+      SELECT i.date, i.amount, i.job_id
+      FROM income i
+      JOIN jobs j
+        ON j.id = i.job_id
+       AND j.tenant_id = i.tenant_id
+      WHERE i.tenant_id = ?
+        AND i.archived_at IS NULL
+        AND j.archived_at IS NULL
+        AND i.date >= ?
+        AND i.date <= ?
+      ORDER BY i.date ASC, i.id ASC
     `
   ).all(tenantId, filter.startDate, filter.endDate) as Array<{
     date: string;
@@ -214,13 +218,17 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
 
   const expenseRows = db.prepare(
     `
-      SELECT date, amount, category, job_id
-      FROM expenses
-      WHERE tenant_id = ?
-        AND archived_at IS NULL
-        AND date >= ?
-        AND date <= ?
-      ORDER BY date ASC, id ASC
+      SELECT e.date, e.amount, e.category, e.job_id
+      FROM expenses e
+      JOIN jobs j
+        ON j.id = e.job_id
+       AND j.tenant_id = e.tenant_id
+      WHERE e.tenant_id = ?
+        AND e.archived_at IS NULL
+        AND j.archived_at IS NULL
+        AND e.date >= ?
+        AND e.date <= ?
+      ORDER BY e.date ASC, e.id ASC
     `
   ).all(tenantId, filter.startDate, filter.endDate) as Array<{
     date: string;
@@ -238,12 +246,16 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
 
   const laborRows = db.prepare(
     `
-      SELECT date, labor_cost, job_id
-      FROM time_entries
-      WHERE tenant_id = ?
-        AND date >= ?
-        AND date <= ?
-      ORDER BY date ASC, id ASC
+      SELECT te.date, te.labor_cost, te.job_id
+      FROM time_entries te
+      JOIN jobs j
+        ON j.id = te.job_id
+       AND j.tenant_id = te.tenant_id
+      WHERE te.tenant_id = ?
+        AND j.archived_at IS NULL
+        AND te.date >= ?
+        AND te.date <= ?
+      ORDER BY te.date ASC, te.id ASC
     `
   ).all(tenantId, filter.startDate, filter.endDate) as Array<{
     date: string;
@@ -253,13 +265,17 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
 
   const invoiceRows = db.prepare(
     `
-      SELECT id, job_id, date_issued, due_date, amount
-      FROM invoices
-      WHERE tenant_id = ?
-        AND archived_at IS NULL
-        AND date_issued >= ?
-        AND date_issued <= ?
-      ORDER BY date_issued ASC, id ASC
+      SELECT i.id, i.job_id, i.date_issued, i.due_date, i.amount
+      FROM invoices i
+      JOIN jobs j
+        ON j.id = i.job_id
+       AND j.tenant_id = i.tenant_id
+      WHERE i.tenant_id = ?
+        AND i.archived_at IS NULL
+        AND j.archived_at IS NULL
+        AND i.date_issued >= ?
+        AND i.date_issued <= ?
+      ORDER BY i.date_issued ASC, i.id ASC
     `
   ).all(tenantId, filter.startDate, filter.endDate) as Array<{
     id: number;
@@ -276,8 +292,12 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       JOIN invoices i
         ON i.id = p.invoice_id
        AND i.tenant_id = p.tenant_id
+      JOIN jobs j
+        ON j.id = i.job_id
+       AND j.tenant_id = i.tenant_id
       WHERE p.tenant_id = ?
         AND i.archived_at IS NULL
+        AND j.archived_at IS NULL
         AND p.date >= ?
         AND p.date <= ?
       ORDER BY p.date ASC, p.id ASC
@@ -290,12 +310,16 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
 
   const agingInvoiceRows = db.prepare(
     `
-      SELECT id, job_id, due_date, amount
-      FROM invoices
-      WHERE tenant_id = ?
-        AND archived_at IS NULL
-        AND date_issued <= ?
-      ORDER BY due_date ASC, id ASC
+      SELECT i.id, i.job_id, i.due_date, i.amount
+      FROM invoices i
+      JOIN jobs j
+        ON j.id = i.job_id
+       AND j.tenant_id = i.tenant_id
+      WHERE i.tenant_id = ?
+        AND i.archived_at IS NULL
+        AND j.archived_at IS NULL
+        AND i.date_issued <= ?
+      ORDER BY i.due_date ASC, i.id ASC
     `
   ).all(tenantId, filter.endDate) as Array<{
     id: number;
@@ -311,8 +335,12 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       JOIN invoices i
         ON i.id = p.invoice_id
        AND i.tenant_id = p.tenant_id
+      JOIN jobs j
+        ON j.id = i.job_id
+       AND j.tenant_id = i.tenant_id
       WHERE p.tenant_id = ?
         AND i.archived_at IS NULL
+        AND j.archived_at IS NULL
         AND p.date <= ?
       GROUP BY p.invoice_id
     `

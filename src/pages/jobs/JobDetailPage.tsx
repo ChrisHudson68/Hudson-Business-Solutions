@@ -73,6 +73,28 @@ function getEstimatedCommission(job: Job): number {
   return Number(((contractAmount * commissionPercent) / 100).toFixed(2));
 }
 
+function InlinePostButton(props: {
+  action: string;
+  label: string;
+  csrfToken: string;
+  confirmMessage?: string;
+  variant?: 'default' | 'danger';
+}) {
+  return (
+    <form
+      method="post"
+      action={props.action}
+      class="inline-form"
+      onsubmit={props.confirmMessage ? `return confirm(${JSON.stringify(props.confirmMessage)});` : undefined}
+    >
+      <input type="hidden" name="csrf_token" value={props.csrfToken} />
+      <button class={props.variant === 'danger' ? 'btn btn-danger' : 'btn'} type="submit">
+        {props.label}
+      </button>
+    </form>
+  );
+}
+
 export const JobDetailPage: FC<JobDetailPageProps> = ({
   job,
   incomes,
@@ -270,6 +292,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                   <th>Date</th>
                   <th>Description</th>
                   <th>Amount</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -278,10 +301,24 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                     <td>{row.date || '—'}</td>
                     <td>{row.description || '—'}</td>
                     <td>${formatMoney(Number(row.amount || 0))}</td>
+                    <td>
+                      {job.archived_at ? (
+                        <span class="muted">Job archived</span>
+                      ) : (
+                        <div class="actions actions-mobile-stack">
+                          <InlinePostButton
+                            action={`/archive_income/${row.id}`}
+                            label="Archive"
+                            csrfToken={csrfToken}
+                            confirmMessage="Archive this income entry?"
+                          />
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colspan={3} class="muted">No income recorded yet.</td>
+                    <td colspan={4} class="muted">No income recorded yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -305,6 +342,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                   <th>Vendor</th>
                   <th>Amount</th>
                   <th>Receipt</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -323,10 +361,25 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                         <span class="muted">—</span>
                       )}
                     </td>
+                    <td>
+                      {job.archived_at ? (
+                        <span class="muted">Job archived</span>
+                      ) : (
+                        <div class="actions actions-mobile-stack">
+                          <a class="btn" href={`/edit_expense/${row.id}`}>Edit</a>
+                          <InlinePostButton
+                            action={`/archive_expense/${row.id}`}
+                            label="Archive"
+                            csrfToken={csrfToken}
+                            confirmMessage="Archive this expense entry?"
+                          />
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colspan={5} class="muted">No expenses recorded yet.</td>
+                    <td colspan={6} class="muted">No expenses recorded yet.</td>
                   </tr>
                 )}
               </tbody>
@@ -378,6 +431,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                     <th>Date</th>
                     <th>Description</th>
                     <th>Amount</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -386,10 +440,23 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                       <td>{row.date || '—'}</td>
                       <td>{row.description || '—'}</td>
                       <td>${formatMoney(Number(row.amount || 0))}</td>
+                      <td>
+                        {job.archived_at ? (
+                          <span class="muted">Restore the job first</span>
+                        ) : (
+                          <div class="actions actions-mobile-stack">
+                            <InlinePostButton
+                              action={`/restore_income/${row.id}`}
+                              label="Restore"
+                              csrfToken={csrfToken}
+                            />
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colspan={3} class="muted">No archived income.</td>
+                      <td colspan={4} class="muted">No archived income.</td>
                     </tr>
                   )}
                 </tbody>
@@ -408,6 +475,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                     <th>Vendor</th>
                     <th>Amount</th>
                     <th>Receipt</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -426,10 +494,23 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                           <span class="muted">—</span>
                         )}
                       </td>
+                      <td>
+                        {job.archived_at ? (
+                          <span class="muted">Restore the job first</span>
+                        ) : (
+                          <div class="actions actions-mobile-stack">
+                            <InlinePostButton
+                              action={`/restore_expense/${row.id}`}
+                              label="Restore"
+                              csrfToken={csrfToken}
+                            />
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colspan={5} class="muted">No archived expenses.</td>
+                      <td colspan={6} class="muted">No archived expenses.</td>
                     </tr>
                   )}
                 </tbody>
