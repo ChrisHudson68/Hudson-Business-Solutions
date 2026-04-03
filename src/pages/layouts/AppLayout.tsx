@@ -1,5 +1,6 @@
 import type { FC } from 'hono/jsx';
 import { getBillingBanner } from '../../services/billing-banner.js';
+import { resolveEffectiveBillingState } from '../../services/billing-access.js';
 import { describeRole, hasPermission } from '../../services/permissions.js';
 
 interface AppLayoutProps {
@@ -14,6 +15,8 @@ interface AppLayoutProps {
         billing_plan?: string | null;
         billing_trial_ends_at?: string | null;
         billing_grace_ends_at?: string | null;
+        billing_state?: string | null;
+        billing_grace_until?: string | null;
       }
     | null;
   currentSubdomain: string | null;
@@ -730,19 +733,32 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
   ].filter((item) => item.visible);
 }
 
+function resolveLayoutBillingState(tenant: AppLayoutProps['currentTenant']): string {
+  if (!tenant) return 'unknown';
+
+  return resolveEffectiveBillingState({
+    billing_exempt: Number(tenant.billing_exempt || 0),
+    billing_status: String(tenant.billing_status || 'trialing'),
+    billing_trial_ends_at: tenant.billing_trial_ends_at || null,
+    billing_grace_ends_at: tenant.billing_grace_ends_at || null,
+    billing_state: tenant.billing_state || null,
+    billing_grace_until: tenant.billing_grace_until || null,
+  });
+}
+
 function billingBadgeClass(tenant: AppLayoutProps['currentTenant']): string {
-  if (!tenant) return 'badge';
-  if (Number(tenant.billing_exempt || 0) === 1) return 'badge badge-good';
-  const status = String(tenant.billing_status || 'trialing').toLowerCase();
-  if (status === 'active' || status === 'internal') return 'badge badge-good';
-  if (status === 'past_due') return 'badge badge-warn';
-  return 'badge badge-bad';
+  const state = resolveLayoutBillingState(tenant);
+  if (state === 'exempt' || state === 'internal' || state === 'active') return 'badge badge-good';
+  if (state === 'trialing' || state === 'past_due' || state === 'grace_period') return 'badge badge-warn';
+  if (state === 'suspended' || state === 'canceled') return 'badge badge-bad';
+  return 'badge';
 }
 
 function billingBadgeLabel(tenant: AppLayoutProps['currentTenant']): string {
-  if (!tenant) return 'No Tenant';
-  if (Number(tenant.billing_exempt || 0) === 1) return 'Billing Exempt';
-  return String(tenant.billing_status || 'trialing')
+  const state = resolveLayoutBillingState(tenant);
+  if (state === 'unknown') return 'No Tenant';
+
+  return String(state)
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');

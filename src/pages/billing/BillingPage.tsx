@@ -25,6 +25,13 @@ type BillingNotice = {
   message: string;
 };
 
+type BillingActionCallout = {
+  tone: 'info' | 'warn' | 'bad';
+  title: string;
+  message: string;
+  nextStep: string;
+};
+
 interface BillingPageProps {
   tenant: BillingTenant;
   csrfToken: string;
@@ -58,14 +65,29 @@ function noticeCardStyle(tone: BillingNotice['tone']): string {
   return 'margin-bottom:14px; border:1px solid #BFDBFE; background:#EFF6FF;';
 }
 
-function formatDate(value: string | null | undefined): string {
+function parseDate(value: string | null | undefined): Date | null {
   const raw = String(value || '').trim();
-  if (!raw) return '—';
+  if (!raw) return null;
 
-  const normalized = raw.includes('T') ? raw : `${raw.replace(' ', 'T')}Z`;
+  let normalized = raw;
+  if (!raw.includes('T')) {
+    normalized = `${raw}T23:59:59.999Z`;
+  } else if (!/[zZ]|[+-]\d\d:\d\d$/.test(raw)) {
+    normalized = `${raw}Z`;
+  }
+
   const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return null;
 
-  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed;
+}
+
+function formatDate(value: string | null | undefined): string {
+  const parsed = parseDate(value);
+  if (!parsed) {
+    const raw = String(value || '').trim();
+    return raw || '—';
+  }
 
   return parsed.toLocaleString('en-US', {
     year: 'numeric',
@@ -74,6 +96,12 @@ function formatDate(value: string | null | undefined): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function daysUntil(value: string | null | undefined): number | null {
+  const parsed = parseDate(value);
+  if (!parsed) return null;
+  return Math.ceil((parsed.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
 function statusHeadline(state: string): string {
@@ -143,6 +171,68 @@ function secondaryActionHint(state: string): string {
   return 'Choose the billing action that fits the current workspace state.';
 }
 
+function attentionCardStyle(tone: BillingActionCallout['tone']): string {
+  if (tone === 'bad') return 'margin-bottom:14px; border:1px solid #FECACA; background:#FEF2F2;';
+  if (tone === 'warn') return 'margin-bottom:14px; border:1px solid #FDE68A; background:#FFFBEB;';
+  return 'margin-bottom:14px; border:1px solid #BFDBFE; background:#EFF6FF;';
+}
+
+function buildActionCallout(state: string, tenant: BillingTenant, isAdmin: boolean): BillingActionCallout | null {
+  const trialDays = daysUntil(tenant.billing_trial_ends_at);
+  const graceDays = daysUntil(tenant.billing_grace_until || tenant.billing_grace_ends_at);
+
+  switch (state) {
+    case 'trialing':
+      if (trialDays === null || trialDays > 7) return null;
+      return {
+        tone: trialDays <= 3 ? 'warn' : 'info',
+        title: trialDays <= 0 ? 'Trial conversion should happen today' : 'Trial is nearing its end',
+        message: isAdmin
+          ? 'This workspace is close to the end of its trial window. Converting to paid billing now avoids a lockout later.'
+          : 'This workspace is close to the end of its trial window. A workspace admin should review billing soon.',
+        nextStep: isAdmin
+          ? 'Use Start Billing now so the workspace stays active without interruption.'
+          : 'Ask a workspace admin to open Billing and start the subscription before the trial expires.',
+      };
+    case 'past_due':
+    case 'grace_period':
+      return {
+        tone: graceDays !== null && graceDays <= 3 ? 'bad' : 'warn',
+        title: graceDays !== null && graceDays <= 0 ? 'Billing must be corrected today' : 'Payment issue needs attention',
+        message: isAdmin
+          ? 'Stripe is reporting a payment issue or grace state. The workspace can still recover, but payment details should be updated right away.'
+          : 'This workspace has a payment issue on file. Access may be restricted unless a workspace admin updates billing.',
+        nextStep: isAdmin
+          ? 'Open the Billing Portal and update the payment method, then refresh this page.'
+          : 'Contact a workspace admin and ask them to update the payment method in Billing.',
+      };
+    case 'suspended':
+      return {
+        tone: 'bad',
+        title: 'Workspace access is currently restricted',
+        message: isAdmin
+          ? 'The workspace has moved past the recovery window. Billing must be restarted or corrected before normal access can return.'
+          : 'The workspace is suspended for billing reasons. Only a workspace admin can correct billing and restore access.',
+        nextStep: isAdmin
+          ? 'Use Start Billing to reactivate the workspace, or resolve the issue through Stripe if a subscription already exists.'
+          : 'Contact a workspace admin to restore billing.',
+      };
+    case 'canceled':
+      return {
+        tone: 'bad',
+        title: 'The subscription is no longer active',
+        message: isAdmin
+          ? 'This workspace no longer has an active subscription. A new billing flow is needed to restore normal use.'
+          : 'The workspace subscription is not active right now. A workspace admin will need to restart billing.',
+        nextStep: isAdmin
+          ? 'Use Start Billing to create a new active subscription for this workspace.'
+          : 'Ask a workspace admin to restart billing for the workspace.',
+      };
+    default:
+      return null;
+  }
+}
+
 export const BillingPage: FC<BillingPageProps> = ({
   tenant,
   csrfToken,
@@ -175,7 +265,7 @@ export const BillingPage: FC<BillingPageProps> = ({
   const hasCustomer = !!tenant.billing_customer_id;
   const canUsePortal = isAdmin && stripeEnabled && stripePortalEnabled && hasCustomer;
   const canStartCheckout = isAdmin && stripeEnabled && effectiveState !== 'exempt' && effectiveState !== 'internal';
-  const canResync = isAdmin && stripeEnabled && (!!tenant.billing_customer_id || !!tenant.billing_subscription_id);
+  const actionCallout = buildActionCallout(effectiveState, tenant, isAdmin);
 
   return (
     <div>
@@ -190,6 +280,14 @@ export const BillingPage: FC<BillingPageProps> = ({
         <div class="card" style={noticeCardStyle(notice.tone)}>
           {notice.title ? <div style="font-weight:900; margin-bottom:6px;">{notice.title}</div> : null}
           <div>{notice.message}</div>
+        </div>
+      ) : null}
+
+      {actionCallout ? (
+        <div class="card" style={attentionCardStyle(actionCallout.tone)}>
+          <div style="font-weight:900; font-size:18px; margin-bottom:8px;">{actionCallout.title}</div>
+          <div style="line-height:1.6;">{actionCallout.message}</div>
+          <div style="margin-top:10px; font-weight:800;">Next step: {actionCallout.nextStep}</div>
         </div>
       ) : null}
 
@@ -252,13 +350,6 @@ export const BillingPage: FC<BillingPageProps> = ({
                   <button class="btn" type="submit">Open Billing Portal</button>
                 </form>
               ) : null}
-
-              {canResync ? (
-                <form method="post" action="/billing/resync">
-                  <input type="hidden" name="csrf_token" value={csrfToken} />
-                  <button class="btn" type="submit">Refresh from Stripe</button>
-                </form>
-              ) : null}
             </div>
           )}
 
@@ -313,6 +404,13 @@ export const BillingPage: FC<BillingPageProps> = ({
               <div class="muted" style="margin-top:4px;">{secondaryActionHint(effectiveState)}</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div style="font-weight:900; font-size:18px; margin-bottom:10px;">Launch Verification</div>
+        <div class="muted" style="line-height:1.6;">
+          Before onboarding customers, run the billing launch test checklist included in this release with one trial tenant and one paid tenant. Verify checkout success, portal recovery, billing gate redirects, and platform-admin Stripe refresh behavior before going live.
         </div>
       </div>
 

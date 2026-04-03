@@ -19,7 +19,13 @@ function parseDate(value: string | null | undefined): Date | null {
   const raw = String(value || '').trim();
   if (!raw) return null;
 
-  const normalized = raw.includes('T') ? raw : `${raw.replace(' ', 'T')}Z`;
+  let normalized = raw;
+  if (!raw.includes('T')) {
+    normalized = `${raw}T23:59:59.999Z`;
+  } else if (!/[zZ]|[+-]\d\d:\d\d$/.test(raw)) {
+    normalized = `${raw}Z`;
+  }
+
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return null;
 
@@ -42,6 +48,12 @@ function formatDate(value: string | null | undefined): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+function dayLabel(remaining: number, singular: string, plural: string): string {
+  if (remaining <= 0) return singular;
+  if (remaining === 1) return '1 day';
+  return `${remaining} ${plural}`;
 }
 
 export function getBillingBanner(tenant: BillingBannerTenantLike | null | undefined): BillingBanner | null {
@@ -75,8 +87,8 @@ export function getBillingBanner(tenant: BillingBannerTenantLike | null | undefi
     if (remaining <= 7) {
       return {
         tone: remaining <= 3 ? 'warn' : 'info',
-        title: `Trial ends in ${remaining} day${remaining === 1 ? '' : 's'}`,
-        message: `Your workspace trial ends on ${formatDate(tenant.billing_trial_ends_at)}. Add billing to avoid interruption.`,
+        title: remaining <= 0 ? 'Trial ends today' : `Trial ends in ${dayLabel(remaining, 'today', 'days')}`,
+        message: `Your workspace trial ends on ${formatDate(tenant.billing_trial_ends_at)}. Add billing now to avoid interruption.`,
       };
     }
 
@@ -104,8 +116,8 @@ export function getBillingBanner(tenant: BillingBannerTenantLike | null | undefi
 
     return {
       tone: remaining <= 3 ? 'bad' : 'warn',
-      title: `Payment past due — ${remaining} day${remaining === 1 ? '' : 's'} left`,
-      message: `The current billing grace window ends on ${formatDate(tenant.billing_grace_until)}. Update billing to avoid suspension.`,
+      title: remaining <= 0 ? 'Payment issue must be fixed today' : `Payment past due — ${dayLabel(remaining, 'today', 'days')} left`,
+      message: `The current billing grace window ends on ${formatDate(tenant.billing_grace_until)}. Update the payment method to avoid suspension.`,
     };
   }
 
@@ -130,7 +142,7 @@ export function getBillingBanner(tenant: BillingBannerTenantLike | null | undefi
 
     return {
       tone: remaining <= 3 ? 'bad' : 'warn',
-      title: `Grace period — ${remaining} day${remaining === 1 ? '' : 's'} left`,
+      title: remaining <= 0 ? 'Grace period ends today' : `Grace period — ${dayLabel(remaining, 'today', 'days')} left`,
       message: `This workspace grace period ends on ${formatDate(tenant.billing_grace_until)}. Update billing before access is restricted.`,
     };
   }
