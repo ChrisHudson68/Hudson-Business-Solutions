@@ -1,14 +1,10 @@
 import Stripe from 'stripe';
 import { getEnv } from '../config/env.js';
+import type { BillingStatus, Tenant } from '../db/types.js';
 import type { DB } from '../db/connection.js';
 import * as tenantQueries from '../db/queries/tenants.js';
-import type { BillingStatus, Tenant } from '../db/types.js';
 
 let stripeClient: Stripe | null = null;
-
-export type BillingResyncResult =
-  | { ok: true; source: 'subscription' | 'customer'; status: string }
-  | { ok: false; code: 'stripe-disabled' | 'no-remote-record' | 'customer-not-found' | 'subscription-not-found' };
 
 export function isStripeEnabled(): boolean {
   return getEnv().stripeEnabled;
@@ -82,7 +78,9 @@ export function mapStripeSubscriptionStatus(
   return 'incomplete';
 }
 
-export function mapStripeBillingState(status: Stripe.Subscription.Status | string | null | undefined): string {
+export function mapStripeAdvancedBillingState(
+  status: Stripe.Subscription.Status | string | null | undefined,
+): string {
   const normalized = String(status || '').trim().toLowerCase();
 
   if (normalized === 'active') return 'active';
@@ -108,7 +106,7 @@ export function addGracePeriodDaysFromNow(days: number): string {
   return toSqliteUtcTimestamp(now);
 }
 
-function getObjectStringId(value: string | Stripe.Customer | Stripe.DeletedCustomer | Stripe.Subscription | Stripe.Invoice | null | undefined): string | null {
+function getCustomerId(value: string | Stripe.Customer | Stripe.DeletedCustomer | null | undefined): string | null {
   if (!value) return null;
   return typeof value === 'string' ? value : value.id;
 }
@@ -116,103 +114,164 @@ function getObjectStringId(value: string | Stripe.Customer | Stripe.DeletedCusto
 function pickBestSubscription(subscriptions: Stripe.ApiList<Stripe.Subscription>): Stripe.Subscription | null {
   if (!subscriptions.data.length) return null;
 
-  const sorted = [...subscriptions.data].sort((a, b) => {
-    const aCanceled = a.status === 'canceled' ? 1 : 0;
-    const bCanceled = b.status === 'canceled' ? 1 : 0;
-    if (aCanceled !== bCanceled) return aCanceled - bCanceled;
+  const ranked = [...subscriptions.data].sort((a, b) => {
+    const aRank = a.status === 'active' ? 0 : a.status === 'trialing' ? 1 : a.status === 'past_due' ? 2 : 3;
+    const bRank = b.status === 'active' ? 0 : b.status === 'trialing' ? 1 : b.status === 'past_due' ? 2 : 3;
+    if (aRank !== bRank) return aRank - bRank;
     return (b.created || 0) - (a.created || 0);
   });
 
-  return sorted[0] || null;
+  return ranked[0] || null;
 }
 
-export function applyStripeSubscriptionToTenant(db: DB, tenantId: number, subscription: Stripe.Subscription): void {
-  const env = getEnv();
+function buildSubscriptionPatch(subscription: Stripe.Subscription, graceDays: number) {
   const normalizedStatus = String(subscription.status || '').trim().toLowerCase();
   const graceUntil = normalizedStatus === 'past_due'
-    ? addGracePeriodDaysFromNow(env.stripeGracePeriodDays)
+    ? addGracePeriodDaysFromNow(graceDays)
     : null;
 
-  tenantQueries.updateBillingState(db, tenantId, {
+  return {
     billing_plan: 'pro',
-    billing_customer_id: getObjectStringId(subscription.customer),
+    billing_customer_id: getCustomerId(subscription.customer),
     billing_subscription_id: subscription.id,
     billing_subscription_status: subscription.status,
     billing_status: mapStripeSubscriptionStatus(subscription.status),
     billing_trial_ends_at: unixToSqliteUtcTimestamp(subscription.trial_end),
     billing_grace_ends_at: graceUntil,
-    billing_state: mapStripeBillingState(subscription.status),
+    billing_state: mapStripeAdvancedBillingState(subscription.status),
     billing_grace_until: graceUntil,
-  });
+  } as const;
 }
 
 export async function resyncTenantBillingFromStripe(
   db: DB,
-  tenant: Pick<Tenant, 'id' | 'billing_customer_id' | 'billing_subscription_id'>,
-): Promise<BillingResyncResult> {
+  tenantOrId: number | (Tenant & { billing_state?: string | null; billing_grace_until?: string | null }),
+): Promise<{
+  outcome: 'synced' | 'skipped';
+  reason:
+    | 'subscription'
+    | 'customer-without-subscription'
+    | 'billing-exempt'
+    | 'stripe-ids-missing';
+  tenantId: number;
+  subscriptionId: string | null;
+  customerId: string | null;
+  status: string | null;
+}> {
   if (!isStripeEnabled()) {
-    return { ok: false, code: 'stripe-disabled' };
+    throw new Error('Stripe is disabled.');
+  }
+
+  const tenant = typeof tenantOrId === 'number'
+    ? tenantQueries.findById(db, tenantOrId)
+    : tenantOrId;
+
+  if (!tenant) {
+    throw new Error('Tenant not found.');
+  }
+
+  const billingState = String(tenant.billing_state || '').trim().toLowerCase();
+
+  if (
+    Number(tenant.billing_exempt || 0) === 1
+    || billingState === 'billing_exempt'
+    || billingState === 'internal'
+  ) {
+    return {
+      outcome: 'skipped',
+      reason: 'billing-exempt',
+      tenantId: tenant.id,
+      subscriptionId: tenant.billing_subscription_id || null,
+      customerId: tenant.billing_customer_id || null,
+      status: tenant.billing_subscription_status || tenant.billing_status || null,
+    };
   }
 
   const stripe = getStripeClient();
+  let customerId = tenant.billing_customer_id || null;
+  let subscriptionId = tenant.billing_subscription_id || null;
+  let subscription: Stripe.Subscription | null = null;
 
-  if (tenant.billing_subscription_id) {
+  if (subscriptionId) {
     try {
-      const subscription = await stripe.subscriptions.retrieve(tenant.billing_subscription_id);
-      applyStripeSubscriptionToTenant(db, tenant.id, subscription);
-      return { ok: true, source: 'subscription', status: subscription.status };
+      subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      customerId = getCustomerId(subscription.customer) || customerId;
     } catch (error: any) {
       const message = String(error?.message || '');
-      if (!/no such subscription/i.test(message)) {
+      if (/no such subscription/i.test(message)) {
+        subscriptionId = null;
+      } else {
         throw error;
       }
-
-      tenantQueries.updateBillingState(db, tenant.id, {
-        billing_subscription_id: null,
-        billing_subscription_status: null,
-      });
     }
   }
 
-  if (!tenant.billing_customer_id) {
-    return { ok: false, code: 'no-remote-record' };
+  if (!subscription && customerId) {
+    try {
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customerId,
+        status: 'all',
+        limit: 10,
+      });
+      subscription = pickBestSubscription(subscriptions);
+      subscriptionId = subscription?.id || null;
+    } catch (error: any) {
+      const message = String(error?.message || '');
+      if (/no such customer/i.test(message)) {
+        customerId = null;
+      } else {
+        throw error;
+      }
+    }
   }
 
-  try {
-    const customer = await stripe.customers.retrieve(tenant.billing_customer_id);
-    if ('deleted' in customer && customer.deleted) {
-      tenantQueries.updateBillingState(db, tenant.id, {
-        billing_customer_id: null,
-        billing_subscription_id: null,
-        billing_subscription_status: null,
-      });
-      return { ok: false, code: 'customer-not-found' };
-    }
-  } catch (error: any) {
-    const message = String(error?.message || '');
-    if (!/no such customer/i.test(message)) {
-      throw error;
-    }
-
+  if (!subscription && !customerId) {
     tenantQueries.updateBillingState(db, tenant.id, {
       billing_customer_id: null,
       billing_subscription_id: null,
       billing_subscription_status: null,
     });
-    return { ok: false, code: 'customer-not-found' };
+
+    return {
+      outcome: 'skipped',
+      reason: 'stripe-ids-missing',
+      tenantId: tenant.id,
+      subscriptionId: null,
+      customerId: null,
+      status: null,
+    };
   }
 
-  const subscriptions = await stripe.subscriptions.list({
-    customer: tenant.billing_customer_id,
-    status: 'all',
-    limit: 10,
-  });
+  if (!subscription && customerId) {
+    tenantQueries.updateBillingState(db, tenant.id, {
+      billing_customer_id: customerId,
+      billing_subscription_id: null,
+      billing_subscription_status: null,
+      billing_state: 'suspended',
+      billing_status: 'incomplete',
+      billing_grace_ends_at: null,
+      billing_grace_until: null,
+    });
 
-  const best = pickBestSubscription(subscriptions);
-  if (!best) {
-    return { ok: false, code: 'subscription-not-found' };
+    return {
+      outcome: 'skipped',
+      reason: 'customer-without-subscription',
+      tenantId: tenant.id,
+      subscriptionId: null,
+      customerId,
+      status: null,
+    };
   }
 
-  applyStripeSubscriptionToTenant(db, tenant.id, best);
-  return { ok: true, source: 'customer', status: best.status };
+  const patch = buildSubscriptionPatch(subscription, getEnv().stripeGracePeriodDays);
+  tenantQueries.updateBillingState(db, tenant.id, patch);
+
+  return {
+    outcome: 'synced',
+    reason: 'subscription',
+    tenantId: tenant.id,
+    subscriptionId: subscription.id,
+    customerId: patch.billing_customer_id,
+    status: subscription.status,
+  };
 }

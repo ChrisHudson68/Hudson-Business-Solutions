@@ -22,6 +22,7 @@ import { AdminTenantsPage } from '../pages/admin/AdminTenantsPage.js';
 import { AdminTenantDetailPage } from '../pages/admin/AdminTenantDetailPage.js';
 import { AdminActivityPage } from '../pages/admin/AdminActivityPage.js';
 import { isPlatformAdminConfigured, verifyPlatformAdminCredentials } from '../services/platform-admin-auth.js';
+import { isStripeEnabled, resyncTenantBillingFromStripe } from '../services/stripe.js';
 
 type AdvancedBillingState =
   | 'trialing'
@@ -197,6 +198,12 @@ function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string
   if (updated === 'override') {
     return { tone: 'good', message: 'Advanced billing override was applied and logged.' };
   }
+  if (updated === 'resync') {
+    return { tone: 'good', message: 'Tenant billing was refreshed from Stripe.' };
+  }
+  if (updated === 'resync-no-subscription') {
+    return { tone: 'warn', message: 'Stripe customer was found, but no subscription was available to sync. The tenant remains blocked until billing starts.' };
+  }
   if (updated === 'impersonation-started') {
     return { tone: 'good', message: 'Impersonation session started in the tenant workspace.' };
   }
@@ -225,12 +232,53 @@ function resolveNotice(c: any): { tone: 'good' | 'warn' | 'bad'; message: string
   if (error === 'support-reason-too-long') {
     return { tone: 'bad', message: 'Support reason must be 200 characters or less.' };
   }
+  if (error === 'stripe-disabled') {
+    return { tone: 'bad', message: 'Stripe is disabled in this environment, so tenant billing cannot be refreshed from Stripe.' };
+  }
+  if (error === 'billing-exempt') {
+    return { tone: 'warn', message: 'This tenant is marked billing-exempt, so Stripe resync was skipped.' };
+  }
+  if (error === 'stripe-ids-missing') {
+    return { tone: 'warn', message: 'No Stripe customer or subscription IDs are saved for this tenant yet, so there was nothing to refresh.' };
+  }
+  if (error === 'resync-failed') {
+    return { tone: 'bad', message: 'Stripe billing refresh failed. Review Stripe configuration and tenant customer/subscription IDs, then try again.' };
+  }
 
   return undefined;
 }
 
 function redirectTenantDetail(tenantId: number, query: string) {
   return `/admin/tenants/${tenantId}${query ? `?${query}` : ''}`;
+}
+
+async function safeLogAdminBillingEvent(
+  db: ReturnType<typeof getDb>,
+  c: any,
+  payload: {
+    tenantId: number;
+    eventType: string;
+    description: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  try {
+    await logActivity(db, {
+      tenantId: payload.tenantId,
+      actorUserId: null,
+      eventType: payload.eventType,
+      entityType: 'tenant',
+      entityId: payload.tenantId,
+      description: payload.description,
+      ipAddress: resolveRequestIp(c.req.raw),
+      metadata: {
+        platform_admin_email: c.get('platformAdmin')?.email || null,
+        ...(payload.metadata || {}),
+      },
+    });
+  } catch (error) {
+    console.error('Platform admin billing activity log write failed:', error);
+  }
 }
 
 function titleizeEventType(value: string): string {
@@ -1242,6 +1290,106 @@ platformAdminRoutes.post('/admin/tenants/:id/billing/override', platformAdminReq
   );
 
   return c.redirect(redirectTenantDetail(tenantId, 'updated=override'));
+});
+
+
+platformAdminRoutes.post('/admin/tenants/:id/billing/resync', platformAdminRequired, async (c) => {
+  const db = getDb();
+  const tenantId = parseTenantId(c);
+
+  if (!tenantId) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const tenant = tenantQueries.findById(db, tenantId);
+  if (!tenant) {
+    return c.redirect('/admin/tenants?error=tenant-not-found');
+  }
+
+  const billingState = String((tenant as any).billing_state || '').trim().toLowerCase();
+  const isExemptTenant = Number((tenant as any).billing_exempt || 0) === 1
+    || billingState === 'billing_exempt'
+    || billingState === 'internal';
+
+  if (isExemptTenant) {
+    await safeLogAdminBillingEvent(db, c, {
+      tenantId,
+      eventType: 'admin.billing.resync',
+      description: 'Platform admin skipped Stripe billing refresh for an exempt/internal tenant.',
+      metadata: {
+        outcome: 'skipped',
+        reason: 'billing-exempt',
+        stripe_customer_id: (tenant as any).billing_customer_id || null,
+        stripe_subscription_id: (tenant as any).billing_subscription_id || null,
+        stripe_status: (tenant as any).billing_subscription_status || (tenant as any).billing_status || null,
+      },
+    });
+
+    return c.redirect(redirectTenantDetail(tenantId, 'error=billing-exempt'));
+  }
+
+  const hasStripeIds = Boolean((tenant as any).billing_customer_id || (tenant as any).billing_subscription_id);
+  if (!hasStripeIds) {
+    await safeLogAdminBillingEvent(db, c, {
+      tenantId,
+      eventType: 'admin.billing.resync',
+      description: 'Platform admin skipped Stripe billing refresh because the tenant has no saved Stripe IDs yet.',
+      metadata: {
+        outcome: 'skipped',
+        reason: 'stripe-ids-missing',
+      },
+    });
+
+    return c.redirect(redirectTenantDetail(tenantId, 'error=stripe-ids-missing'));
+  }
+
+  if (!isStripeEnabled()) {
+    return c.redirect(redirectTenantDetail(tenantId, 'error=stripe-disabled'));
+  }
+
+  try {
+    const result = await resyncTenantBillingFromStripe(db, tenant as any);
+
+    await safeLogAdminBillingEvent(db, c, {
+      tenantId,
+      eventType: 'admin.billing.resync',
+      description: `Platform admin refreshed tenant billing from Stripe (${result.reason}).`,
+      metadata: {
+        outcome: result.outcome,
+        reason: result.reason,
+        stripe_customer_id: result.customerId,
+        stripe_subscription_id: result.subscriptionId,
+        stripe_status: result.status,
+      },
+    });
+
+    if (result.reason === 'billing-exempt') {
+      return c.redirect(redirectTenantDetail(tenantId, 'error=billing-exempt'));
+    }
+
+    if (result.reason === 'stripe-ids-missing') {
+      return c.redirect(redirectTenantDetail(tenantId, 'error=stripe-ids-missing'));
+    }
+
+    if (result.reason === 'customer-without-subscription') {
+      return c.redirect(redirectTenantDetail(tenantId, 'updated=resync-no-subscription'));
+    }
+
+    return c.redirect(redirectTenantDetail(tenantId, 'updated=resync'));
+  } catch (error) {
+    console.error('Platform admin Stripe billing resync failed:', error);
+
+    await safeLogAdminBillingEvent(db, c, {
+      tenantId,
+      eventType: 'admin.billing.resync_failed',
+      description: 'Platform admin Stripe billing refresh failed.',
+      metadata: {
+        error_message: error instanceof Error ? error.message : String(error),
+      },
+    });
+
+    return c.redirect(redirectTenantDetail(tenantId, 'error=resync-failed'));
+  }
 });
 
 platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired, async (c) => {

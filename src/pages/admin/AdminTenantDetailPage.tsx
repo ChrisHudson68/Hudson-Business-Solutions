@@ -225,12 +225,23 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
             </div>
 
             <div style="display:grid; gap:10px;">
-              <form method="post" action={`/admin/tenants/${tenant.id}/billing/toggle-exempt`} style="margin:0;">
-                <input type="hidden" name="csrf_token" value={csrfToken} />
-                <button class="btn" type="submit">
-                  {isExempt ? 'Remove Internal / Exempt' : 'Mark Internal / Exempt'}
-                </button>
-              </form>
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <form method="post" action={`/admin/tenants/${tenant.id}/billing/resync`} style="margin:0;">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <button class="btn btn-primary" type="submit">Refresh from Stripe</button>
+                </form>
+
+                <form method="post" action={`/admin/tenants/${tenant.id}/billing/toggle-exempt`} style="margin:0;">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <button class="btn" type="submit">
+                    {isExempt ? 'Remove Internal / Exempt' : 'Mark Internal / Exempt'}
+                  </button>
+                </form>
+              </div>
+
+              <div class="muted" style="line-height:1.6;">
+                Refresh from Stripe is the owner-side recovery action for missed webhooks or stale tenant billing records. It does not create a subscription, but it will pull the latest Stripe customer and subscription status into the workspace.
+              </div>
 
               <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <form method="post" action={`/admin/tenants/${tenant.id}/billing/set-status`} style="margin:0;">
