@@ -728,7 +728,8 @@ function drawProposalCover(ctx: PdfContext): void {
     introY -= 14;
   }
 
-  ctx.y = boxY - 24;
+  const coverBottomY = Math.min(boxY, introY);
+  ctx.y = coverBottomY - 18;
 }
 
 function drawInfoGrid(ctx: PdfContext): void {
