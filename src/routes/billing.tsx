@@ -12,6 +12,7 @@ import {
   getStripePlanLabel,
   isStripeEnabled,
   isStripePortalEnabled,
+  resyncTenantBillingFromStripe,
 } from '../services/stripe.js';
 
 type NoticeTone = 'info' | 'good' | 'warn' | 'bad';
@@ -134,6 +135,15 @@ function resolveNotice(c: any): BillingNotice | undefined {
     };
   }
 
+  if (synced === 'manual') {
+    return {
+      tone: 'good',
+      title: 'Billing Synced',
+      message:
+        'The workspace billing record was refreshed from Stripe. Review the latest status and continue if any billing action is still needed.',
+    };
+  }
+
   if (portal === 'returned') {
     return {
       tone: 'info',
@@ -186,6 +196,15 @@ function resolveNotice(c: any): BillingNotice | undefined {
       message: stripeMessage
         ? `Stripe returned an error while starting the billing action: ${stripeMessage}`
         : 'Stripe could not start the billing action right now. Please try again in a moment.',
+    };
+  }
+
+  if (error === 'resync-unavailable') {
+    return {
+      tone: 'warn',
+      title: 'Nothing to Sync Yet',
+      message:
+        'This workspace does not have a Stripe customer or subscription record saved yet, so there is nothing to refresh from Stripe right now.',
     };
   }
 
@@ -349,6 +368,42 @@ billingRoutes.post('/billing/checkout', roleRequired('Admin'), async (c) => {
       typeof error?.message === 'string'
         ? error.message
         : 'Unknown Stripe error while creating checkout session.';
+
+    const safeMessage = encodeURIComponent(sanitizeStripeMessage(rawMessage));
+    return c.redirect(`/billing?error=stripe-request&stripe_message=${safeMessage}`);
+  }
+});
+
+billingRoutes.post('/billing/resync', roleRequired('Admin'), async (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
+
+  const db = getDb();
+  const billing = tenantQueries.getBillingSummary(db, tenant.id);
+
+  if (!billing) {
+    return c.text('Tenant not found', 404);
+  }
+
+  try {
+    const result = await resyncTenantBillingFromStripe(db, {
+      id: billing.id,
+      billing_customer_id: billing.billing_customer_id,
+      billing_subscription_id: billing.billing_subscription_id,
+    });
+
+    if (!result.ok && (result.code === 'no-remote-record' || result.code === 'customer-not-found' || result.code === 'subscription-not-found')) {
+      return c.redirect('/billing?error=resync-unavailable');
+    }
+
+    return c.redirect('/billing?synced=manual');
+  } catch (error: any) {
+    console.error('Stripe billing resync error:', error);
+
+    const rawMessage =
+      typeof error?.message === 'string'
+        ? error.message
+        : 'Unknown Stripe error while refreshing billing status.';
 
     const safeMessage = encodeURIComponent(sanitizeStripeMessage(rawMessage));
     return c.redirect(`/billing?error=stripe-request&stripe_message=${safeMessage}`);

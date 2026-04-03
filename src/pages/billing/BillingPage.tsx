@@ -175,6 +175,7 @@ export const BillingPage: FC<BillingPageProps> = ({
   const hasCustomer = !!tenant.billing_customer_id;
   const canUsePortal = isAdmin && stripeEnabled && stripePortalEnabled && hasCustomer;
   const canStartCheckout = isAdmin && stripeEnabled && effectiveState !== 'exempt' && effectiveState !== 'internal';
+  const canResync = isAdmin && stripeEnabled && (!!tenant.billing_customer_id || !!tenant.billing_subscription_id);
 
   return (
     <div>
@@ -249,6 +250,13 @@ export const BillingPage: FC<BillingPageProps> = ({
                 <form method="post" action="/billing/portal">
                   <input type="hidden" name="csrf_token" value={csrfToken} />
                   <button class="btn" type="submit">Open Billing Portal</button>
+                </form>
+              ) : null}
+
+              {canResync ? (
+                <form method="post" action="/billing/resync">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <button class="btn" type="submit">Refresh from Stripe</button>
                 </form>
               ) : null}
             </div>

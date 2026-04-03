@@ -436,7 +436,7 @@ authRoutes.get('/signup', (c) => {
   }
 
   const env = getEnv();
-  const inviteOnly = !!env.signupInviteCode;
+  const inviteOnly = !!env.launchCode;
 
   return c.html(
     renderPublicLayout(
@@ -456,7 +456,7 @@ authRoutes.post('/signup', async (c) => {
   }
 
   const env = getEnv();
-  const inviteOnly = !!env.signupInviteCode;
+  const inviteOnly = !!env.launchCode;
 
   const body = await c.req.parseBody();
   const companyName = (typeof body.company_name === 'string' ? body.company_name : '').trim();
@@ -481,7 +481,7 @@ authRoutes.post('/signup', async (c) => {
   else if (!adminName) error = 'Admin name is required.';
   else if (!isValidEmail(adminEmail)) error = 'Please enter a valid admin email.';
   else if (!password || password.length < 8) error = 'Password must be at least 8 characters.';
-  else if (inviteOnly && inviteCode !== env.signupInviteCode) error = 'Invite code is invalid.';
+  else if (inviteOnly && inviteCode !== env.launchCode) error = 'Invite code is invalid.';
 
   const db = getDb();
 

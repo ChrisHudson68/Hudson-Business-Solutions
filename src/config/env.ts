@@ -16,6 +16,7 @@ export interface AppConfig {
   maxLogoUploadBytes: number;
   maxReceiptUploadBytes: number;
   launchCode: string;
+  signupInviteCode: string;
   platformAdminEmail: string;
   platformAdminPassword: string;
   platformAdminPasswordHash: string;
@@ -219,6 +220,7 @@ export function getEnv(): AppConfig {
       25 * 1024 * 1024,
     ),
     launchCode: String(process.env.LAUNCH_CODE ?? '').trim(),
+    signupInviteCode: String(process.env.LAUNCH_CODE ?? '').trim(),
     platformAdminEmail: String(process.env.PLATFORM_ADMIN_EMAIL ?? '').trim().toLowerCase(),
     platformAdminPassword: String(process.env.PLATFORM_ADMIN_PASSWORD ?? '').trim(),
     platformAdminPasswordHash: String(process.env.PLATFORM_ADMIN_PASSWORD_HASH ?? '').trim(),
