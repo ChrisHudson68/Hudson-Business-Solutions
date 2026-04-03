@@ -80,6 +80,7 @@ const TOP_MARGIN = 44;
 const BOTTOM_MARGIN = 42;
 const CONTENT_WIDTH = PAGE_WIDTH - LEFT_MARGIN - RIGHT_MARGIN;
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const REPORT_TIME_ZONE = 'America/New_York';
 
 function resolveLogoFilePath(logoPath: string | null | undefined): string | null {
   const raw = String(logoPath || '').trim();
@@ -139,6 +140,7 @@ function formatDateTimeLabel(iso: string | null): string {
   return d.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: REPORT_TIME_ZONE,
   });
 }
 
@@ -319,7 +321,7 @@ export async function generateWeeklyHoursPdf(data: WeeklyHoursPdfData): Promise<
     drawText(page, data.tenant.name || 'Tenant', textLeft, cursorY - 22, bold, 18, accent);
     drawText(page, 'Weekly Employee Hours Report', textLeft, cursorY - 42, bold, 12, rgb(0.2, 0.24, 0.29));
     drawText(page, `Week: ${data.week.start} through ${data.week.end}`, textLeft, cursorY - 58, regular, 10, rgb(0.35, 0.39, 0.44));
-    drawText(page, `Generated: ${new Date().toLocaleString('en-US')}`, PAGE_WIDTH - RIGHT_MARGIN - 150, cursorY - 22, regular, 9, rgb(0.35, 0.39, 0.44));
+    drawText(page, `Generated: ${new Date().toLocaleString('en-US', { timeZone: REPORT_TIME_ZONE })}`, PAGE_WIDTH - RIGHT_MARGIN - 150, cursorY - 22, regular, 9, rgb(0.35, 0.39, 0.44));
 
     page.drawRectangle({ x: LEFT_MARGIN, y: cursorY - 82, width: CONTENT_WIDTH, height: 4, color: gold });
     cursorY -= 104;
