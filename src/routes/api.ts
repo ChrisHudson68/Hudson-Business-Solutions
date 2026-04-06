@@ -143,6 +143,16 @@ function sanitizeJobRowForApi(row: any, includeFinancials: boolean) {
   };
 }
 
+function sanitizeClockInJobRow(row: any) {
+  return {
+    id: row.id,
+    jobName: row.job_name,
+    jobCode: row.job_code,
+    clientName: row.client_name,
+    status: row.status,
+  };
+}
+
 function weekStart(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
   const day = d.getUTCDay();
@@ -505,6 +515,27 @@ apiRoutes.get('/api/jobs/:id', (c) => {
   return c.json({
     ok: true,
     job: sanitizeJobRowForApi(row, includeFinancials),
+  });
+});
+
+apiRoutes.get('/api/timesheets/clock-in-jobs', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) {
+    return resolved.response;
+  }
+
+  const { user, tenant } = resolved;
+  const clockAccessError = requireApiPermission(c, user, 'time.clock');
+  if (clockAccessError) {
+    return clockAccessError;
+  }
+
+  const db = getDb();
+  const rows = jobs.listWithFinancials(db, tenant.id, false);
+
+  return c.json({
+    ok: true,
+    jobs: rows.map((row) => sanitizeClockInJobRow(row)),
   });
 });
 
