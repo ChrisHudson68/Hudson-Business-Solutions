@@ -416,6 +416,96 @@ apiRoutes.get('/api/timesheets', (c) => {
     );
   }
 
+apiRoutes.post('/api/timesheets/clock-in', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+
+  const { user, tenant } = resolved;
+  const db = getDb();
+
+  const linkedEmployee = loadEmployeeForUser(db, user.id, tenant.id);
+
+  if (!linkedEmployee?.employee_id) {
+    return c.json({ ok: false, error: 'employee_required' }, 400);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const jobId = body.jobId ? Number(body.jobId) : null;
+
+  const active = loadActiveClockEntry(db, tenant.id, linkedEmployee.employee_id);
+  if (active) {
+    return c.json({ ok: false, error: 'already_clocked_in' }, 400);
+  }
+
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    INSERT INTO time_entries (
+      tenant_id,
+      employee_id,
+      job_id,
+      date,
+      clock_in_at,
+      entry_method,
+      approval_status
+    )
+    VALUES (?, ?, ?, ?, ?, 'clock', 'pending')
+  `).run(
+    tenant.id,
+    linkedEmployee.employee_id,
+    jobId,
+    now.slice(0, 10),
+    now
+  );
+
+  return c.json({
+    ok: true,
+    message: 'clocked_in',
+    clockInAt: now,
+  });
+});
+
+apiRoutes.post('/api/timesheets/clock-out', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+
+  const { user, tenant } = resolved;
+  const db = getDb();
+
+  const linkedEmployee = loadEmployeeForUser(db, user.id, tenant.id);
+
+  if (!linkedEmployee?.employee_id) {
+    return c.json({ ok: false, error: 'employee_required' }, 400);
+  }
+
+  const active = loadActiveClockEntry(db, tenant.id, linkedEmployee.employee_id);
+
+  if (!active) {
+    return c.json({ ok: false, error: 'not_clocked_in' }, 400);
+  }
+
+  const now = new Date();
+  const clockOutAt = now.toISOString();
+
+  const clockInDate = new Date(active.clock_in_at);
+  const diffHours = (now.getTime() - clockInDate.getTime()) / (1000 * 60 * 60);
+
+  const hours = Math.max(0, Number(diffHours.toFixed(2)));
+
+  db.prepare(`
+    UPDATE time_entries
+    SET clock_out_at = ?, hours = ?
+    WHERE id = ? AND tenant_id = ?
+  `).run(clockOutAt, hours, active.id, tenant.id);
+
+  return c.json({
+    ok: true,
+    message: 'clocked_out',
+    clockOutAt,
+    hours,
+  });
+});
+
   const start = /^\d{4}-\d{2}-\d{2}$/.test(requestedStart)
     ? weekStart(requestedStart)
     : weekStart(toIsoDate(new Date()));
