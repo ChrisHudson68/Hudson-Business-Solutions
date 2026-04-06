@@ -14,34 +14,18 @@ function resolveApiContext(c: any) {
   if (!tenant) {
     return {
       ok: false as const,
-      response: c.json(
-        {
-          ok: false,
-          error: 'tenant_required',
-        },
-        400,
-      ),
+      response: c.json({ ok: false, error: 'tenant_required' }, 400),
     };
   }
 
   if (!user) {
     return {
       ok: false as const,
-      response: c.json(
-        {
-          ok: false,
-          error: 'unauthorized',
-        },
-        401,
-      ),
+      response: c.json({ ok: false, error: 'unauthorized' }, 401),
     };
   }
 
-  return {
-    ok: true as const,
-    user,
-    tenant,
-  };
+  return { ok: true as const, user, tenant };
 }
 
 apiRoutes.get('/api/health', (c) => {
@@ -57,9 +41,7 @@ apiRoutes.get('/api/health', (c) => {
 
 apiRoutes.get('/api/me', (c) => {
   const resolved = resolveApiContext(c);
-  if (!resolved.ok) {
-    return resolved.response;
-  }
+  if (!resolved.ok) return resolved.response;
 
   const { user, tenant } = resolved;
 
@@ -83,9 +65,7 @@ apiRoutes.get('/api/me', (c) => {
 
 apiRoutes.get('/api/jobs', (c) => {
   const resolved = resolveApiContext(c);
-  if (!resolved.ok) {
-    return resolved.response;
-  }
+  if (!resolved.ok) return resolved.response;
 
   const { tenant } = resolved;
   const db = getDb();
@@ -93,51 +73,63 @@ apiRoutes.get('/api/jobs', (c) => {
 
   return c.json({
     ok: true,
-    jobs: rows.map((row) => {
-      const contractAmount = Number(row.contract_amount || 0);
-      const totalIncome = Number(row.total_income || 0);
-      const totalExpenses = Number(row.total_expenses || 0);
-      const totalLabor = Number(row.total_labor || 0);
-      const totalHours = Number(row.total_hours || 0);
-      const totalInvoiced = Number(row.total_invoiced || 0);
-      const totalCollected = Number(row.total_collected || 0);
-      const unpaidInvoices = Number(row.unpaid_invoices || 0);
-      const retainagePercent = Number(row.retainage_percent || 0);
+    jobs: rows.map((row) => ({
+      id: row.id,
+      jobName: row.job_name,
+      jobCode: row.job_code,
+      clientName: row.client_name,
+      status: row.status,
+      startDate: row.start_date,
+    })),
+  });
+});
 
-      const totalCosts = totalExpenses + totalLabor;
-      const profit = totalIncome - totalCosts;
-      const remainingContract = contractAmount - totalIncome;
-      const unpaidInvoiceBalance = Math.max(totalInvoiced - totalCollected, 0);
+apiRoutes.get('/api/jobs/:id', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
 
-      return {
-        id: row.id,
-        jobName: row.job_name,
-        jobCode: row.job_code,
-        jobDescription: row.job_description,
-        clientName: row.client_name,
-        soldBy: row.sold_by,
-        commissionPercent: Number(row.commission_percent || 0),
+  const { tenant } = resolved;
+  const db = getDb();
+  const jobId = Number(c.req.param('id'));
+
+  if (!jobId || isNaN(jobId)) {
+    return c.json({ ok: false, error: 'invalid_id' }, 400);
+  }
+
+  const row = jobs.listWithFinancials(db, tenant.id, jobId);
+
+  if (!row) {
+    return c.json({ ok: false, error: 'not_found' }, 404);
+  }
+
+  const contractAmount = Number(row.contract_amount || 0);
+  const totalIncome = Number(row.total_income || 0);
+  const totalExpenses = Number(row.total_expenses || 0);
+  const totalLabor = Number(row.total_labor || 0);
+  const totalCosts = totalExpenses + totalLabor;
+  const profit = totalIncome - totalCosts;
+
+  return c.json({
+    ok: true,
+    job: {
+      id: row.id,
+      jobName: row.job_name,
+      jobCode: row.job_code,
+      description: row.job_description,
+      clientName: row.client_name,
+      soldBy: row.sold_by,
+      commissionPercent: Number(row.commission_percent || 0),
+      status: row.status,
+      startDate: row.start_date,
+
+      financials: {
         contractAmount,
-        retainagePercent,
-        startDate: row.start_date,
-        status: row.status,
-        sourceEstimateId: row.source_estimate_id,
-        sourceEstimateNumber: row.source_estimate_number || null,
-        sourceEstimateCustomerName: row.source_estimate_customer_name || null,
-        financials: {
-          totalIncome,
-          totalExpenses,
-          totalLabor,
-          totalHours,
-          totalCosts,
-          totalInvoiced,
-          totalCollected,
-          unpaidInvoices,
-          unpaidInvoiceBalance,
-          remainingContract,
-          profit,
-        },
-      };
-    }),
+        totalIncome,
+        totalExpenses,
+        totalLabor,
+        totalCosts,
+        profit,
+      },
+    },
   });
 });
