@@ -12,6 +12,7 @@ import { csrfMiddleware } from './middleware/csrf.js';
 import { noCacheMiddleware } from './middleware/no-cache.js';
 import { billingRequired } from './middleware/billing.js';
 
+import { apiRoutes } from './routes/api.js';
 import { authRoutes } from './routes/auth.js';
 import { legalRoutes } from './routes/legal.js';
 import { platformAdminRoutes } from './routes/platform-admin.js';
@@ -94,6 +95,7 @@ app.get('/healthz', (c) =>
   }),
 );
 
+app.route('/', apiRoutes);
 app.route('/', stripeRoutes);
 app.route('/', authRoutes);
 app.route('/', legalRoutes);

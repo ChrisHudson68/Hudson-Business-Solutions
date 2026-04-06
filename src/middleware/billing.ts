@@ -8,6 +8,7 @@ const BILLING_ALLOWED_PREFIXES = [
   '/login',
   '/static',
   '/healthz',
+  '/api/health',
   '/support',
 ];
 
