@@ -98,6 +98,16 @@ async function readFormCsrfToken(c: any): Promise<string> {
   }
 }
 
+function readHeaderCsrfToken(c: any): string {
+  const headerToken =
+    c.req.header('x-csrf-token') ??
+    c.req.header('X-CSRF-Token') ??
+    c.req.header('x-xsrf-token') ??
+    c.req.header('X-XSRF-Token');
+
+  return typeof headerToken === 'string' ? headerToken.trim() : '';
+}
+
 export const csrfMiddleware = createMiddleware<{ Variables: CsrfVariables }>(
   async (c, next) => {
     const env = getEnv();
@@ -116,7 +126,8 @@ export const csrfMiddleware = createMiddleware<{ Variables: CsrfVariables }>(
       return;
     }
 
-    const formToken = await readFormCsrfToken(c);
+    const headerToken = readHeaderCsrfToken(c);
+    const formToken = headerToken || (await readFormCsrfToken(c));
 
     if (!formToken || !verifyCsrfToken(formToken, host, env.secretKey)) {
       return c.text(CSRF_ERROR_MESSAGE, 400);
