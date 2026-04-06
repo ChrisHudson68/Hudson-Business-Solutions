@@ -3,7 +3,7 @@ import type { AppEnv } from '../app-env.js';
 import { getEnv } from '../config/env.js';
 import { getDb } from '../db/connection.js';
 import * as jobs from '../db/queries/jobs.js';
-import { resolveRequestUser } from '../middleware/auth.js';
+import { resolveRequestUser, userHasPermission } from '../middleware/auth.js';
 
 export const apiRoutes = new Hono<AppEnv>();
 
@@ -42,6 +42,162 @@ function resolveApiContext(c: any) {
     user,
     tenant,
   };
+}
+
+function weekStart(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  const day = d.getUTCDay();
+  const diff = day === 0 ? 6 : day - 1;
+  d.setUTCDate(d.getUTCDate() - diff);
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function toIsoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function parsePositiveInt(value: unknown): number | null {
+  const raw = String(value ?? '').trim();
+  if (!/^\d+$/.test(raw)) return null;
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function loadEmployeeForUser(db: any, userId: number, tenantId: number) {
+  return db.prepare(`
+    SELECT u.employee_id, e.name AS employee_name
+    FROM users u
+    LEFT JOIN employees e
+      ON e.id = u.employee_id
+     AND e.tenant_id = u.tenant_id
+     AND e.active = 1
+    WHERE u.id = ? AND u.tenant_id = ?
+    LIMIT 1
+  `).get(userId, tenantId) as { employee_id: number | null; employee_name: string | null } | undefined;
+}
+
+function loadActiveClockEntry(db: any, tenantId: number, employeeId: number | null) {
+  if (!employeeId) return null;
+
+  return db.prepare(`
+    SELECT
+      t.id,
+      t.job_id,
+      COALESCE(j.job_name, 'General Time') AS job_name,
+      t.clock_in_at
+    FROM time_entries t
+    LEFT JOIN jobs j
+      ON j.id = t.job_id
+     AND j.tenant_id = t.tenant_id
+    WHERE t.tenant_id = ?
+      AND t.employee_id = ?
+      AND t.entry_method = 'clock'
+      AND t.clock_in_at IS NOT NULL
+      AND t.clock_out_at IS NULL
+    ORDER BY t.id DESC
+    LIMIT 1
+  `).get(tenantId, employeeId) as
+    | {
+        id: number;
+        job_id: number | null;
+        job_name: string;
+        clock_in_at: string;
+      }
+    | null;
+}
+
+function loadExistingEntriesForRange(
+  db: any,
+  tenantId: number,
+  employeeId: number,
+  start: string,
+  end: string,
+) {
+  return db.prepare(`
+    SELECT
+      t.id,
+      t.employee_id,
+      e.name AS employee_name,
+      t.date,
+      t.job_id,
+      COALESCE(j.job_name, 'Unassigned / General Time') AS job_name,
+      t.hours,
+      t.note,
+      t.clock_in_at,
+      t.clock_out_at,
+      t.entry_method,
+      t.approval_status,
+      CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM time_entry_edit_requests r
+          WHERE r.time_entry_id = t.id
+            AND r.tenant_id = t.tenant_id
+            AND r.status = 'pending'
+        )
+        THEN 1
+        ELSE 0
+      END AS has_pending_edit_request
+    FROM time_entries t
+    JOIN employees e
+      ON e.id = t.employee_id
+     AND e.tenant_id = t.tenant_id
+    LEFT JOIN jobs j
+      ON j.id = t.job_id
+     AND j.tenant_id = t.tenant_id
+    WHERE t.employee_id = ?
+      AND t.date BETWEEN ? AND ?
+      AND t.tenant_id = ?
+    ORDER BY t.date ASC, t.clock_in_at ASC, t.id ASC
+  `).all(employeeId, start, end, tenantId) as Array<{
+    id: number;
+    employee_id: number;
+    employee_name: string;
+    date: string;
+    job_id: number | null;
+    job_name: string;
+    hours: number;
+    note: string | null;
+    clock_in_at: string | null;
+    clock_out_at: string | null;
+    entry_method: string;
+    approval_status: string;
+    has_pending_edit_request: number;
+  }>;
+}
+
+function loadWeekApproval(db: any, tenantId: number, employeeId: number, start: string) {
+  return db.prepare(`
+    SELECT
+      w.id,
+      w.employee_id,
+      w.week_start,
+      w.approved_at,
+      w.note,
+      w.approved_by_user_id,
+      u.name AS approved_by_name
+    FROM time_entry_week_approvals w
+    LEFT JOIN users u ON u.id = w.approved_by_user_id AND u.tenant_id = w.tenant_id
+    WHERE w.tenant_id = ? AND w.employee_id = ? AND w.week_start = ?
+    LIMIT 1
+  `).get(tenantId, employeeId, start) as
+    | {
+        id: number;
+        employee_id: number;
+        week_start: string;
+        approved_at: string;
+        note: string | null;
+        approved_by_user_id: number;
+        approved_by_name: string | null;
+      }
+    | null;
 }
 
 apiRoutes.get('/api/health', (c) => {
@@ -220,5 +376,100 @@ apiRoutes.get('/api/jobs/:id', (c) => {
         profit,
       },
     },
+  });
+});
+
+apiRoutes.get('/api/timesheets', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) {
+    return resolved.response;
+  }
+
+  const { user, tenant } = resolved;
+  const db = getDb();
+
+  const requestedEmployeeId = parsePositiveInt(c.req.query('employeeId'));
+  const requestedStart = String(c.req.query('start') || '').trim();
+
+  const linkedEmployee = loadEmployeeForUser(db, user.id, tenant.id);
+  const isEmployeeUser = user.role === 'Employee';
+  const canApproveTime = userHasPermission(user, 'time.approve');
+  const canUseSelfClock = userHasPermission(user, 'time.clock') && !!linkedEmployee?.employee_id;
+
+  let employeeId: number | null = null;
+
+  if (isEmployeeUser) {
+    employeeId = linkedEmployee?.employee_id ?? null;
+  } else if (requestedEmployeeId) {
+    employeeId = requestedEmployeeId;
+  } else if (linkedEmployee?.employee_id) {
+    employeeId = linkedEmployee.employee_id;
+  }
+
+  if (!employeeId) {
+    return c.json(
+      {
+        ok: false,
+        error: 'employee_required',
+      },
+      400,
+    );
+  }
+
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(requestedStart)
+    ? weekStart(requestedStart)
+    : weekStart(toIsoDate(new Date()));
+  const end = addDays(start, 6);
+
+  const entries = loadExistingEntriesForRange(db, tenant.id, employeeId, start, end);
+  const weekApproval = loadWeekApproval(db, tenant.id, employeeId, start);
+  const activeClockEntry = canUseSelfClock
+    ? loadActiveClockEntry(db, tenant.id, linkedEmployee?.employee_id ?? null)
+    : null;
+
+  const totalHours = Number(
+    entries.reduce((sum, entry) => sum + Number(entry.hours || 0), 0).toFixed(2),
+  );
+
+  return c.json({
+    ok: true,
+    scope: {
+      employeeId,
+      start,
+      end,
+      isEmployeeUser,
+      canApproveTime,
+      canUseSelfClock,
+    },
+    summary: {
+      entryCount: entries.length,
+      totalHours,
+      weekApproved: !!weekApproval,
+      approvedAt: weekApproval?.approved_at || null,
+      approvedByName: weekApproval?.approved_by_name || null,
+    },
+    activeClockEntry: activeClockEntry
+      ? {
+          id: activeClockEntry.id,
+          jobId: activeClockEntry.job_id,
+          jobName: activeClockEntry.job_name,
+          clockInAt: activeClockEntry.clock_in_at,
+        }
+      : null,
+    timesheets: entries.map((entry) => ({
+      id: entry.id,
+      employeeId: entry.employee_id,
+      employeeName: entry.employee_name,
+      date: entry.date,
+      jobId: entry.job_id,
+      jobName: entry.job_name,
+      hours: Number(entry.hours || 0),
+      note: entry.note,
+      clockInAt: entry.clock_in_at,
+      clockOutAt: entry.clock_out_at,
+      entryMethod: entry.entry_method,
+      approvalStatus: entry.approval_status,
+      hasPendingEditRequest: Number(entry.has_pending_edit_request || 0) === 1,
+    })),
   });
 });
