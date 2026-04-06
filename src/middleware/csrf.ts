@@ -11,10 +11,15 @@ const CSRF_ERROR_MESSAGE =
   'Please refresh the page and try again.';
 
 const CSRF_TTL_SECONDS = 60 * 60 * 2;
-const CSRF_EXEMPT_PATHS = ['/stripe/webhook'];
+const CSRF_EXEMPT_PATHS = ['/stripe/webhook', '/api/mobile'];
 
 function isCsrfExemptPath(path: string): boolean {
   return CSRF_EXEMPT_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+function hasBearerAuthorization(c: any): boolean {
+  const authorization = c.req.header('Authorization') ?? c.req.header('authorization') ?? '';
+  return typeof authorization === 'string' && authorization.trim().toLowerCase().startsWith('bearer ');
 }
 
 function signCsrfPayload(payload: string, secretKey: string): string {
@@ -82,7 +87,7 @@ async function readFormCsrfToken(c: any): Promise<string> {
       contentType.includes('application/x-www-form-urlencoded') ||
       contentType.includes('multipart/form-data')
     ) {
-      const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+      const body = (await c.req.parseBody({ all: true })) as Record<string, unknown>;
       const tokenValue = body.csrf_token;
       if (typeof tokenValue === 'string') return tokenValue;
       if (Array.isArray(tokenValue)) {
@@ -108,32 +113,30 @@ function readHeaderCsrfToken(c: any): string {
   return typeof headerToken === 'string' ? headerToken.trim() : '';
 }
 
-export const csrfMiddleware = createMiddleware<{ Variables: CsrfVariables }>(
-  async (c, next) => {
-    const env = getEnv();
-    const method = c.req.method.toUpperCase();
-    const host = getRequestHost(c.req.header('Host'));
+export const csrfMiddleware = createMiddleware<{ Variables: CsrfVariables }>(async (c, next) => {
+  const env = getEnv();
+  const method = c.req.method.toUpperCase();
+  const host = getRequestHost(c.req.header('Host'));
 
-    if (isCsrfExemptPath(c.req.path)) {
-      c.set('csrfToken', createCsrfToken(host, env.secretKey));
-      await next();
-      return;
-    }
-
-    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
-      c.set('csrfToken', createCsrfToken(host, env.secretKey));
-      await next();
-      return;
-    }
-
-    const headerToken = readHeaderCsrfToken(c);
-    const formToken = headerToken || (await readFormCsrfToken(c));
-
-    if (!formToken || !verifyCsrfToken(formToken, host, env.secretKey)) {
-      return c.text(CSRF_ERROR_MESSAGE, 400);
-    }
-
+  if (isCsrfExemptPath(c.req.path) || hasBearerAuthorization(c)) {
     c.set('csrfToken', createCsrfToken(host, env.secretKey));
     await next();
-  },
-);
+    return;
+  }
+
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+    c.set('csrfToken', createCsrfToken(host, env.secretKey));
+    await next();
+    return;
+  }
+
+  const headerToken = readHeaderCsrfToken(c);
+  const formToken = headerToken || (await readFormCsrfToken(c));
+
+  if (!formToken || !verifyCsrfToken(formToken, host, env.secretKey)) {
+    return c.text(CSRF_ERROR_MESSAGE, 400);
+  }
+
+  c.set('csrfToken', createCsrfToken(host, env.secretKey));
+  await next();
+});
