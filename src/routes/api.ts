@@ -1,12 +1,10 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getEnv } from '../config/env.js';
+import { resolveRequestUser } from '../middleware/auth.js';
 
 export const apiRoutes = new Hono<AppEnv>();
 
-// -----------------------------------
-// Health Check
-// -----------------------------------
 apiRoutes.get('/api/health', (c) => {
   const env = getEnv();
 
@@ -18,11 +16,8 @@ apiRoutes.get('/api/health', (c) => {
   });
 });
 
-// -----------------------------------
-// Current User (AUTH REQUIRED)
-// -----------------------------------
 apiRoutes.get('/api/me', (c) => {
-  const user = c.get('user');
+  const user = c.get('user') ?? resolveRequestUser(c);
   const tenant = c.get('tenant');
 
   if (!user || !tenant) {
@@ -42,11 +37,13 @@ apiRoutes.get('/api/me', (c) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      permissions: user.permissions,
     },
     tenant: {
       id: tenant.id,
       name: tenant.name,
       subdomain: tenant.subdomain,
+      logoPath: tenant.logo_path,
     },
   });
 });
