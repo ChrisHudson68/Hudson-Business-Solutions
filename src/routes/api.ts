@@ -74,6 +74,75 @@ function requireManagerOrAdmin(c: any, user: { role: string }) {
   return null;
 }
 
+function requireApiPermission(c: any, user: { permissions?: string[] }, permission: string) {
+  if (!userHasPermission(user as any, permission)) {
+    return c.json(
+      {
+        ok: false,
+        error: 'forbidden',
+      },
+      403,
+    );
+  }
+
+  return null;
+}
+
+function sanitizeJobRowForApi(row: any, includeFinancials: boolean) {
+  const baseJob = {
+    id: row.id,
+    jobName: row.job_name,
+    jobCode: row.job_code,
+    jobDescription: row.job_description,
+    clientName: row.client_name,
+    startDate: row.start_date,
+    status: row.status,
+    sourceEstimateId: row.source_estimate_id,
+    sourceEstimateNumber: row.source_estimate_number || null,
+    sourceEstimateCustomerName: row.source_estimate_customer_name || null,
+  };
+
+  if (!includeFinancials) {
+    return baseJob;
+  }
+
+  const contractAmount = Number(row.contract_amount || 0);
+  const totalIncome = Number(row.total_income || 0);
+  const totalExpenses = Number(row.total_expenses || 0);
+  const totalLabor = Number(row.total_labor || 0);
+  const totalHours = Number(row.total_hours || 0);
+  const totalInvoiced = Number(row.total_invoiced || 0);
+  const totalCollected = Number(row.total_collected || 0);
+  const unpaidInvoices = Number(row.unpaid_invoices || 0);
+  const retainagePercent = Number(row.retainage_percent || 0);
+
+  const totalCosts = totalExpenses + totalLabor;
+  const profit = totalIncome - totalCosts;
+  const remainingContract = contractAmount - totalIncome;
+  const unpaidInvoiceBalance = Math.max(totalInvoiced - totalCollected, 0);
+
+  return {
+    ...baseJob,
+    soldBy: row.sold_by,
+    commissionPercent: Number(row.commission_percent || 0),
+    contractAmount,
+    retainagePercent,
+    financials: {
+      totalIncome,
+      totalExpenses,
+      totalLabor,
+      totalHours,
+      totalCosts,
+      totalInvoiced,
+      totalCollected,
+      unpaidInvoices,
+      unpaidInvoiceBalance,
+      remainingContract,
+      profit,
+    },
+  };
+}
+
 function weekStart(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
   const day = d.getUTCDay();
@@ -379,58 +448,19 @@ apiRoutes.get('/api/jobs', (c) => {
     return resolved.response;
   }
 
-  const { tenant } = resolved;
+  const { user, tenant } = resolved;
+  const jobsAccessError = requireApiPermission(c, user, 'jobs.view');
+  if (jobsAccessError) {
+    return jobsAccessError;
+  }
+
+  const includeFinancials = userHasPermission(user, 'financials.view');
   const db = getDb();
   const rows = jobs.listWithFinancials(db, tenant.id, false);
 
   return c.json({
     ok: true,
-    jobs: rows.map((row) => {
-      const contractAmount = Number(row.contract_amount || 0);
-      const totalIncome = Number(row.total_income || 0);
-      const totalExpenses = Number(row.total_expenses || 0);
-      const totalLabor = Number(row.total_labor || 0);
-      const totalHours = Number(row.total_hours || 0);
-      const totalInvoiced = Number(row.total_invoiced || 0);
-      const totalCollected = Number(row.total_collected || 0);
-      const unpaidInvoices = Number(row.unpaid_invoices || 0);
-      const retainagePercent = Number(row.retainage_percent || 0);
-
-      const totalCosts = totalExpenses + totalLabor;
-      const profit = totalIncome - totalCosts;
-      const remainingContract = contractAmount - totalIncome;
-      const unpaidInvoiceBalance = Math.max(totalInvoiced - totalCollected, 0);
-
-      return {
-        id: row.id,
-        jobName: row.job_name,
-        jobCode: row.job_code,
-        jobDescription: row.job_description,
-        clientName: row.client_name,
-        soldBy: row.sold_by,
-        commissionPercent: Number(row.commission_percent || 0),
-        contractAmount,
-        retainagePercent,
-        startDate: row.start_date,
-        status: row.status,
-        sourceEstimateId: row.source_estimate_id,
-        sourceEstimateNumber: row.source_estimate_number || null,
-        sourceEstimateCustomerName: row.source_estimate_customer_name || null,
-        financials: {
-          totalIncome,
-          totalExpenses,
-          totalLabor,
-          totalHours,
-          totalCosts,
-          totalInvoiced,
-          totalCollected,
-          unpaidInvoices,
-          unpaidInvoiceBalance,
-          remainingContract,
-          profit,
-        },
-      };
-    }),
+    jobs: rows.map((row) => sanitizeJobRowForApi(row, includeFinancials)),
   });
 });
 
@@ -440,7 +470,13 @@ apiRoutes.get('/api/jobs/:id', (c) => {
     return resolved.response;
   }
 
-  const { tenant } = resolved;
+  const { user, tenant } = resolved;
+  const jobsAccessError = requireApiPermission(c, user, 'jobs.view');
+  if (jobsAccessError) {
+    return jobsAccessError;
+  }
+
+  const includeFinancials = userHasPermission(user, 'financials.view');
   const db = getDb();
   const jobId = Number(c.req.param('id'));
 
@@ -466,52 +502,9 @@ apiRoutes.get('/api/jobs/:id', (c) => {
     );
   }
 
-  const contractAmount = Number(row.contract_amount || 0);
-  const totalIncome = Number(row.total_income || 0);
-  const totalExpenses = Number(row.total_expenses || 0);
-  const totalLabor = Number(row.total_labor || 0);
-  const totalHours = Number(row.total_hours || 0);
-  const totalInvoiced = Number(row.total_invoiced || 0);
-  const totalCollected = Number(row.total_collected || 0);
-  const unpaidInvoices = Number(row.unpaid_invoices || 0);
-  const retainagePercent = Number(row.retainage_percent || 0);
-
-  const totalCosts = totalExpenses + totalLabor;
-  const profit = totalIncome - totalCosts;
-  const remainingContract = contractAmount - totalIncome;
-  const unpaidInvoiceBalance = Math.max(totalInvoiced - totalCollected, 0);
-
   return c.json({
     ok: true,
-    job: {
-      id: row.id,
-      jobName: row.job_name,
-      jobCode: row.job_code,
-      jobDescription: row.job_description,
-      clientName: row.client_name,
-      soldBy: row.sold_by,
-      commissionPercent: Number(row.commission_percent || 0),
-      contractAmount,
-      retainagePercent,
-      startDate: row.start_date,
-      status: row.status,
-      sourceEstimateId: row.source_estimate_id,
-      sourceEstimateNumber: row.source_estimate_number || null,
-      sourceEstimateCustomerName: row.source_estimate_customer_name || null,
-      financials: {
-        totalIncome,
-        totalExpenses,
-        totalLabor,
-        totalHours,
-        totalCosts,
-        totalInvoiced,
-        totalCollected,
-        unpaidInvoices,
-        unpaidInvoiceBalance,
-        remainingContract,
-        profit,
-      },
-    },
+    job: sanitizeJobRowForApi(row, includeFinancials),
   });
 });
 
