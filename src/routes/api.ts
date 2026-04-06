@@ -1,9 +1,25 @@
+import path from 'node:path';
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getEnv } from '../config/env.js';
 import { getDb } from '../db/connection.js';
 import * as jobs from '../db/queries/jobs.js';
+import * as expenses from '../db/queries/expenses.js';
+import * as receiptOcrResults from '../db/queries/receipt-ocr-results.js';
 import { resolveRequestUser, userHasPermission } from '../middleware/auth.js';
+import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import {
+  saveUploadedFile,
+  deleteUploadedFile,
+  RECEIPT_EXTENSIONS,
+  RECEIPT_MIME_TYPES,
+  buildTenantReceiptUploadDir,
+  buildTenantReceiptStoredPath,
+  resolveUploadedFilePath,
+} from '../services/file-upload.js';
+import { hasUsefulReceiptSuggestions, runReceiptOcr } from '../services/receipt-ocr.js';
+
+const receiptRootDir = path.join(getEnv().uploadDir, 'receipts');
 
 export const apiRoutes = new Hono<AppEnv>();
 
@@ -44,6 +60,20 @@ function resolveApiContext(c: any) {
   };
 }
 
+function requireManagerOrAdmin(c: any, user: { role: string }) {
+  if (user.role !== 'Admin' && user.role !== 'Manager') {
+    return c.json(
+      {
+        ok: false,
+        error: 'forbidden',
+      },
+      403,
+    );
+  }
+
+  return null;
+}
+
 function weekStart(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
   const day = d.getUTCDay();
@@ -68,6 +98,105 @@ function parsePositiveInt(value: unknown): number | null {
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function isRealIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const [year, month, day] = value.split('-').map((part) => Number.parseInt(part, 10));
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() + 1 === month &&
+    date.getUTCDate() === day
+  );
+}
+
+function requireDate(value: unknown, fieldLabel: string): string {
+  const raw = String(value ?? '').trim();
+
+  if (!raw) {
+    throw new Error(`${fieldLabel} is required.`);
+  }
+
+  if (!isRealIsoDate(raw)) {
+    throw new Error(`${fieldLabel} must be a valid date.`);
+  }
+
+  return raw;
+}
+
+function parsePositiveMoney(value: unknown, fieldLabel: string): number {
+  const raw = String(value ?? '').trim();
+
+  if (!raw) {
+    throw new Error(`${fieldLabel} is required.`);
+  }
+
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
+    throw new Error(`${fieldLabel} must be a valid number with up to 2 decimal places.`);
+  }
+
+  const parsed = Number.parseFloat(raw);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${fieldLabel} must be greater than 0.`);
+  }
+
+  return Number(parsed.toFixed(2));
+}
+
+function requireText(value: unknown, fieldLabel: string, maxLength: number): string {
+  const raw = String(value ?? '').trim();
+
+  if (!raw) {
+    throw new Error(`${fieldLabel} is required.`);
+  }
+
+  if (raw.length > maxLength) {
+    throw new Error(`${fieldLabel} must be ${maxLength} characters or less.`);
+  }
+
+  return raw;
+}
+
+function optionalText(value: unknown, fieldLabel: string, maxLength: number): string | undefined {
+  const raw = String(value ?? '').trim();
+
+  if (!raw) return undefined;
+
+  if (raw.length > maxLength) {
+    throw new Error(`${fieldLabel} must be ${maxLength} characters or less.`);
+  }
+
+  return raw;
+}
+
+function parsePendingReceiptFilename(value: unknown, tenantId: number): string | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+
+  const parts = raw.split('/');
+  if (parts.length < 2) return null;
+
+  const pathTenantId = Number.parseInt(parts[0] || '0', 10);
+  if (!Number.isInteger(pathTenantId) || pathTenantId !== tenantId) {
+    return null;
+  }
+
+  try {
+    return buildTenantReceiptStoredPath(tenantId, parts.slice(1).join('/'));
+  } catch {
+    return null;
+  }
+}
+
+function buildReceiptOcrErrorMessage(errorMessage?: string | null): string | null {
+  const clean = String(errorMessage ?? '').trim();
+  return clean ? clean : null;
 }
 
 function loadEmployeeForUser(db: any, userId: number, tenantId: number) {
@@ -647,4 +776,188 @@ apiRoutes.post('/api/timesheets/clock-out', async (c) => {
       note,
     },
   });
+});
+
+apiRoutes.post('/api/expenses/upload-receipt', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) {
+    return resolved.response;
+  }
+
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) {
+    return accessError;
+  }
+
+  const db = getDb();
+  const env = getEnv();
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const file = body.receipt;
+
+  if (!(file instanceof File) || file.size <= 0) {
+    return c.json(
+      {
+        ok: false,
+        error: 'receipt_required',
+      },
+      400,
+    );
+  }
+
+  const pendingReceiptFilename =
+    parsePendingReceiptFilename(body.pendingReceiptFilename, tenant.id) ??
+    parsePendingReceiptFilename(body.pending_receipt_filename, tenant.id);
+
+  try {
+    const tenantReceiptDir = buildTenantReceiptUploadDir(receiptRootDir, tenant.id);
+    const savedFilename = await saveUploadedFile(file, tenantReceiptDir, {
+      allowedExtensions: RECEIPT_EXTENSIONS,
+      allowedMimeTypes: RECEIPT_MIME_TYPES,
+      maxBytes: env.maxReceiptUploadBytes,
+    });
+
+    const receiptFilename = buildTenantReceiptStoredPath(tenant.id, savedFilename);
+
+    if (pendingReceiptFilename && pendingReceiptFilename !== receiptFilename) {
+      deleteUploadedFile(pendingReceiptFilename, receiptRootDir);
+    }
+
+    const absoluteReceiptPath = resolveUploadedFilePath(receiptFilename, receiptRootDir);
+    const ocrResult = await runReceiptOcr(absoluteReceiptPath);
+
+    receiptOcrResults.upsertByReceipt(db, tenant.id, receiptFilename, {
+      status: ocrResult.status,
+      rawText: ocrResult.rawText,
+      parsed: ocrResult.parsed,
+      errorMessage: ocrResult.errorMessage,
+      ocrEngine: ocrResult.ocrEngine,
+    });
+
+    return c.json({
+      ok: true,
+      receipt: {
+        receiptFilename,
+        status: ocrResult.status,
+        ocrEngine: ocrResult.ocrEngine,
+        errorMessage: buildReceiptOcrErrorMessage(ocrResult.errorMessage),
+        hasSuggestions: hasUsefulReceiptSuggestions(ocrResult.parsed),
+        parsed: ocrResult.parsed,
+      },
+    });
+  } catch (error) {
+    return c.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Unable to upload receipt.',
+      },
+      400,
+    );
+  }
+});
+
+apiRoutes.post('/api/expenses', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) {
+    return resolved.response;
+  }
+
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) {
+    return accessError;
+  }
+
+  const db = getDb();
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+
+  try {
+    const jobId = parsePositiveInt(body.jobId);
+    if (!jobId) {
+      throw new Error('Job is required.');
+    }
+
+    const job = jobs.findById(db, jobId, tenant.id);
+    if (!job || job.archived_at) {
+      return c.json(
+        {
+          ok: false,
+          error: 'job_not_found',
+        },
+        404,
+      );
+    }
+
+    const category = requireText(body.category, 'Category', 120);
+    const vendor = optionalText(body.vendor, 'Vendor', 120);
+    const amount = parsePositiveMoney(body.amount, 'Amount');
+    const date = requireDate(body.date, 'Date');
+    const receiptFilename =
+      parsePendingReceiptFilename(body.receiptFilename, tenant.id) ??
+      parsePendingReceiptFilename(body.receipt_filename, tenant.id) ??
+      undefined;
+
+    const expenseId = expenses.create(db, tenant.id, {
+      job_id: jobId,
+      category,
+      vendor,
+      amount,
+      date,
+      receipt_filename: receiptFilename,
+    });
+
+    if (receiptFilename) {
+      receiptOcrResults.attachToExpense(db, tenant.id, receiptFilename, expenseId);
+    }
+
+    if (user && receiptFilename) {
+      logActivity(db, {
+        tenantId: tenant.id,
+        actorUserId: user.id,
+        eventType: 'expense.receipt_uploaded',
+        entityType: 'expense',
+        entityId: expenseId,
+        description: `${user.name} uploaded a receipt for expense ${category} on job ${job.job_name}.`,
+        metadata: {
+          job_id: job.id,
+          job_name: job.job_name,
+          category,
+          vendor: vendor ?? null,
+          amount,
+          date,
+          receipt_filename: receiptFilename,
+          receipt_ocr_status:
+            receiptOcrResults.findLatestByReceipt(db, tenant.id, receiptFilename)?.status ?? null,
+        },
+        ipAddress: resolveRequestIp(c),
+      });
+    }
+
+    const savedExpense = expenses.findById(db, expenseId, tenant.id);
+    const ocrRecord = receiptFilename
+      ? receiptOcrResults.findLatestByReceipt(db, tenant.id, receiptFilename)
+      : undefined;
+
+    return c.json({
+      ok: true,
+      expense: {
+        id: expenseId,
+        jobId: savedExpense?.job_id ?? jobId,
+        category: savedExpense?.category ?? category,
+        vendor: savedExpense?.vendor ?? vendor ?? null,
+        amount: Number(savedExpense?.amount ?? amount),
+        date: savedExpense?.date ?? date,
+        receiptFilename: savedExpense?.receipt_filename ?? receiptFilename ?? null,
+        receiptOcrStatus: ocrRecord?.status ?? null,
+      },
+    });
+  } catch (error) {
+    return c.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Unable to save expense entry.',
+      },
+      400,
+    );
+  }
 });
