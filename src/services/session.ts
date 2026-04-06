@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 export const SESSION_COOKIE_NAME = 'hudson-business-solutions_session';
 export const IMPERSONATION_TOKEN_TTL_SECONDS = 60 * 5;
+export const MOBILE_API_TOKEN_PREFIX = 'hbsm_';
 
 type SessionPayload = {
   userId: number;
@@ -51,6 +52,13 @@ function signImpersonationPayload(payloadB64: string, secretKey: string): string
     .createHmac('sha256', `${secretKey}:impersonation-token`)
     .update(payloadB64)
     .digest('base64url');
+}
+
+function signMobileApiTokenValue(tokenValue: string, secretKey: string): string {
+  return crypto
+    .createHmac('sha256', `${secretKey}:mobile-api-token`)
+    .update(tokenValue)
+    .digest('hex');
 }
 
 function parseSignedValue<T>(
@@ -213,4 +221,34 @@ export function getImpersonationToken(cookieValue: string, secretKey: string): I
       ? payload.redirectTo.trim()
       : null,
   };
+}
+
+export function createMobileApiToken(secretKey: string): {
+  token: string;
+  tokenHash: string;
+} {
+  const randomValue = crypto.randomBytes(32).toString('base64url');
+  const token = `${MOBILE_API_TOKEN_PREFIX}${randomValue}`;
+
+  return {
+    token,
+    tokenHash: signMobileApiTokenValue(token, secretKey),
+  };
+}
+
+export function hashMobileApiToken(token: string, secretKey: string): string {
+  return signMobileApiTokenValue(token, secretKey);
+}
+
+export function extractBearerToken(authorizationHeader: string | undefined): string | null {
+  const value = String(authorizationHeader ?? '').trim();
+  if (!value) return null;
+
+  const match = /^Bearer\s+(.+)$/i.exec(value);
+  if (!match) return null;
+
+  const token = String(match[1] ?? '').trim();
+  if (!token) return null;
+
+  return token;
 }

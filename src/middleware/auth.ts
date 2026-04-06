@@ -1,9 +1,15 @@
 import { createMiddleware } from 'hono/factory';
 import { getCookie, deleteCookie } from 'hono/cookie';
-import { getSessionUserId, SESSION_COOKIE_NAME } from '../services/session.js';
+import {
+  extractBearerToken,
+  getSessionUserId,
+  hashMobileApiToken,
+  SESSION_COOKIE_NAME,
+} from '../services/session.js';
 import { getDb } from '../db/connection.js';
 import { getEnv } from '../config/env.js';
 import type { TenantVariables } from './tenant.js';
+import * as mobileApiTokens from '../db/queries/mobile-api-tokens.js';
 import {
   getResolvedUserPermissions,
   hasAllPermissions,
@@ -24,7 +30,7 @@ export type AuthVariables = {
   user: AuthenticatedUser | null;
 };
 
-function resolveUser(
+function resolveUserFromSessionCookie(
   cookieValue: string | undefined,
   secretKey: string,
   tenantId: number | undefined,
@@ -58,6 +64,37 @@ function resolveUser(
   };
 }
 
+function resolveUserFromBearerToken(
+  authorizationHeader: string | undefined,
+  secretKey: string,
+  tenantId: number | undefined,
+): AuthenticatedUser | null {
+  const token = extractBearerToken(authorizationHeader);
+  if (!token) return null;
+
+  const db = getDb();
+  const tokenHash = hashMobileApiToken(token, secretKey);
+  const row = mobileApiTokens.findActiveUserByTokenHash(db, tokenHash);
+
+  if (!row) return null;
+  if (row.active !== 1) return null;
+  if (tenantId !== undefined && row.tenant_id !== tenantId) return null;
+
+  mobileApiTokens.touchLastUsed(db, row.token_id);
+
+  const normalizedRole = normalizeUserRole(row.role);
+  const resolvedPermissions = getResolvedUserPermissions(normalizedRole, row.tenant_id, row.user_id, db);
+
+  return {
+    id: row.user_id,
+    name: row.name,
+    email: row.email,
+    role: normalizedRole,
+    tenant_id: row.tenant_id,
+    permissions: resolvedPermissions.permissions,
+  };
+}
+
 function clearSessionCookie(c: any) {
   const env = getEnv();
 
@@ -70,24 +107,39 @@ function clearSessionCookie(c: any) {
 }
 
 export function resolveRequestUser(c: any): AuthenticatedUser | null {
-  const env = getEnv();
-  const cookie = getCookie(c, SESSION_COOKIE_NAME);
-
-  if (!cookie) {
-    return null;
+  const cachedUser = c.get('user');
+  if (cachedUser) {
+    return cachedUser;
   }
 
+  const env = getEnv();
   const tenant = c.get('tenant');
   const tenantId = tenant?.id;
-  const user = resolveUser(cookie, env.secretKey, tenantId);
 
-  if (!user) {
+  const cookie = getCookie(c, SESSION_COOKIE_NAME);
+  if (cookie) {
+    const userFromCookie = resolveUserFromSessionCookie(cookie, env.secretKey, tenantId);
+
+    if (userFromCookie) {
+      c.set('user', userFromCookie);
+      return userFromCookie;
+    }
+
     clearSessionCookie(c);
-    return null;
   }
 
-  c.set('user', user);
-  return user;
+  const userFromBearer = resolveUserFromBearerToken(
+    c.req.header('Authorization'),
+    env.secretKey,
+    tenantId,
+  );
+
+  if (userFromBearer) {
+    c.set('user', userFromBearer);
+    return userFromBearer;
+  }
+
+  return null;
 }
 
 export const loginRequired = createMiddleware<{

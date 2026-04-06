@@ -20,12 +20,23 @@ export type TenantVariables = {
   subdomain: string | null;
 };
 
+function normalizeTenantSubdomain(value: string | null | undefined): string | null {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (!/^[a-z0-9-]+$/.test(normalized)) return null;
+  return normalized;
+}
+
 export const tenantMiddleware = createMiddleware<{ Variables: TenantVariables }>(
   async (c, next) => {
     const baseDomain = (process.env.BASE_DOMAIN ?? 'localhost').toLowerCase().trim();
 
     const rawHost = c.req.header('Host') ?? '';
     const host = rawHost.split(':')[0].toLowerCase();
+
+    const headerTenant =
+      normalizeTenantSubdomain(c.req.header('X-Tenant-Subdomain')) ??
+      normalizeTenantSubdomain(c.req.header('x-tenant-subdomain'));
 
     let subdomain: string | null = null;
 
@@ -35,8 +46,12 @@ export const tenantMiddleware = createMiddleware<{ Variables: TenantVariables }>
       const suffix = `.${baseDomain}`;
       if (host.endsWith(suffix)) {
         const sub = host.slice(0, -suffix.length);
-        subdomain = sub || null;
+        subdomain = normalizeTenantSubdomain(sub);
       }
+    }
+
+    if (!subdomain && headerTenant) {
+      subdomain = headerTenant;
     }
 
     c.set('subdomain', subdomain);

@@ -18,6 +18,7 @@ import { SignupPage } from '../pages/auth/SignupPage.js';
 import { PickTenantPage } from '../pages/auth/PickTenantPage.js';
 import { LandingPage } from '../pages/marketing/LandingPage.js';
 import { getEnv } from '../config/env.js';
+import { getResolvedUserPermissions, normalizeUserRole } from '../services/permissions.js';
 
 export const authRoutes = new Hono<AppEnv>();
 
@@ -633,12 +634,16 @@ authRoutes.use('*', async (c, next) => {
     return c.redirect('/login');
   }
 
+  const normalizedRole = normalizeUserRole(user.role);
+  const resolvedPermissions = getResolvedUserPermissions(normalizedRole, user.tenant_id, user.id, db);
+
   c.set('user', {
     id: user.id,
     tenant_id: user.tenant_id,
     name: user.name,
     email: user.email,
-    role: user.role,
+    role: normalizedRole,
+    permissions: resolvedPermissions.permissions,
     isImpersonating: !!session.platformAdminEmail,
     impersonationContext: session.platformAdminEmail ? {
       platformAdminEmail: session.platformAdminEmail,
