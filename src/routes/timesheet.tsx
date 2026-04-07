@@ -135,6 +135,16 @@ interface AdminHoursDetailEntry {
   lunch_deduction_exempt: number;
 }
 
+interface AdminEditTimeEntry {
+  id: number;
+  employee_id: number;
+  date: string;
+  job_id: number | null;
+  note: string | null;
+  clock_in_at: string | null;
+  clock_out_at: string | null;
+}
+
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
   return c.html(
     <AppLayout
@@ -288,19 +298,6 @@ function normalizeNote(value: unknown): string | null {
   }
 
   return note;
-}
-
-function normalizeEditReason(value: unknown): string {
-  const reason = String(value ?? '').trim();
-  if (!reason) {
-    throw new Error('Please enter a reason for this admin edit.');
-  }
-
-  if (reason.length > 500) {
-    throw new Error('Edit reason must be 500 characters or less.');
-  }
-
-  return reason;
 }
 
 function resolveClientNowUtc(value: unknown): string {
@@ -1449,7 +1446,8 @@ timesheetRoutes.post('/timeclock/resolve-open/:id', permissionRequired('time.vie
   }
 });
 
-timesheetRoutes.post('/timeclock/admin-edit/:id', permissionRequired('time.approve'), async (c) => {
+
+timesheetRoutes.post('/timesheet/admin-edit-entry/:id', permissionRequired('time.approve'), async (c) => {
   const tenant = c.get('tenant');
   const currentUser = c.get('user');
   if (!tenant || !currentUser) return c.redirect('/login');
@@ -1460,57 +1458,59 @@ timesheetRoutes.post('/timeclock/admin-edit/:id', permissionRequired('time.appro
   }
 
   const db = getDb();
-  const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
-  const fallbackEmployeeId = parsePositiveInt(body.employee_id);
-  const fallbackStart = typeof body.start === 'string' && isRealIsoDate(body.start) ? weekStart(body.start) : undefined;
-
-  const entry = db.prepare(`
-    SELECT id, employee_id, job_id, date, clock_in_at, clock_out_at, note
-    FROM time_entries
-    WHERE id = ? AND tenant_id = ?
-    LIMIT 1
-  `).get(timeEntryId, tenant.id) as
-    | {
-        id: number;
-        employee_id: number;
-        job_id: number | null;
-        date: string;
-        clock_in_at: string | null;
-        clock_out_at: string | null;
-        note: string | null;
-      }
-    | undefined;
-
-  if (!entry) {
-    return c.text('Time entry not found', 404);
-  }
 
   try {
-    assertWeekNotApproved(db, tenant.id, entry.employee_id, weekStart(entry.date));
+    const entry = db.prepare(`
+      SELECT id, employee_id, date, job_id, note, clock_in_at, clock_out_at
+      FROM time_entries
+      WHERE id = ? AND tenant_id = ?
+      LIMIT 1
+    `).get(timeEntryId, tenant.id) as AdminEditTimeEntry | undefined;
 
+    if (!entry) {
+      return c.text('Time entry not found', 404);
+    }
+
+    assertWeekNotApproved(
+      db,
+      tenant.id,
+      entry.employee_id,
+      weekStart(entry.date),
+      'This week has already been approved, so the entry cannot be edited until the week is reopened.',
+    );
+
+    const body = await c.req.parseBody({ all: true }) as Record<string, unknown>;
+    const jobId = parsePositiveInt(body.job_id);
     const clockInUtc = String(body.clock_in_utc ?? '').trim();
     const clockOutUtc = String(body.clock_out_utc ?? '').trim();
-    const jobIdRaw = String(body.job_id ?? '').trim();
     const note = normalizeNote(body.note);
-    const editReason = normalizeEditReason(body.edit_reason);
-
-    if (!entry.clock_in_at || !entry.clock_out_at) {
-      throw new Error('Only completed time entries can be edited here. Use Close Entry for open clock entries.');
-    }
+    const editReason = String(body.edit_reason ?? '').trim();
 
     if (!isValidIsoDateTime(clockInUtc) || !isValidIsoDateTime(clockOutUtc)) {
       throw new Error('Please provide valid clock in and clock out values.');
     }
 
-    const jobId = jobIdRaw ? parsePositiveInt(jobIdRaw) : null;
-    if (jobIdRaw && !jobId) {
-      throw new Error('Selected job was not found.');
+    if (!editReason) {
+      throw new Error('Please provide an admin edit reason.');
     }
+
+    if (editReason.length > 500) {
+      throw new Error('Admin edit reason must be 500 characters or less.');
+    }
+
     if (jobId) {
       ensureJobExists(db, jobId, tenant.id);
     }
 
-    const editedDate = toIsoDate(new Date(clockInUtc));
+    const newDate = toIsoDate(new Date(clockInUtc));
+    if (!isRealIsoDate(newDate)) {
+      throw new Error('Clock in time produced an invalid work date.');
+    }
+
+    if (weekStart(newDate) !== weekStart(entry.date)) {
+      throw new Error('Admin direct edits must stay within the same week. Move the entry manually if it belongs to a different week.');
+    }
+
     const rawHours = hoursBetween(clockInUtc, clockOutUtc);
     const { rate, lunchDeductionExempt } = getEmployeeCompensationSettings(db, entry.employee_id, tenant.id);
     const approvedHours = applyAutomaticLunchDeduction(rawHours, lunchDeductionExempt);
@@ -1534,7 +1534,7 @@ timesheetRoutes.post('/timeclock/admin-edit/:id', permissionRequired('time.appro
       WHERE id = ? AND tenant_id = ?
     `).run(
       jobId,
-      editedDate,
+      newDate,
       clockInUtc,
       clockOutUtc,
       approvedHours,
@@ -1543,7 +1543,7 @@ timesheetRoutes.post('/timeclock/admin-edit/:id', permissionRequired('time.appro
       currentUser.id,
       currentUser.id,
       editReason,
-      timeEntryId,
+      entry.id,
       tenant.id,
     );
 
@@ -1552,41 +1552,64 @@ timesheetRoutes.post('/timeclock/admin-edit/:id', permissionRequired('time.appro
       SET status = 'rejected',
           reviewed_by_user_id = ?,
           reviewed_at = CURRENT_TIMESTAMP
-      WHERE time_entry_id = ? AND tenant_id = ? AND status = 'pending'
-    `).run(currentUser.id, timeEntryId, tenant.id);
+      WHERE time_entry_id = ?
+        AND tenant_id = ?
+        AND status = 'pending'
+    `).run(currentUser.id, entry.id, tenant.id);
 
     logActivity(db, {
       tenantId: tenant.id,
       actorUserId: currentUser.id,
       eventType: 'time.admin_edited',
       entityType: 'time_entry',
-      entityId: timeEntryId,
-      description: `${currentUser.name} directly edited time entry #${timeEntryId}.`,
+      entityId: entry.id,
+      description: `${currentUser.name} directly edited time entry #${entry.id} for employee #${entry.employee_id}.`,
       metadata: {
-        time_entry_id: timeEntryId,
+        time_entry_id: entry.id,
         employee_id: entry.employee_id,
         previous_job_id: entry.job_id,
         new_job_id: jobId,
         previous_date: entry.date,
-        new_date: editedDate,
+        new_date: newDate,
         previous_clock_in_at: entry.clock_in_at,
-        previous_clock_out_at: entry.clock_out_at,
         new_clock_in_at: clockInUtc,
+        previous_clock_out_at: entry.clock_out_at,
         new_clock_out_at: clockOutUtc,
         previous_note: entry.note,
         new_note: note,
         approved_hours: approvedHours,
+        labor_cost: laborCost,
         edit_reason: editReason,
       },
       ipAddress: resolveRequestIp(c),
     });
 
-    return c.redirect(`/timesheet?start=${weekStart(editedDate)}&employee_id=${entry.employee_id}`);
-  } catch (error) {
     const state = buildTimesheetState(db, tenant.id, currentUser, {
-      employeeId: fallbackEmployeeId ?? entry.employee_id,
-      start: fallbackStart ?? weekStart(entry.date),
+      employeeId: entry.employee_id,
+      start: weekStart(newDate),
     });
+
+    return renderTimesheetPage(c, state, {
+      success: 'Time entry updated successfully.',
+    });
+  } catch (error) {
+    const currentUserState = c.get('user');
+    if (!currentUserState) return c.redirect('/login');
+
+    const fallbackEntry = db.prepare(`
+      SELECT id, employee_id, date
+      FROM time_entries
+      WHERE id = ? AND tenant_id = ?
+      LIMIT 1
+    `).get(timeEntryId, tenant.id) as { id: number; employee_id: number; date: string } | undefined;
+
+    const state = buildTimesheetState(
+      db,
+      tenant.id,
+      currentUserState,
+      fallbackEntry ? { employeeId: fallbackEntry.employee_id, start: weekStart(fallbackEntry.date) } : undefined,
+    );
+
     return renderTimesheetPage(c, state, {
       error: error instanceof Error ? error.message : 'Unable to update the time entry.',
     }, 400);

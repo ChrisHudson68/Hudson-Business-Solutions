@@ -46,7 +46,7 @@ export const AdminWeeklyHoursPage: FC<AdminWeeklyHoursPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Weekly Employee Hours</h1>
-          <p>Admin-only weekly labor summary for all employees. Export the week to PDF for payroll-ready reporting with logo branding and lunch deduction proof, or use CSV for spreadsheet work.</p>
+          <p>Admin-only weekly labor summary for all employees. Click into any employee week to review individual entries, make direct corrections, approve or reopen the week, and export payroll-ready reports.</p>
         </div>
         <div class="actions actions-mobile-stack">
           <a class="btn" href={`/timesheet/admin-hours?start=${prevWeekStart}`}>Previous Week</a>
@@ -96,6 +96,7 @@ export const AdminWeeklyHoursPage: FC<AdminWeeklyHoursPageProps> = ({
                 <th class="right">Total</th>
                 <th class="right">Entries</th>
                 <th>Status</th>
+                <th class="right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -126,10 +127,15 @@ export const AdminWeeklyHoursPage: FC<AdminWeeklyHoursPageProps> = ({
                       <span class="badge badge-warn">Open</span>
                     )}
                   </td>
+                  <td class="right">
+                    <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
+                      <a class="btn" href={`/timesheet?employee_id=${row.employee_id}&start=${start}`}>View Entries</a>
+                    </div>
+                  </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colspan={11} class="muted">No employee hours found for this week.</td>
+                  <td colspan={12} class="muted">No employee hours found for this week.</td>
                 </tr>
               )}
             </tbody>

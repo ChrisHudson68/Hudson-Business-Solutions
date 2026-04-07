@@ -231,19 +231,19 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
   );
 
   const renderAdminEditForm = (entry: TimeEntry) => (
-    <details style="display:inline-block; text-align:left; width:100%; margin-bottom:8px;">
+    <details style="display:inline-block; text-align:left; width:100%; margin-right:8px;">
       <summary class="btn edit-request-summary">Edit Entry</summary>
-      <div class="card details-card" style="min-width:420px;">
-        <form method="post" action={`/timeclock/admin-edit/${entry.id}`} data-time-submit>
+      <div class="card details-card" style="min-width:460px;">
+        <form method="post" action={`/timesheet/admin-edit-entry/${entry.id}`} data-time-submit>
           <input type="hidden" name="csrf_token" value={csrfToken} />
-          <input type="hidden" name="employee_id" value={String(employeeId || '')} />
-          <input type="hidden" name="start" value={start} />
-
           <label>Job</label>
           <select name="job_id">
             <option value="">Unassigned / General Time</option>
             {jobs.map((job) => (
-              <option value={String(job.id)} selected={entry.job_id === job.id}>{job.job_name}</option>
+              <option value={String(job.id)} selected={entry.job_id === job.id}>
+                {job.job_name}
+                {job.client_name ? ` - ${job.client_name}` : ''}
+              </option>
             ))}
           </select>
 
@@ -264,11 +264,11 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
           <label>Note (optional)</label>
           <input name="note" maxLength={500} value={entry.note || ''} />
 
-          <label>Reason for admin edit</label>
-          <textarea name="edit_reason" required maxLength={500} placeholder="Example: Employee called in and needed manager correction." />
+          <label>Admin Edit Reason</label>
+          <textarea name="edit_reason" required maxLength={500} placeholder="Why are you changing this entry?" />
 
           <div class="actions actions-mobile-stack" style="margin-top:12px;">
-            <button class="btn btn-primary" type="submit">Save Admin Edit</button>
+            <button class="btn btn-primary" type="submit">Save Changes</button>
           </div>
         </form>
       </div>
@@ -291,7 +291,10 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
           <a class="btn" href={`/timesheet${employeeId ? `?employee_id=${employeeId}` : ''}`}>This Week</a>
           <a class="btn btn-primary" href={`/timesheet?start=${nextWeekStart}${calendarTargetEmployeeId}`}>Next Week</a>
           {showAdminHoursLink ? (
-            <a class="btn" href={`/timesheet/admin-hours?start=${start}`}>Weekly Hours</a>
+            <>
+              <a class="btn" href={`/timesheet/admin-hours?start=${start}`}>Weekly Hours</a>
+              {!isEmployeeUser ? <a class="btn" href={`/timesheet/admin-hours?start=${start}`}>Back to Weekly Overview</a> : null}
+            </>
           ) : null}
         </div>
       </div>
@@ -595,14 +598,19 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                       )
                     ) : canManageTimeEntries && !weekLocked && entry.clock_in_at && !entry.clock_out_at ? (
                       renderResolveOpenForm(entry.id, entry.note || '', 'Close Entry')
-                    ) : canManageTimeEntries && !weekLocked ? (
-                      <div>
-                        {entry.clock_in_at && entry.clock_out_at ? renderAdminEditForm(entry) : null}
+                    ) : canManageTimeEntries && !weekLocked && entry.clock_in_at && entry.clock_out_at ? (
+                      <div style="display:flex; gap:8px; justify-content:flex-end; align-items:flex-start; flex-wrap:wrap;">
+                        {renderAdminEditForm(entry)}
                         <form method="post" action={`/delete_time/${entry.id}`} style="display:inline;">
                           <input type="hidden" name="csrf_token" value={csrfToken} />
                           <button class="btn" type="submit">Delete</button>
                         </form>
                       </div>
+                    ) : canManageTimeEntries && !weekLocked ? (
+                      <form method="post" action={`/delete_time/${entry.id}`} style="display:inline;">
+                        <input type="hidden" name="csrf_token" value={csrfToken} />
+                        <button class="btn" type="submit">Delete</button>
+                      </form>
                     ) : (
                       <span class="muted">{weekLocked ? 'Week approved' : 'View only'}</span>
                     )}
