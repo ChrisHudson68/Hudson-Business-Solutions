@@ -230,6 +230,51 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
     </details>
   );
 
+  const renderAdminEditForm = (entry: TimeEntry) => (
+    <details style="display:inline-block; text-align:left; width:100%; margin-bottom:8px;">
+      <summary class="btn edit-request-summary">Edit Entry</summary>
+      <div class="card details-card" style="min-width:420px;">
+        <form method="post" action={`/timeclock/admin-edit/${entry.id}`} data-time-submit>
+          <input type="hidden" name="csrf_token" value={csrfToken} />
+          <input type="hidden" name="employee_id" value={String(employeeId || '')} />
+          <input type="hidden" name="start" value={start} />
+
+          <label>Job</label>
+          <select name="job_id">
+            <option value="">Unassigned / General Time</option>
+            {jobs.map((job) => (
+              <option value={String(job.id)} selected={entry.job_id === job.id}>{job.job_name}</option>
+            ))}
+          </select>
+
+          <label>Clock In</label>
+          <div class="edit-request-actions">
+            <input id={`admin-clock-in-local-${entry.id}`} type="datetime-local" name="clock_in_local" data-initial-utc={entry.clock_in_at || ''} required />
+            <button type="button" class="btn" data-fill-now={`admin-clock-in-local-${entry.id}`}>Now</button>
+          </div>
+          <input type="hidden" name="clock_in_utc" value="" />
+
+          <label>Clock Out</label>
+          <div class="edit-request-actions">
+            <input id={`admin-clock-out-local-${entry.id}`} type="datetime-local" name="clock_out_local" data-initial-utc={entry.clock_out_at || ''} required />
+            <button type="button" class="btn" data-fill-now={`admin-clock-out-local-${entry.id}`}>Now</button>
+          </div>
+          <input type="hidden" name="clock_out_utc" value="" />
+
+          <label>Note (optional)</label>
+          <input name="note" maxLength={500} value={entry.note || ''} />
+
+          <label>Reason for admin edit</label>
+          <textarea name="edit_reason" required maxLength={500} placeholder="Example: Employee called in and needed manager correction." />
+
+          <div class="actions actions-mobile-stack" style="margin-top:12px;">
+            <button class="btn btn-primary" type="submit">Save Admin Edit</button>
+          </div>
+        </form>
+      </div>
+    </details>
+  );
+
   return (
     <div>
       <div class="page-head">
@@ -551,10 +596,13 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                     ) : canManageTimeEntries && !weekLocked && entry.clock_in_at && !entry.clock_out_at ? (
                       renderResolveOpenForm(entry.id, entry.note || '', 'Close Entry')
                     ) : canManageTimeEntries && !weekLocked ? (
-                      <form method="post" action={`/delete_time/${entry.id}`} style="display:inline;">
-                        <input type="hidden" name="csrf_token" value={csrfToken} />
-                        <button class="btn" type="submit">Delete</button>
-                      </form>
+                      <div>
+                        {entry.clock_in_at && entry.clock_out_at ? renderAdminEditForm(entry) : null}
+                        <form method="post" action={`/delete_time/${entry.id}`} style="display:inline;">
+                          <input type="hidden" name="csrf_token" value={csrfToken} />
+                          <button class="btn" type="submit">Delete</button>
+                        </form>
+                      </div>
                     ) : (
                       <span class="muted">{weekLocked ? 'Week approved' : 'View only'}</span>
                     )}
