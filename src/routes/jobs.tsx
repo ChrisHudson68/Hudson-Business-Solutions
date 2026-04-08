@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { Hono } from 'hono';
 import type { AppEnv } from '../app-env.js';
 import { getDb } from '../db/connection.js';
@@ -5,13 +6,25 @@ import * as jobs from '../db/queries/jobs.js';
 import * as income from '../db/queries/income.js';
 import * as expenses from '../db/queries/expenses.js';
 import * as timeEntries from '../db/queries/time-entries.js';
+import * as jobBlueprints from '../db/queries/job-blueprints.js';
 import { loginRequired, roleRequired } from '../middleware/auth.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import {
+  buildSafeDownloadFilename,
+  buildTenantScopedStoredPath,
+  buildTenantScopedUploadDir,
+  DOCUMENT_ATTACHMENT_EXTENSIONS,
+  DOCUMENT_ATTACHMENT_MIME_TYPES,
+  inferMimeTypeFromStoredFilename,
+  resolveUploadedFilePath,
+  saveUploadedFile,
+} from '../services/file-upload.js';
 import { JobsListPage } from '../pages/jobs/JobsListPage.js';
 import { JobDetailPage } from '../pages/jobs/JobDetailPage.js';
 import { AddJobPage } from '../pages/jobs/AddJobPage.js';
 import { EditJobPage } from '../pages/jobs/EditJobPage.js';
+import { JobBlueprintsPage } from '../pages/jobs/JobBlueprintsPage.js';
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
   return c.html(
@@ -264,6 +277,12 @@ function ensureUniqueJobCode(db: any, tenantId: number, jobCode?: string, ignore
 
 function canManageJobs(user: any): boolean {
   return user?.role === 'Admin' || user?.role === 'Manager';
+}
+
+const jobBlueprintRootDir = `${process.env.UPLOAD_DIR ?? './data'}/job_blueprints`;
+
+function normalizeOptionalSearch(value: unknown, maxLength = 120): string {
+  return String(value ?? '').trim().slice(0, maxLength);
 }
 
 export const jobRoutes = new Hono<AppEnv>();
@@ -645,6 +664,193 @@ jobRoutes.post('/restore_job/:id', roleRequired('Admin', 'Manager'), (c) => {
   });
 
   return c.redirect('/jobs?show_archived=1');
+});
+
+
+jobRoutes.get('/job-blueprints', loginRequired, (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const db = getDb();
+  const search = normalizeOptionalSearch(c.req.query('search'));
+  const selectedJobId = parsePositiveInt(c.req.query('job_id') || '');
+  const success = normalizeOptionalSearch(c.req.query('success'), 160);
+  const error = normalizeOptionalSearch(c.req.query('error'), 160);
+
+  const jobRows = jobBlueprints.listJobsWithBlueprintCounts(db, tenantId, search);
+
+  let selectedJob = null as any;
+  if (selectedJobId) {
+    selectedJob = jobs.findById(db, selectedJobId, tenantId) || null;
+  }
+
+  const documents = selectedJob
+    ? jobBlueprints.listByJob(db, tenantId, selectedJob.id, false)
+    : [];
+
+  return renderApp(
+    c,
+    'Job Blueprints',
+    <JobBlueprintsPage
+      jobs={jobRows}
+      search={search}
+      selectedJob={selectedJob}
+      documents={documents}
+      canManage={canManageJobs(currentUser)}
+      csrfToken={c.get('csrfToken')}
+      success={success || undefined}
+      error={error || undefined}
+    />,
+  );
+});
+
+jobRoutes.post('/job-blueprints/upload', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const db = getDb();
+
+  let jobIdForRedirect: number | null = null;
+
+  try {
+    const body = await c.req.parseBody();
+    const jobId = parsePositiveInt(String(body.job_id || ''));
+    jobIdForRedirect = jobId;
+    if (!jobId) {
+      throw new Error('Please choose a valid job.');
+    }
+
+    const job = jobs.findById(db, jobId, tenantId);
+    if (!job || job.archived_at) {
+      throw new Error('Selected job was not found.');
+    }
+
+    const title = requireText(body.title, 'Title', 120);
+    const notes = normalizeOptionalText(body.notes, 'Notes', 2000);
+    const document = body.document;
+    if (!(document instanceof File) || document.size <= 0) {
+      throw new Error('Please choose a blueprint file to upload.');
+    }
+
+    const uploadDir = buildTenantScopedUploadDir(jobBlueprintRootDir, tenantId);
+    const storedFilename = await saveUploadedFile(document, uploadDir, {
+      allowedExtensions: DOCUMENT_ATTACHMENT_EXTENSIONS,
+      allowedMimeTypes: DOCUMENT_ATTACHMENT_MIME_TYPES,
+      maxBytes: 10 * 1024 * 1024,
+    });
+
+    const storedPath = buildTenantScopedStoredPath(tenantId, storedFilename);
+    const blueprintId = jobBlueprints.create(db, tenantId, {
+      job_id: jobId,
+      title,
+      notes: notes ?? null,
+      file_filename: storedPath,
+      original_filename: document.name || null,
+      uploaded_by_user_id: currentUser?.id ?? null,
+    });
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser?.id,
+      eventType: 'job.blueprint_uploaded',
+      entityType: 'job_blueprint',
+      entityId: blueprintId,
+      description: `${currentUser?.name || 'User'} uploaded a blueprint for job ${job.job_name}.`,
+      metadata: {
+        job_id: job.id,
+        job_name: job.job_name,
+        title,
+        original_filename: document.name || null,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.redirect(`/job-blueprints?job_id=${jobId}&success=${encodeURIComponent('Blueprint uploaded.')}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to upload blueprint.';
+    const fallback = jobIdForRedirect ? `?job_id=${jobIdForRedirect}&error=${encodeURIComponent(message)}` : `?error=${encodeURIComponent(message)}`;
+    return c.redirect(`/job-blueprints${fallback}`);
+  }
+});
+
+jobRoutes.post('/job-blueprints/:id/archive', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const blueprintId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!blueprintId) {
+    return c.redirect('/job-blueprints?error=' + encodeURIComponent('Blueprint file not found.'));
+  }
+
+  const blueprint = jobBlueprints.findById(db, tenantId, blueprintId);
+  if (!blueprint || blueprint.archived_at) {
+    return c.redirect('/job-blueprints?error=' + encodeURIComponent('Blueprint file not found.'));
+  }
+
+  jobBlueprints.archive(db, tenantId, blueprintId, currentUser?.id ?? null);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser?.id,
+    eventType: 'job.blueprint_archived',
+    entityType: 'job_blueprint',
+    entityId: blueprintId,
+    description: `${currentUser?.name || 'User'} archived blueprint ${blueprint.title}.`,
+    metadata: {
+      job_id: blueprint.job_id,
+      title: blueprint.title,
+      original_filename: blueprint.original_filename,
+    },
+    ipAddress: resolveRequestIp(c),
+  });
+
+  return c.redirect(`/job-blueprints?job_id=${blueprint.job_id}&success=${encodeURIComponent('Blueprint archived.')}`);
+});
+
+jobRoutes.get('/job-blueprints/files/:id', loginRequired, (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  const tenantId = tenant!.id;
+  const blueprintId = parsePositiveInt(c.req.param('id'));
+  const db = getDb();
+
+  if (!blueprintId) {
+    return c.text('Blueprint not found', 404);
+  }
+
+  const blueprint = jobBlueprints.findById(db, tenantId, blueprintId);
+  if (!blueprint || !blueprint.file_filename || blueprint.archived_at) {
+    return c.text('Blueprint not found', 404);
+  }
+
+  try {
+    const filePath = resolveUploadedFilePath(blueprint.file_filename, jobBlueprintRootDir);
+    const fileBuffer = fs.readFileSync(filePath);
+
+    c.header('Content-Type', inferMimeTypeFromStoredFilename(blueprint.file_filename));
+    c.header('Content-Disposition', `inline; filename="${buildSafeDownloadFilename('job-blueprint', blueprint.file_filename)}"`);
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser?.id,
+      eventType: 'job.blueprint_viewed',
+      entityType: 'job_blueprint',
+      entityId: blueprint.id,
+      description: `${currentUser?.name || 'User'} opened blueprint ${blueprint.title}.`,
+      metadata: {
+        job_id: blueprint.job_id,
+        title: blueprint.title,
+        original_filename: blueprint.original_filename,
+      },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return c.body(fileBuffer);
+  } catch {
+    return c.text('Blueprint file missing', 404);
+  }
 });
 
 export default jobRoutes;

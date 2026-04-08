@@ -677,6 +677,12 @@ function buildNavItems(currentUser: AppLayoutProps['currentUser']) {
       visible: hasPermission(permissions, 'time.view'),
     },
     {
+      label: 'Job Blueprints',
+      href: '/job-blueprints',
+      patterns: ['/job-blueprints'],
+      visible: !!currentUser,
+    },
+    {
       label: 'Invoices',
       href: '/invoices',
       patterns: ['/invoices', '/add_invoice', '/invoice/'],
