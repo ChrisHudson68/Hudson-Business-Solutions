@@ -17,6 +17,7 @@ yarn-debug.log*
 yarn-error.log*
 
 *.tar
+*.tar.gz
 *.bak
 *.tmp
 *.swp
@@ -24,6 +25,11 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
+backups/
+
 .vscode/
 .idea/
 .claude/
+
+# Claude Code assistant context — intentionally local-only
+CLAUDE.md

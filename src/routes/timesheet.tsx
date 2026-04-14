@@ -80,6 +80,14 @@ interface CalendarWeekSummary {
   is_approved: boolean;
 }
 
+interface CalendarDaySummary {
+  date: string;
+  total_hours: number;
+  is_approved_week: boolean;
+  is_current_month: boolean;
+  week_start: string;
+}
+
 interface TimesheetViewState {
   employees: EmployeeOption[];
   jobs: JobOption[];
@@ -104,6 +112,11 @@ interface TimesheetViewState {
   selectedWeekLabel: string;
   prevWeekStart: string;
   nextWeekStart: string;
+  calendarMonth: string;
+  prevCalendarMonth: string;
+  nextCalendarMonth: string;
+  calendarMonthLabel: string;
+  monthCalendarDays: CalendarDaySummary[];
 }
 
 interface AdminHoursRow {
@@ -224,6 +237,18 @@ function addDays(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+function addMonths(yearMonthStr: string, months: number): string {
+  const [year, month] = yearMonthStr.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1 + months, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatCalendarMonthLabel(yearMonthStr: string): string {
+  const [year, month] = yearMonthStr.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, 1));
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
 function weekDates(mondayStr: string): string[] {
@@ -598,6 +623,62 @@ function loadWeekCalendar(db: any, tenantId: number, employeeId: number | null, 
   return weeks;
 }
 
+function loadMonthCalendar(
+  db: any,
+  tenantId: number,
+  employeeId: number | null,
+  calendarMonth: string,
+): CalendarDaySummary[] {
+  if (!employeeId) return [];
+
+  const [year, month] = calendarMonth.split('-').map(Number);
+  const firstOfMonth = `${calendarMonth}-01`;
+  const lastOfMonth = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+
+  const gridStart = weekStart(firstOfMonth);
+  const lastWeekMonday = weekStart(lastOfMonth);
+  const gridEnd = addDays(lastWeekMonday, 6);
+
+  const entryRows = db.prepare(`
+    SELECT date, COALESCE(SUM(hours), 0) AS total_hours
+    FROM time_entries
+    WHERE tenant_id = ? AND employee_id = ? AND date BETWEEN ? AND ?
+    GROUP BY date
+  `).all(tenantId, employeeId, gridStart, gridEnd) as Array<{ date: string; total_hours: number }>;
+
+  const approvalRows = db.prepare(`
+    SELECT week_start
+    FROM time_entry_week_approvals
+    WHERE tenant_id = ? AND employee_id = ? AND week_start BETWEEN ? AND ?
+  `).all(tenantId, employeeId, gridStart, lastWeekMonday) as Array<{ week_start: string }>;
+
+  const hoursByDate = new Map<string, number>();
+  for (const row of entryRows) {
+    hoursByDate.set(row.date, Number(row.total_hours || 0));
+  }
+
+  const approvedWeeks = new Set<string>();
+  for (const row of approvalRows) {
+    approvedWeeks.add(row.week_start);
+  }
+
+  const days: CalendarDaySummary[] = [];
+  let current = gridStart;
+  while (current <= gridEnd) {
+    const ws = weekStart(current);
+    days.push({
+      date: current,
+      total_hours: Number((hoursByDate.get(current) || 0).toFixed(2)),
+      is_approved_week: approvedWeeks.has(ws),
+      is_current_month: current >= firstOfMonth && current <= lastOfMonth,
+      week_start: ws,
+    });
+    current = addDays(current, 1);
+  }
+
+  return days;
+}
+
 function assertWeekNotApproved(db: any, tenantId: number, employeeId: number, start: string, message?: string) {
   const approval = loadWeekApproval(db, tenantId, employeeId, start);
   if (approval) {
@@ -630,7 +711,7 @@ function buildTimesheetState(
   db: any,
   tenantId: number,
   currentUser: any,
-  options?: { employeeId?: number | null; start?: string },
+  options?: { employeeId?: number | null; start?: string; calMonth?: string },
 ): TimesheetViewState {
   const employees = loadEmployees(db, tenantId);
   const jobs = loadJobs(db, tenantId);
@@ -660,6 +741,11 @@ function buildTimesheetState(
   const selectedWeekHours = Number(existing.reduce((sum, entry) => sum + Number(entry.hours || 0), 0).toFixed(2));
   const selectedWeekEntryCount = existing.length;
 
+  const defaultCalMonth = start.slice(0, 7);
+  const rawCalMonth = options?.calMonth || defaultCalMonth;
+  const calendarMonth = /^\d{4}-\d{2}$/.test(rawCalMonth) ? rawCalMonth : defaultCalMonth;
+  const monthCalendarDays = loadMonthCalendar(db, tenantId, employeeId, calendarMonth);
+
   return {
     employees,
     jobs,
@@ -684,6 +770,11 @@ function buildTimesheetState(
     selectedWeekLabel: weekRangeLabel(start),
     prevWeekStart: addDays(start, -7),
     nextWeekStart: addDays(start, 7),
+    calendarMonth,
+    prevCalendarMonth: addMonths(calendarMonth, -1),
+    nextCalendarMonth: addMonths(calendarMonth, 1),
+    calendarMonthLabel: formatCalendarMonthLabel(calendarMonth),
+    monthCalendarDays,
   };
 }
 
@@ -857,6 +948,11 @@ function renderTimesheetPage(
       selectedWeekLabel={state.selectedWeekLabel}
       prevWeekStart={state.prevWeekStart}
       nextWeekStart={state.nextWeekStart}
+      calendarMonth={state.calendarMonth}
+      prevCalendarMonth={state.prevCalendarMonth}
+      nextCalendarMonth={state.nextCalendarMonth}
+      calendarMonthLabel={state.calendarMonthLabel}
+      monthCalendarDays={state.monthCalendarDays}
       error={extras?.error}
       success={extras?.success}
       showAdminHoursLink={userHasPermission(currentUser, 'time.approve')}
@@ -875,9 +971,11 @@ timesheetRoutes.get('/timesheet', permissionRequired('time.view'), (c) => {
   const db = getDb();
   const requestedEmployeeId = parsePositiveInt(c.req.query('employee_id'));
   const requestedStart = c.req.query('start') || undefined;
+  const requestedCalMonth = c.req.query('cal_month') || undefined;
   const state = buildTimesheetState(db, tenant.id, currentUser, {
     employeeId: requestedEmployeeId,
     start: requestedStart,
+    calMonth: requestedCalMonth,
   });
 
   if (state.isEmployeeUser && !state.employeeId) {

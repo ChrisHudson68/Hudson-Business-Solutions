@@ -193,6 +193,74 @@ export function parseReportFilter(query: {
   };
 }
 
+/**
+ * Builds the complete advanced financial reports dataset for a tenant over a date range.
+ *
+ * This is the core reporting aggregation function. It executes 8 synchronous SQLite queries
+ * in sequence, then aggregates the results into four Maps before deriving all output structures
+ * from those maps in a single pass each. No ORM — raw SQL with explicit tenant_id scoping on
+ * every query to enforce multi-tenant isolation.
+ *
+ * ## Query plan
+ *
+ * 1. `allJobs`          — every non-archived job for the tenant (used to seed jobMap)
+ * 2. `incomeRows`       — recorded income entries within [startDate, endDate]
+ * 3. `expenseRows`      — expense entries within [startDate, endDate] (excl. archived jobs)
+ * 4. `recurringBillRows`— static monthly bill occurrences within the range (via monthlyBills service)
+ * 5. `laborRows`        — time_entries labor_cost within [startDate, endDate]
+ * 6. `invoiceRows`      — invoices issued within [startDate, endDate]
+ * 7. `paymentRows`      — payments collected within [startDate, endDate] (joined through invoices → jobs)
+ * 8. `agingInvoiceRows` — ALL non-archived open invoices issued on or before endDate (unbounded start,
+ *                         used for the aging buckets which are point-in-time, not range-scoped)
+ * 9. `paidToDateRows`   — total payments per invoice up to endDate (GROUP BY invoice_id)
+ *
+ * ## Aggregation Maps
+ *
+ * - `paidToDateMap`  Map<invoice_id, totalPaid>
+ *   Built first so aging calculations can subtract paid amounts from invoice totals.
+ *
+ * - `jobMap`  Map<job_id, ProfitabilityRow>
+ *   Seeded from allJobs so every job appears even with zero activity. Each subsequent loop
+ *   adds income / collected / invoiced / expenses / labor onto the matching job entry.
+ *   After all loops, totalCost, profit, and margin are derived in a final map pass.
+ *
+ * - `trendMap`  Map<bucketKey, {inflow, outflow, invoiced, collected}>
+ *   bucketKey is YYYY-MM-DD for 1w/1m ranges and YYYY-MM-01 (month start) for 1y range,
+ *   so each entry represents one bar/point on the trend chart. Income and payments add to
+ *   inflow/collected; expenses, recurring bills, and labor add to outflow.
+ *
+ * - `categoryMap`  Map<categoryLabel, totalAmount>
+ *   Accumulates expense + recurring bill amounts by category string.
+ *   The top 8 categories by value are returned in expenseCategories.
+ *
+ * ## Invoice Aging
+ *
+ * Computed from agingInvoiceRows (point-in-time: issued ≤ endDate). For each invoice,
+ * the open balance = max(invoiceAmount − totalPaid, 0). Invoices with zero open balance
+ * are skipped. The remaining balance is bucketed by how many days past due_date the
+ * endDate falls: current (not yet due), 1–30, 31–60, 61–90, 90+ days overdue.
+ *
+ * ## Return value — AdvancedReportsData
+ *
+ * | Field              | Description                                                          |
+ * |--------------------|----------------------------------------------------------------------|
+ * | filter             | The parsed date filter echoed back (range, startDate, endDate, label)|
+ * | cash               | CashSummary — top-level totals: income, invoiced, collected,         |
+ * |                    | expenses, laborCost, cashOutflow, netCash, openReceivables           |
+ * | aging              | InvoiceAging — open AR bucketed by days overdue, point-in-time       |
+ * | trend              | TrendPoint[] — per-day (1w/1m) or per-month (1y) inflow/outflow/net |
+ * | expenseCategories  | ExpenseCategoryPoint[] — top 8 expense categories by dollar amount   |
+ * | rows               | ProfitabilityRow[] — one row per job, sorted desc by profit          |
+ * | topProfitJobs      | Top 5 jobs by absolute profit (first 5 of sorted rows)              |
+ * | worstProfitJobs    | Bottom 5 jobs by absolute profit                                     |
+ * | topMarginJobs      | Top 5 jobs by margin % (only jobs with income > 0)                   |
+ * | worstMarginJobs    | Bottom 5 jobs by margin % (only jobs with income > 0)                |
+ *
+ * @param db       - better-sqlite3 database connection (synchronous)
+ * @param tenantId - The tenant whose data to query; every SQL statement is scoped to this value
+ * @param filter   - Parsed report filter from parseReportFilter(); contains range, startDate, endDate
+ * @returns        - AdvancedReportsData — fully aggregated reporting snapshot, ready for rendering
+ */
 export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFilter): AdvancedReportsData {
   const allJobs = jobs.listByTenant(db, tenantId, false);
 

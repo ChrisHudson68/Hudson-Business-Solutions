@@ -72,6 +72,14 @@ interface CalendarWeekSummary {
   is_approved: boolean;
 }
 
+interface CalendarDaySummary {
+  date: string;
+  total_hours: number;
+  is_approved_week: boolean;
+  is_current_month: boolean;
+  week_start: string;
+}
+
 interface TimesheetPageProps {
   employees: Employee[];
   jobs: Job[];
@@ -97,6 +105,11 @@ interface TimesheetPageProps {
   selectedWeekLabel: string;
   prevWeekStart: string;
   nextWeekStart: string;
+  calendarMonth: string;
+  prevCalendarMonth: string;
+  nextCalendarMonth: string;
+  calendarMonthLabel: string;
+  monthCalendarDays: CalendarDaySummary[];
   error?: string;
   success?: string;
   showAdminHoursLink?: boolean;
@@ -198,6 +211,11 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
   selectedWeekLabel,
   prevWeekStart,
   nextWeekStart,
+  calendarMonth,
+  prevCalendarMonth,
+  nextCalendarMonth,
+  calendarMonthLabel,
+  monthCalendarDays,
   error,
   success,
   showAdminHoursLink,
@@ -207,6 +225,12 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
   const weekLocked = !!weekApproval;
   const calendarTargetEmployeeId = employeeId ? `&employee_id=${employeeId}` : '';
   const canShowEditRequests = canRequestEdits && viewingOwnEntries && !weekLocked;
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const calendarWeeks: CalendarDaySummary[][] = [];
+  for (let i = 0; i < monthCalendarDays.length; i += 7) {
+    calendarWeeks.push(monthCalendarDays.slice(i, i + 7));
+  }
 
   const renderResolveOpenForm = (entryId: number, note?: string | null, label = 'Resolve Open Entry') => (
     <details style="display:inline-block; text-align:left; width:100%;">
@@ -309,81 +333,96 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
 
       {canUseSelfClock && currentEmployeeContext ? (
         <div class="card" style="margin-bottom:14px;">
-          <div class="page-head" style="margin:0 0 10px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap;">
             <div>
               <h1 style="font-size:18px; margin:0;">My Clock</h1>
-              <p>Employee: <b>{currentEmployeeContext.employeeName}</b></p>
+              <p style="margin:4px 0 0;">
+                Clocking in as <b>{currentEmployeeContext.employeeName}</b>
+              </p>
             </div>
+            {activeClockEntry ? (
+              <div style="display:flex; align-items:center; gap:8px; padding:6px 12px; background:#0D3321; border:1px solid #166534; border-radius:20px;">
+                <div style="width:8px; height:8px; background:#22C55E; border-radius:50%; flex:0 0 auto;"></div>
+                <span style="font-size:13px; font-weight:700; color:#22C55E;">Clocked In</span>
+              </div>
+            ) : (
+              <div style="display:flex; align-items:center; gap:8px; padding:6px 12px; background:#1A1A2E; border:1px solid #374151; border-radius:20px;">
+                <div style="width:8px; height:8px; background:#6B7280; border-radius:50%; flex:0 0 auto;"></div>
+                <span style="font-size:13px; font-weight:600; color:#9CA3AF;">Not Clocked In</span>
+              </div>
+            )}
           </div>
 
           {activeClockEntry ? (
             <div>
-              <div class="badge badge-good" style="margin-bottom:10px;">Currently Clocked In</div>
-              <div class="clock-status-grid">
+              <div class="clock-status-grid" style="margin-bottom:16px;">
                 <div class="card clock-card">
-                  <div class="muted">Type</div>
+                  <div class="muted">Job / Type</div>
                   <div class="clock-card-value"><b>{activeClockEntry.job_name}</b></div>
                 </div>
                 <div class="card clock-card">
-                  <div class="muted">Clock In</div>
+                  <div class="muted">Clocked in at</div>
                   <div class="clock-card-value" data-utc-display={activeClockEntry.clock_in_at}>{activeClockEntry.clock_in_at}</div>
                 </div>
-                <div class="card clock-card">
-                  <div class="muted">Action</div>
-                  <div class="actions actions-mobile-stack" style="margin-top:10px;">
-                    <form method="post" action="/timeclock/punch-out" data-punch-now>
-                      <input type="hidden" name="csrf_token" value={csrfToken} />
-                      <input type="hidden" name="client_now_utc" value="" />
-                      <button class="btn btn-primary" type="submit">Punch Out</button>
-                    </form>
-                  </div>
-                </div>
               </div>
-              <div style="margin-top:12px;">
-                {renderResolveOpenForm(activeClockEntry.id, '', 'Resolve Open Entry')}
+
+              <p class="muted" style="margin:0 0 10px; font-size:13px;">When you are done working, punch out to record your hours.</p>
+
+              <form method="post" action="/timeclock/punch-out" data-punch-now style="display:inline-block;">
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <input type="hidden" name="client_now_utc" value="" />
+                <button class="btn btn-primary" type="submit" style="font-size:15px; padding:10px 32px;">Punch Out</button>
+              </form>
+
+              <div style="margin-top:18px; padding-top:14px; border-top:1px solid #1F2937;">
+                <p class="muted" style="margin:0 0 8px; font-size:12px;">
+                  Need to correct your clock-in time? Use the option below instead of punching out.
+                </p>
+                {renderResolveOpenForm(activeClockEntry.id, '', 'Correct Clock-In Time')}
               </div>
             </div>
           ) : (
-            <form method="post" action="/timeclock/punch-in" data-punch-now>
-              <input type="hidden" name="csrf_token" value={csrfToken} />
-              <input type="hidden" name="client_now_utc" value="" />
+            <div>
+              <p class="muted" style="margin:0 0 12px; font-size:13px;">
+                Select a job if you are working on a specific project, then punch in. You can add a note if needed.
+              </p>
+              <form method="post" action="/timeclock/punch-in" data-punch-now>
+                <input type="hidden" name="csrf_token" value={csrfToken} />
+                <input type="hidden" name="client_now_utc" value="" />
 
-              <div class="row">
-                <div>
-                  <label>Job (optional)</label>
-                  <select name="job_id">
-                    <option value="">Global (no job)</option>
-                    {jobs.map((job) => (
-                      <option value={String(job.id)}>
-                        {job.job_name}
-                        {job.client_name ? ` - ${job.client_name}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <div class="row" style="max-width:800px;">
+                  <div>
+                    <label>Job (optional)</label>
+                    <select name="job_id">
+                      <option value="">General — no specific job</option>
+                      {jobs.map((job) => (
+                        <option value={String(job.id)}>
+                          {job.job_name}
+                          {job.client_name ? ` - ${job.client_name}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div>
-                  <label>Note (optional)</label>
-                  <input name="note" maxLength={500} placeholder="Optional shift note" />
-                </div>
+                  <div>
+                    <label>Note (optional)</label>
+                    <input name="note" maxLength={500} placeholder="e.g. Morning shift, special task..." />
+                  </div>
 
-                <div style="flex:0;">
-                  <label>&nbsp;</label>
-                  <button class="btn btn-primary" type="submit">Punch In</button>
+                  <div style="flex:0;">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" type="submit" style="font-size:15px; padding:10px 28px;">Punch In</button>
+                  </div>
                 </div>
-              </div>
-            </form>
+              </form>
+            </div>
           )}
-
-          <div class="muted mobile-note">
-            Global time clock entries are not tied to a specific job at punch-in.
-          </div>
         </div>
       ) : null}
 
       <div class="card">
         <form method="get" action="/timesheet">
-          <div class="row">
+          <div class="row" style="max-width:680px;">
             {!isEmployeeUser ? (
               <div>
                 <label>Employee</label>
@@ -477,50 +516,107 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
       </div>
 
       <div class="card" style="margin-top:14px;">
-        <div class="page-head" style="margin:0 0 8px;">
+        {/* Header: title + month navigator */}
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
           <div>
-            <h1 style="font-size:18px; margin:0;">Past Weeks Calendar</h1>
-            <p>Quickly jump between previous weekly timesheets and see which weeks are already approved.</p>
+            <h1 style="font-size:18px; margin:0;">Monthly Hours</h1>
+            <p style="margin:4px 0 0; color:#64748B; font-size:13px;">Click any day to view that week&apos;s entries.</p>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <a
+              class="btn"
+              href={`/timesheet?start=${start}${calendarTargetEmployeeId}&cal_month=${prevCalendarMonth}`}
+              style="padding:5px 12px; font-size:16px; line-height:1;"
+            >&#8592;</a>
+            <span style="font-weight:700; font-size:15px; min-width:140px; text-align:center;">{calendarMonthLabel}</span>
+            <a
+              class="btn"
+              href={`/timesheet?start=${start}${calendarTargetEmployeeId}&cal_month=${nextCalendarMonth}`}
+              style="padding:5px 12px; font-size:16px; line-height:1;"
+            >&#8594;</a>
           </div>
         </div>
 
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-top:10px;">
-          {weekCalendar.length > 0 ? weekCalendar.map((week) => (
-            <a
-              href={`/timesheet?start=${week.week_start}${employeeId ? `&employee_id=${employeeId}` : ''}`}
-              class="card"
-              style={`margin:0; text-decoration:none; color:inherit; border:${week.is_selected ? '2px solid #1D4ED8' : '1px solid #E5E7EB'};`}
-            >
-              <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
-                <div>
-                  <div style="font-weight:700;">{week.week_start}</div>
-                  <div class="muted small">to {week.week_end}</div>
+        {monthCalendarDays.length === 0 ? (
+          <div class="muted">No calendar data available for this employee.</div>
+        ) : (
+          <div>
+            {/* Scrollable calendar grid — prevents squashing on narrow phones */}
+            <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+              <div style="min-width:300px;">
+                {/* Day-of-week header row */}
+                <div style="display:grid; grid-template-columns:4px repeat(7,minmax(36px,1fr)); gap:2px; margin-bottom:4px;">
+                  <div></div>
+                  {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((label) => (
+                    <div style="text-align:center; font-size:11px; font-weight:700; color:#475569; padding:3px 0; letter-spacing:0.06em; text-transform:uppercase;">{label}</div>
+                  ))}
                 </div>
-                {week.is_approved ? <span class="badge badge-good">Approved</span> : <span class="badge badge-warn">Open</span>}
+
+                {/* Calendar week rows */}
+                {calendarWeeks.map((week) => {
+                  const weekHasHours = week.some((d) => d.total_hours > 0);
+                  const isApproved = week[0].is_approved_week;
+                  const stripeColor = isApproved ? '#16A34A' : (weekHasHours ? '#D97706' : 'transparent');
+
+                  return (
+                    <div style="display:grid; grid-template-columns:4px repeat(7,minmax(36px,1fr)); gap:2px; margin-bottom:2px;">
+                      {/* Approval status stripe */}
+                      <div
+                        title={isApproved ? 'Approved week' : (weekHasHours ? 'Open — not yet approved' : '')}
+                        style={`background:${stripeColor}; border-radius:2px;`}
+                      />
+                      {week.map((day) => {
+                        const isToday = day.date === todayStr;
+                        const isSelectedWeek = day.week_start === start;
+                        const dimmed = !day.is_current_month;
+                        const dayNum = new Date(`${day.date}T00:00:00Z`).getUTCDate();
+
+                        const bgColor = isToday ? '#1E3A5F' : isSelectedWeek ? '#18293F' : '#0F172A';
+                        const borderColor = isToday ? '#F59E0B' : isSelectedWeek ? '#2563EB' : '#1E293B';
+
+                        return (
+                          <a
+                            href={`/timesheet?start=${day.week_start}${calendarTargetEmployeeId}&cal_month=${calendarMonth}`}
+                            style={`display:block; min-height:48px; padding:4px 5px; background:${bgColor}; border:1px solid ${borderColor}; border-radius:4px; text-decoration:none; opacity:${dimmed ? '0.3' : '1'};`}
+                          >
+                            <div style={`font-size:11px; font-weight:${isToday ? '800' : '600'}; color:${isToday ? '#F59E0B' : '#CBD5E1'};`}>
+                              {dayNum}
+                            </div>
+                            {day.total_hours > 0 ? (
+                              <div style="font-size:10px; font-weight:700; color:#FBBF24; margin-top:2px; white-space:nowrap; overflow:hidden;">
+                                {Number.isInteger(day.total_hours) ? `${day.total_hours}h` : `${day.total_hours.toFixed(1)}h`}
+                              </div>
+                            ) : null}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </div>
-              <div style="margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                <div>
-                  <div class="muted small">Hours</div>
-                  <div style="font-size:20px; font-weight:800;">{week.total_hours.toFixed(2)}</div>
-                </div>
-                <div>
-                  <div class="muted small">Entries</div>
-                  <div style="font-size:20px; font-weight:800;">{week.entry_count}</div>
-                </div>
+            </div>
+
+            {/* Legend */}
+            <div style="display:flex; gap:20px; margin-top:14px; flex-wrap:wrap; align-items:center;">
+              <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#64748B;">
+                <div style="width:3px; height:14px; background:#16A34A; border-radius:2px; flex:0 0 auto;"></div>
+                <span>Approved week</span>
               </div>
-              {week.approved_at ? (
-                <div class="muted small" style="margin-top:12px;">
-                  Approved <span data-utc-display={week.approved_at}>{week.approved_at}</span>
-                  {week.approved_by_name ? <> by {week.approved_by_name}</> : null}
-                </div>
-              ) : (
-                <div class="muted small" style="margin-top:12px;">This week is still open for manager review.</div>
-              )}
-            </a>
-          )) : (
-            <div class="muted">No weekly history is available yet for this employee.</div>
-          )}
-        </div>
+              <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#64748B;">
+                <div style="width:3px; height:14px; background:#D97706; border-radius:2px; flex:0 0 auto;"></div>
+                <span>Open week</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#64748B;">
+                <div style="width:12px; height:12px; border:1px solid #2563EB; border-radius:2px; flex:0 0 auto;"></div>
+                <span>Currently viewing</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:#64748B;">
+                <div style="width:12px; height:12px; border:1px solid #F59E0B; border-radius:2px; flex:0 0 auto;"></div>
+                <span>Today</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div class="card" style="margin-top:14px;">
