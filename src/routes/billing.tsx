@@ -386,13 +386,9 @@ billingRoutes.post('/billing/resync', roleRequired('Admin'), async (c) => {
   }
 
   try {
-    const result = await resyncTenantBillingFromStripe(db, {
-      id: billing.id,
-      billing_customer_id: billing.billing_customer_id,
-      billing_subscription_id: billing.billing_subscription_id,
-    });
+    const result = await resyncTenantBillingFromStripe(db, billing.id);
 
-    if (!result.ok && (result.code === 'no-remote-record' || result.code === 'customer-not-found' || result.code === 'subscription-not-found')) {
+    if (result.outcome === 'skipped' && (result.reason === 'stripe-ids-missing' || result.reason === 'customer-without-subscription')) {
       return c.redirect('/billing?error=resync-unavailable');
     }
 

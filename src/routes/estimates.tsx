@@ -469,9 +469,7 @@ estimateRoutes.get('/estimates', loginRequired, (c) => {
       approvedCount={summary.statusCounts.approved || 0}
       rejectedCount={summary.statusCounts.rejected || 0}
       canCreateEstimates={isManagerOrAdmin(currentUser)}
-      canManageEstimateArchive={isManagerOrAdmin(currentUser)}
       showArchived={showArchived}
-      csrfToken={c.get('csrfToken')}
     />,
   );
 });

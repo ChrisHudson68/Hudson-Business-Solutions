@@ -19,6 +19,7 @@ import { PickTenantPage } from '../pages/auth/PickTenantPage.js';
 import { LandingPage } from '../pages/marketing/LandingPage.js';
 import { getEnv } from '../config/env.js';
 import { getResolvedUserPermissions, normalizeUserRole } from '../services/permissions.js';
+import { checkRateLimit, clearRateLimit, recordRateLimitFailure } from '../services/rate-limit.js';
 
 export const authRoutes = new Hono<AppEnv>();
 
@@ -260,6 +261,34 @@ authRoutes.post('/login', async (c) => {
   const password = typeof body.password === 'string' ? body.password : '';
 
   const db = getDb();
+  const env = getEnv();
+  const rateLimitScope = 'tenant-login';
+  const rateLimitKey = `${tenant.id}:${email}`;
+
+  const loginLimit = checkRateLimit(db, {
+    scope: rateLimitScope,
+    key: rateLimitKey,
+    windowSeconds: env.authRateLimitWindowSeconds,
+    maxAttempts: env.authRateLimitMaxAttempts,
+    blockSeconds: env.authRateLimitBlockSeconds,
+  });
+
+  if (!loginLimit.allowed) {
+    const findWorkspaceUrl = buildBaseAppUrl('/pick-tenant');
+    return c.html(
+      renderPublicLayout(
+        <LoginPage
+          error="Too many failed attempts. Please try again later."
+          prefillEmail={email}
+          csrfToken={c.get('csrfToken')}
+          currentTenant={tenant}
+          findWorkspaceUrl={findWorkspaceUrl}
+        />,
+      ),
+      429 as any,
+    );
+  }
+
   const row = userQueries.findByEmailAndTenant(db, email, tenant.id) as
     | { id: number; password_hash: string; active: number; name?: string; email?: string; role?: string }
     | undefined;
@@ -275,6 +304,14 @@ authRoutes.post('/login', async (c) => {
   }
 
   if (error) {
+    recordRateLimitFailure(db, {
+      scope: rateLimitScope,
+      key: rateLimitKey,
+      windowSeconds: env.authRateLimitWindowSeconds,
+      maxAttempts: env.authRateLimitMaxAttempts,
+      blockSeconds: env.authRateLimitBlockSeconds,
+    });
+
     const findWorkspaceUrl = buildBaseAppUrl('/pick-tenant');
 
     return c.html(
@@ -289,6 +326,8 @@ authRoutes.post('/login', async (c) => {
       ),
     );
   }
+
+  clearRateLimit(db, rateLimitScope, rateLimitKey);
 
   const fullUser = db
     .prepare('SELECT id, name, email, role FROM users WHERE id = ? AND tenant_id = ? LIMIT 1')
@@ -311,7 +350,6 @@ authRoutes.post('/login', async (c) => {
     );
   }
 
-  const env = getEnv();
   const sessionCookie = createSessionCookie(fullUser.id, env.secretKey, env.sessionTtlSeconds);
 
   setSessionCookie(c, sessionCookie);
@@ -644,13 +682,13 @@ authRoutes.use('*', async (c, next) => {
     email: user.email,
     role: normalizedRole,
     permissions: resolvedPermissions.permissions,
-    isImpersonating: !!session.platformAdminEmail,
-    impersonationContext: session.platformAdminEmail ? {
-      platformAdminEmail: session.platformAdminEmail,
-      impersonatedUserId: session.impersonatedUserId ?? user.id,
-      impersonatedTenantId: session.impersonatedTenantId ?? tenant.id,
-      startedAt: session.startedAt ?? null,
-      supportReason: session.supportReason ?? null,
+    isImpersonating: !!session.impersonation,
+    impersonationContext: session.impersonation ? {
+      platformAdminEmail: session.impersonation.platformAdminEmail,
+      impersonatedUserId: session.impersonation.impersonatedUserId,
+      impersonatedTenantId: session.impersonation.impersonatedTenantId,
+      startedAt: session.impersonation.startedAt ?? null,
+      supportReason: session.impersonation.supportReason ?? null,
     } : null,
   });
 

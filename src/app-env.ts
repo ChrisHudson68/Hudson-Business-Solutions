@@ -22,6 +22,14 @@ export type AppEnv = {
           role: string;
           tenant_id: number;
           permissions: string[];
+          isImpersonating?: boolean;
+          impersonationContext?: {
+            platformAdminEmail: string;
+            impersonatedUserId: number;
+            impersonatedTenantId: number;
+            startedAt: number | null;
+            supportReason?: string | null;
+          } | null;
         }
       | null;
     platformAdmin: { email: string } | null;

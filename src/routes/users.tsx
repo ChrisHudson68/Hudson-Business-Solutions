@@ -314,7 +314,7 @@ userRoutes.get('/users/permissions', permissionRequired('users.view'), (c) => {
     <UserPermissionsPage
       rolePresets={getRolePresets(tenant?.id)}
       permissionGroups={getPermissionGroups()}
-      canCreateUsers={userHasPermission(currentUser, 'users.create')}
+      csrfToken={c.get('csrfToken')}
     />,
   );
 });

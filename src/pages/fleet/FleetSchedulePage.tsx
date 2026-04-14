@@ -6,6 +6,7 @@ interface FleetSchedulePageProps {
     vehicle_display_name: string;
     current_odometer: number | null;
     reminder: {
+      category: string;
       label: string;
       dueAtDate: string | null;
       dueAtOdometer: number | null;

@@ -11,6 +11,7 @@ type SessionPayload = {
     impersonatedUserId: number;
     impersonatedTenantId: number;
     startedAt: number;
+    supportReason?: string | null;
   };
   iat?: number;
   exp?: number;
@@ -22,6 +23,7 @@ type ImpersonationTokenPayload = {
   targetUserId: number;
   targetTenantId: number;
   redirectTo?: string;
+  supportReason?: string | null;
   iat?: number;
   exp?: number;
 };
@@ -33,6 +35,7 @@ export type SessionUser = {
     impersonatedUserId: number;
     impersonatedTenantId: number;
     startedAt: number;
+    supportReason?: string | null;
   } | null;
 };
 
@@ -41,6 +44,7 @@ export type ImpersonationToken = {
   targetUserId: number;
   targetTenantId: number;
   redirectTo: string | null;
+  supportReason?: string | null;
 };
 
 function signPayload(payloadB64: string, secretKey: string): string {
@@ -143,6 +147,7 @@ export function getSessionUser(cookieValue: string, secretKey: string): SessionU
       impersonatedUserId: value.impersonatedUserId,
       impersonatedTenantId: value.impersonatedTenantId,
       startedAt: value.startedAt,
+      supportReason: typeof value.supportReason === 'string' ? value.supportReason : null,
     };
   }
 
@@ -162,6 +167,7 @@ export function createImpersonationToken(
     targetUserId: number;
     targetTenantId: number;
     redirectTo?: string | null;
+    supportReason?: string | null;
   },
   secretKey: string,
   ttlSeconds = IMPERSONATION_TOKEN_TTL_SECONDS,
@@ -174,6 +180,7 @@ export function createImpersonationToken(
     targetUserId: input.targetUserId,
     targetTenantId: input.targetTenantId,
     redirectTo: input.redirectTo || '/dashboard',
+    supportReason: input.supportReason ?? null,
     iat: now,
     exp: now + ttlSeconds,
   };
@@ -220,6 +227,7 @@ export function getImpersonationToken(cookieValue: string, secretKey: string): I
     redirectTo: typeof payload.redirectTo === 'string' && payload.redirectTo.trim()
       ? payload.redirectTo.trim()
       : null,
+    supportReason: typeof payload.supportReason === 'string' ? payload.supportReason : null,
   };
 }
 

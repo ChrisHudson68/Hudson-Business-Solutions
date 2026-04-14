@@ -236,7 +236,7 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
                   </div>
                   <div>
                     <div class="small muted">Base Cost</div>
-                    <div>${formatMoney(item.unit_cost)}</div>
+                    <div>${formatMoney(item.unit_cost ?? 0)}</div>
                   </div>
                   <div>
                     <div class="small muted">Upcharge</div>

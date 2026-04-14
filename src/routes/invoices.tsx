@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../db/connection.js';
 import { loginRequired, permissionRequired, userHasPermission } from '../middleware/auth.js';
-import { generateInvoicePdf } from '../services/invoice-pdf.js';
+import { generateInvoicePdf, type InvoicePdfLineItem } from '../services/invoice-pdf.js';
 import {
   applyInvoiceDraftUpdate,
   buildInvoiceDraftFormFromBody,
@@ -866,7 +866,7 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
     const rawInvoiceNumber = String(body['invoice_number'] ?? '').trim();
     const invoiceNumber = normalizeInvoiceNumber(
       rawInvoiceNumber || String(existingInvoice.invoice_number ?? ''),
-      tenant.invoice_prefix || 'INV',
+      (tenant as any).invoice_prefix || 'INV',
     );
 
     const lineItems = parseInvoiceLineItems(body);
@@ -1242,7 +1242,7 @@ invoiceRoutes.get('/invoice/:id/pdf', permissionRequired('invoices.view'), async
     FROM invoice_line_items
     WHERE invoice_id = ? AND tenant_id = ?
     ORDER BY sort_order ASC
-  `).all(invoiceId, tenantId);
+  `).all(invoiceId, tenantId) as InvoicePdfLineItem[];
 
   const paidRow = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) as total

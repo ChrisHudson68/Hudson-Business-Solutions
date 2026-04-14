@@ -149,6 +149,7 @@ export interface Income {
   date: string | null;
   description: string | null;
   tenant_id: number;
+  archived_at?: string | null;
 }
 
 export interface Expense {

@@ -183,36 +183,37 @@ function splitText(font: PDFFont, text: string, maxWidth: number, fontSize: numb
 }
 
 function normalizeInvoicePdfData(input: InvoicePdfData | LegacyInvoicePdfData): NormalizedInvoicePdfData {
-  const legacyAmount = roundMoney(Number(input.invoice.amount || 0));
+  const inp = input as LegacyInvoicePdfData;
+  const legacyAmount = roundMoney(Number(inp.invoice.amount || 0));
   const subtotal = roundMoney(
     Number(
-      input.invoice.subtotal_amount ??
-        input.invoice.total_amount ??
-        input.invoice.amount ??
+      inp.invoice.subtotal_amount ??
+        inp.invoice.total_amount ??
+        inp.invoice.amount ??
         0,
     ),
   );
-  const discountAmount = roundMoney(Number(input.invoice.discount_amount || 0));
-  const taxAmount = roundMoney(Number(input.invoice.tax_amount || 0));
+  const discountAmount = roundMoney(Number(inp.invoice.discount_amount || 0));
+  const taxAmount = roundMoney(Number(inp.invoice.tax_amount || 0));
   const totalAmount = roundMoney(
     Number(
-      input.invoice.total_amount ??
-        input.invoice.amount ??
+      inp.invoice.total_amount ??
+        inp.invoice.amount ??
         subtotal - discountAmount + taxAmount,
     ),
   );
 
-  const paid = roundMoney(Number(input.paid || 0));
+  const paid = roundMoney(Number(inp.paid || 0));
   const outstanding = roundMoney(
     Number(
-      input.outstanding ??
+      inp.outstanding ??
         Math.max(totalAmount - paid, 0),
     ),
   );
 
   const lineItems =
-    input.lineItems && input.lineItems.length
-      ? input.lineItems.map((item) => ({
+    inp.lineItems && inp.lineItems.length
+      ? inp.lineItems.map((item) => ({
           description: String(item.description || 'Invoice item'),
           quantity: Number(item.quantity || 0),
           unit: item.unit ?? null,
@@ -221,8 +222,8 @@ function normalizeInvoicePdfData(input: InvoicePdfData | LegacyInvoicePdfData): 
         }))
       : [
           {
-            description: input.job?.job_name
-              ? `Invoice for ${input.job.job_name}`
+            description: inp.job?.job_name
+              ? `Invoice for ${inp.job.job_name}`
               : 'Invoice amount',
             quantity: 1,
             unit: null,
@@ -233,35 +234,35 @@ function normalizeInvoicePdfData(input: InvoicePdfData | LegacyInvoicePdfData): 
 
   return {
     tenant: {
-      name: String(input.tenant?.name || 'Hudson Business Solutions'),
-      logo_path: input.tenant?.logo_path ?? null,
-      company_address: input.tenant?.company_address ?? null,
-      company_email: input.tenant?.company_email ?? null,
-      company_phone: input.tenant?.company_phone ?? null,
-      company_website: input.tenant?.company_website ?? null,
+      name: String(inp.tenant?.name || 'Hudson Business Solutions'),
+      logo_path: inp.tenant?.logo_path ?? null,
+      company_address: inp.tenant?.company_address ?? null,
+      company_email: inp.tenant?.company_email ?? null,
+      company_phone: inp.tenant?.company_phone ?? null,
+      company_website: inp.tenant?.company_website ?? null,
     },
     invoice: {
-      id: Number(input.invoice.id || 0),
-      invoice_number: input.invoice.invoice_number ?? null,
-      date_issued: String(input.invoice.date_issued || ''),
-      due_date: String(input.invoice.due_date || ''),
+      id: Number(inp.invoice.id || 0),
+      invoice_number: inp.invoice.invoice_number ?? null,
+      date_issued: String(inp.invoice.date_issued || ''),
+      due_date: String(inp.invoice.due_date || ''),
       subtotal_amount: subtotal,
       discount_amount: discountAmount,
       tax_amount: taxAmount,
       total_amount: totalAmount,
-      public_notes: input.invoice.public_notes ?? input.invoice.notes ?? null,
-      terms_text: input.invoice.terms_text ?? null,
-      status: String(input.invoice.status || input.status || 'Unpaid'),
+      public_notes: inp.invoice.public_notes ?? inp.invoice.notes ?? null,
+      terms_text: inp.invoice.terms_text ?? null,
+      status: String(inp.invoice.status || inp.status || 'Unpaid'),
     },
     customer: {
-      name: input.customer?.name ?? input.job?.client_name ?? null,
-      email: input.customer?.email ?? null,
-      phone: input.customer?.phone ?? null,
-      address: input.customer?.address ?? null,
+      name: inp.customer?.name ?? inp.job?.client_name ?? null,
+      email: inp.customer?.email ?? null,
+      phone: inp.customer?.phone ?? null,
+      address: inp.customer?.address ?? null,
     },
     job: {
-      job_name: String(input.job?.job_name || 'Job'),
-      job_code: input.job?.job_code ?? null,
+      job_name: String(inp.job?.job_name || 'Job'),
+      job_code: inp.job?.job_code ?? null,
     },
     lineItems,
     paid,

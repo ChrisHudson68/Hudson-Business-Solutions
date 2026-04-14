@@ -165,7 +165,7 @@ monthlyBillRoutes.get('/monthly-bills', permissionRequired('financials.view'), (
     return renderList(c, { success: c.req.query('success') || undefined });
   }
 
-  const bill = monthlyBills.findById(db, editId, tenant.id);
+  const bill = monthlyBills.findById(db, editId, tenant!.id);
   if (!bill || bill.archived_at) {
     return renderList(c, { error: 'Monthly bill not found.' }, 400);
   }
@@ -197,7 +197,7 @@ monthlyBillRoutes.post('/monthly-bills', permissionRequired('financials.edit'), 
       throw new Error('End date cannot be earlier than the effective start date.');
     }
 
-    monthlyBills.create(db, tenant.id, {
+    monthlyBills.create(db, tenant!.id, {
       name,
       category,
       vendor,
@@ -228,7 +228,7 @@ monthlyBillRoutes.post('/monthly-bills/:id/update', permissionRequired('financia
     return renderList(c, { error: 'Monthly bill not found.' }, 400);
   }
 
-  const existing = monthlyBills.findById(db, billId, tenant.id);
+  const existing = monthlyBills.findById(db, billId, tenant!.id);
   if (!existing || existing.archived_at) {
     return renderList(c, { error: 'Monthly bill not found.' }, 400);
   }
@@ -248,7 +248,7 @@ monthlyBillRoutes.post('/monthly-bills/:id/update', permissionRequired('financia
       throw new Error('End date cannot be earlier than the effective start date.');
     }
 
-    monthlyBills.update(db, billId, tenant.id, {
+    monthlyBills.update(db, billId, tenant!.id, {
       name,
       category,
       vendor,
@@ -280,12 +280,12 @@ monthlyBillRoutes.post('/monthly-bills/:id/archive', permissionRequired('financi
     return renderList(c, { error: 'Monthly bill not found.' }, 400);
   }
 
-  const existing = monthlyBills.findById(db, billId, tenant.id);
+  const existing = monthlyBills.findById(db, billId, tenant!.id);
   if (!existing || existing.archived_at) {
     return renderList(c, { error: 'Monthly bill not found.' }, 400);
   }
 
-  monthlyBills.archive(db, billId, tenant.id, currentUser.id);
+  monthlyBills.archive(db, billId, tenant!.id, currentUser!.id);
   return c.redirect('/monthly-bills?success=Monthly%20bill%20archived');
 });
 
@@ -298,11 +298,11 @@ monthlyBillRoutes.post('/monthly-bills/:id/restore', permissionRequired('financi
     return renderList(c, { error: 'Monthly bill not found.' }, 400);
   }
 
-  const existing = monthlyBills.findById(db, billId, tenant.id);
+  const existing = monthlyBills.findById(db, billId, tenant!.id);
   if (!existing || !existing.archived_at) {
     return renderList(c, { error: 'Monthly bill not found.' }, 400);
   }
 
-  monthlyBills.restore(db, billId, tenant.id);
+  monthlyBills.restore(db, billId, tenant!.id);
   return c.redirect('/monthly-bills?success=Monthly%20bill%20restored');
 });

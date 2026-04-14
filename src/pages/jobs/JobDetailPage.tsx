@@ -19,7 +19,7 @@ interface Job {
 
 interface IncomeRow {
   id: number;
-  amount: number;
+  amount: number | null;
   date: string | null;
   description: string | null;
   archived_at?: string | null;

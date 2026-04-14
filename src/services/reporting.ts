@@ -100,7 +100,7 @@ function startDateForRange(range: Exclude<ReportRange, 'custom'>): string {
 
 function formatFilterLabel(startDate: string, endDate: string): string {
   const start = new Date(`${startDate}T00:00:00Z`);
-  const end = new Date(`${endDate}T00:00:00Z}`);
+  const end = new Date(`${endDate}T00:00:00Z`);
 
   const startLabel = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const endLabel = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -114,7 +114,7 @@ function bucketKeyForRange(dateStr: string, range: ReportRange): string {
 }
 
 function bucketLabel(bucketDate: string, range: ReportRange): string {
-  const d = new Date(`${bucketDate}T00:00:00Z}`);
+  const d = new Date(`${bucketDate}T00:00:00Z`);
   if (range === '1y') {
     return d.toLocaleDateString('en-US', { month: 'short' });
   }
@@ -126,8 +126,8 @@ function roundMoney(value: number): number {
 }
 
 function diffDays(fromDate: string, toDate: string): number {
-  const from = new Date(`${fromDate}T00:00:00Z}`);
-  const to = new Date(`${toDate}T00:00:00Z}`);
+  const from = new Date(`${fromDate}T00:00:00Z`);
+  const to = new Date(`${toDate}T00:00:00Z`);
   const ms = to.getTime() - from.getTime();
   return Math.floor(ms / 86400000);
 }
@@ -316,11 +316,11 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     `
       SELECT te.date, te.labor_cost, te.job_id
       FROM time_entries te
-      JOIN jobs j
+      LEFT JOIN jobs j
         ON j.id = te.job_id
        AND j.tenant_id = te.tenant_id
       WHERE te.tenant_id = ?
-        AND j.archived_at IS NULL
+        AND (te.job_id IS NULL OR j.archived_at IS NULL)
         AND te.date >= ?
         AND te.date <= ?
       ORDER BY te.date ASC, te.id ASC

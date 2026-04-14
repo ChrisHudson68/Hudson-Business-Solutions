@@ -11,9 +11,17 @@ import {
   verifyStripeWebhookEvent,
 } from '../services/stripe.js';
 
-function getObjectStringId(value: string | Stripe.Customer | Stripe.Subscription | Stripe.Invoice | null | undefined): string | null {
+function getObjectStringId(value: string | Stripe.Customer | Stripe.DeletedCustomer | Stripe.Subscription | Stripe.Invoice | null | undefined): string | null {
   if (!value) return null;
   return typeof value === 'string' ? value : value.id;
+}
+
+function getInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  // SDK v20+: subscription lives at invoice.parent.subscription_details.subscription
+  // Older webhook payloads may still have it at invoice.subscription (top-level)
+  const via_parent = invoice.parent?.subscription_details?.subscription;
+  const via_legacy = (invoice as any).subscription as string | Stripe.Subscription | null | undefined;
+  return getObjectStringId(via_parent ?? via_legacy ?? null);
 }
 
 function resolveTenantFromMetadata(metadata: Record<string, string> | null | undefined): number | null {
@@ -138,7 +146,7 @@ function handleCustomerSubscriptionDeleted(subscription: Stripe.Subscription) {
 function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   const db = getDb();
 
-  const subscriptionId = getObjectStringId(invoice.subscription as string | Stripe.Subscription | null);
+  const subscriptionId = getInvoiceSubscriptionId(invoice);
   const customerId = getObjectStringId(invoice.customer as string | Stripe.Customer | null);
 
   let tenant = subscriptionId ? tenantQueries.findByBillingSubscriptionId(db, subscriptionId) : undefined;
@@ -169,7 +177,7 @@ function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   const env = getEnv();
   const graceUntil = addGracePeriodDaysFromNow(env.stripeGracePeriodDays);
 
-  const subscriptionId = getObjectStringId(invoice.subscription as string | Stripe.Subscription | null);
+  const subscriptionId = getInvoiceSubscriptionId(invoice);
   const customerId = getObjectStringId(invoice.customer as string | Stripe.Customer | null);
 
   let tenant = subscriptionId ? tenantQueries.findByBillingSubscriptionId(db, subscriptionId) : undefined;

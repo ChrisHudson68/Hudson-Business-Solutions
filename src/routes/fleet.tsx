@@ -514,14 +514,14 @@ fleetRoutes.post('/fleet/vehicles', permissionRequired('fleet.manage'), async (c
       notes: optionalText(body.notes, 'Notes', 2000),
     });
 
-    await logActivity(db, {
+    logActivity(db, {
       tenantId: tenant!.id,
-      userId: c.get('user')?.id,
-      action: 'fleet.vehicle_created',
+      actorUserId: c.get('user')?.id,
+      eventType: 'fleet.vehicle_created',
       entityType: 'fleet_vehicle',
       entityId: vehicleId,
-      summary: `Created fleet vehicle ${String(body.display_name ?? '').trim()}`,
-      detailsJson: JSON.stringify({ vehicleId }),
+      description: `Created fleet vehicle ${String(body.display_name ?? '').trim()}`,
+      metadata: { vehicleId },
       ipAddress: resolveRequestIp(c),
     });
 
@@ -559,14 +559,14 @@ fleetRoutes.post('/fleet/vehicles/:id/update', permissionRequired('fleet.manage'
       notes: optionalText(body.notes, 'Notes', 2000),
     });
 
-    await logActivity(db, {
+    logActivity(db, {
       tenantId: tenant!.id,
-      userId: c.get('user')?.id,
-      action: 'fleet.vehicle_updated',
+      actorUserId: c.get('user')?.id,
+      eventType: 'fleet.vehicle_updated',
       entityType: 'fleet_vehicle',
       entityId: vehicleId,
-      summary: `Updated fleet vehicle ${String(body.display_name ?? '').trim()}`,
-      detailsJson: JSON.stringify({ vehicleId }),
+      description: `Updated fleet vehicle ${String(body.display_name ?? '').trim()}`,
+      metadata: { vehicleId },
       ipAddress: resolveRequestIp(c),
     });
 
@@ -628,14 +628,14 @@ fleetRoutes.post('/fleet/vehicles/:id/assignment', permissionRequired('fleet.man
     });
   }
 
-  await logActivity(db, {
+  logActivity(db, {
     tenantId: tenant!.id,
-    userId: c.get('user')?.id,
-    action: 'fleet.vehicle_assignment_updated',
+    actorUserId: c.get('user')?.id,
+    eventType: 'fleet.vehicle_assignment_updated',
     entityType: 'fleet_vehicle',
     entityId: vehicleId,
-    summary: `Updated driver assignment for ${vehicle.display_name}`,
-    detailsJson: JSON.stringify({ vehicleId, assignedEmployeeId }),
+    description: `Updated driver assignment for ${vehicle.display_name}`,
+    metadata: { vehicleId, assignedEmployeeId },
     ipAddress: resolveRequestIp(c),
   });
 
@@ -676,14 +676,14 @@ fleetRoutes.post('/fleet/vehicles/:id/reminders/complete', permissionRequired('f
       receipt_filename: null,
     });
 
-    await logActivity(db, {
+    logActivity(db, {
       tenantId: tenant!.id,
-      userId: c.get('user')?.id,
-      action: 'fleet.reminder_completed',
+      actorUserId: c.get('user')?.id,
+      eventType: 'fleet.reminder_completed',
       entityType: 'fleet_entry',
       entityId: entryId,
-      summary: `Completed ${quickCompletionServiceType(rawCategory)} for ${vehicle.display_name}`,
-      detailsJson: JSON.stringify({ entryId, vehicleId, category: rawCategory }),
+      description: `Completed ${quickCompletionServiceType(rawCategory)} for ${vehicle.display_name}`,
+      metadata: { entryId, vehicleId, category: rawCategory },
       ipAddress: resolveRequestIp(c),
     });
 
@@ -737,14 +737,14 @@ fleetRoutes.post('/fleet/entries', permissionRequired('fleet.manage'), async (c)
       receipt_filename: receiptFilename,
     });
 
-    await logActivity(db, {
+    logActivity(db, {
       tenantId: tenant!.id,
-      userId: c.get('user')?.id,
-      action: 'fleet.entry_created',
+      actorUserId: c.get('user')?.id,
+      eventType: 'fleet.entry_created',
       entityType: 'fleet_entry',
       entityId: entryId,
-      summary: `Created ${entryType} fleet record`,
-      detailsJson: JSON.stringify({ entryId, vehicleId }),
+      description: `Created ${entryType} fleet record`,
+      metadata: { entryId, vehicleId },
       ipAddress: resolveRequestIp(c),
     });
 
@@ -802,14 +802,14 @@ fleetRoutes.post('/fleet/entries/:id/update', permissionRequired('fleet.manage')
       receipt_filename: receiptFilename,
     });
 
-    await logActivity(db, {
+    logActivity(db, {
       tenantId: tenant!.id,
-      userId: c.get('user')?.id,
-      action: 'fleet.entry_updated',
+      actorUserId: c.get('user')?.id,
+      eventType: 'fleet.entry_updated',
       entityType: 'fleet_entry',
       entityId: entryId,
-      summary: `Updated ${entryType} fleet record`,
-      detailsJson: JSON.stringify({ entryId, vehicleId }),
+      description: `Updated ${entryType} fleet record`,
+      metadata: { entryId, vehicleId },
       ipAddress: resolveRequestIp(c),
     });
 
@@ -890,14 +890,14 @@ fleetRoutes.post('/fleet/documents', permissionRequired('fleet.manage'), async (
       notes: optionalText(body.notes, 'Notes', 2000),
     });
 
-    await logActivity(db, {
+    logActivity(db, {
       tenantId: tenant!.id,
-      userId: c.get('user')?.id,
-      action: 'fleet.document_created',
+      actorUserId: c.get('user')?.id,
+      eventType: 'fleet.document_created',
       entityType: 'fleet_document',
       entityId: documentId,
-      summary: `Uploaded fleet document for ${vehicle.display_name}`,
-      detailsJson: JSON.stringify({ documentId, vehicleId }),
+      description: `Uploaded fleet document for ${vehicle.display_name}`,
+      metadata: { documentId, vehicleId },
       ipAddress: resolveRequestIp(c),
     });
 

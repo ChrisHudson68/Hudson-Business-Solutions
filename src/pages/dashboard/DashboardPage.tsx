@@ -57,7 +57,7 @@ permissions?: string[];
     hours: number;
     labor_cost: number;
     employee_name: string;
-    job_name: string;
+    job_name: string | null;
   }[];
   recentEstimates: {
     id: number;
@@ -185,7 +185,7 @@ export const DashboardPage: FC<DashboardPageProps> = ({
           <p>Quick view of jobs, estimates, billing, costs, and recent labor activity.</p>
         </div>
         <div class="actions actions-mobile-stack">
-          {canManageWorkflow && hasPermission(permissions || [], 'estimates.create') ? (
+          {canManageWorkflow ? (
             <a class="btn" href="/estimates/new">New Estimate</a>
           ) : null}
 

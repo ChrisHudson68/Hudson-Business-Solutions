@@ -132,7 +132,7 @@ function buildOversizeError(maxBytes: number): Error {
 
 async function convertHeicToJpeg(buffer: Buffer): Promise<Buffer> {
   const heicModule = await import('heic-convert');
-  const heicConvert = (heicModule.default ?? heicModule) as (options: {
+  const heicConvert = (heicModule.default ?? heicModule) as unknown as (options: {
     buffer: Buffer;
     format: 'JPEG';
     quality: number;

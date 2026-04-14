@@ -16,6 +16,7 @@ import {
   normalizeUserRole,
 } from '../services/permissions.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import { checkRateLimit, clearRateLimit, recordRateLimitFailure } from '../services/rate-limit.js';
 
 export const mobileAuthRoutes = new Hono<AppEnv>();
 
@@ -84,11 +85,34 @@ mobileAuthRoutes.post('/api/mobile/login', async (c) => {
   }
 
   const db = getDb();
+  const env = getEnv();
+  const rateLimitScope = 'mobile-login';
+  const rateLimitKey = `${tenant.id}:${email}`;
+
+  const loginLimit = checkRateLimit(db, {
+    scope: rateLimitScope,
+    key: rateLimitKey,
+    windowSeconds: env.authRateLimitWindowSeconds,
+    maxAttempts: env.authRateLimitMaxAttempts,
+    blockSeconds: env.authRateLimitBlockSeconds,
+  });
+
+  if (!loginLimit.allowed) {
+    return c.json({ ok: false, error: 'too_many_attempts' }, 429);
+  }
+
   const loginRow = userQueries.findByEmailAndTenant(db, email, tenant.id) as
     | { id: number; password_hash: string; active: number }
     | undefined;
 
   if (!loginRow || loginRow.active !== 1 || !verifyPassword(password, loginRow.password_hash)) {
+    recordRateLimitFailure(db, {
+      scope: rateLimitScope,
+      key: rateLimitKey,
+      windowSeconds: env.authRateLimitWindowSeconds,
+      maxAttempts: env.authRateLimitMaxAttempts,
+      blockSeconds: env.authRateLimitBlockSeconds,
+    });
     return c.json(
       {
         ok: false,
@@ -97,6 +121,8 @@ mobileAuthRoutes.post('/api/mobile/login', async (c) => {
       401,
     );
   }
+
+  clearRateLimit(db, rateLimitScope, rateLimitKey);
 
   const fullUser = db
     .prepare(`
@@ -119,7 +145,6 @@ mobileAuthRoutes.post('/api/mobile/login', async (c) => {
     );
   }
 
-  const env = getEnv();
   const tokenInfo = createMobileApiToken(env.secretKey);
   const expiresAt = new Date(Date.now() + env.sessionTtlSeconds * 1000).toISOString();
 

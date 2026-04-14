@@ -1446,11 +1446,11 @@ platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired
   }
 
   const token = createImpersonationToken({
-    tenantId,
-    userId: user.id,
+    targetTenantId: tenantId,
+    targetUserId: user.id,
     platformAdminEmail: c.get('platformAdmin')?.email || 'unknown',
     supportReason: supportReason || 'Support access',
-  });
+  }, getEnv().secretKey);
 
   await logActivity(db, {
     tenantId,

@@ -98,6 +98,11 @@ export function create(
   return result.lastInsertRowid as number;
 }
 
+const TENANT_UPDATE_ALLOWED_COLUMNS = new Set([
+  'name', 'logo_path', 'invoice_prefix', 'company_email',
+  'company_phone', 'company_address', 'default_tax_rate', 'default_labor_rate',
+]);
+
 export function update(
   db: DB,
   tenantId: number,
@@ -116,7 +121,7 @@ export function update(
   const values: unknown[] = [];
 
   for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined) {
+    if (value !== undefined && TENANT_UPDATE_ALLOWED_COLUMNS.has(key)) {
       fields.push(`${key} = ?`);
       values.push(value);
     }
@@ -164,6 +169,14 @@ export function getBillingSummary(db: DB, tenantId: number) {
     | undefined;
 }
 
+const BILLING_STATE_ALLOWED_COLUMNS = new Set([
+  'billing_exempt', 'billing_status', 'billing_plan', 'billing_trial_ends_at',
+  'billing_grace_ends_at', 'billing_customer_id', 'billing_subscription_id',
+  'billing_subscription_status', 'billing_updated_at', 'billing_state',
+  'billing_grace_until', 'billing_override_reason', 'billing_overridden_by_user_id',
+  'billing_overridden_at',
+]);
+
 export function updateBillingState(
   db: DB,
   tenantId: number,
@@ -188,7 +201,7 @@ export function updateBillingState(
   const values: unknown[] = [];
 
   for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined) {
+    if (value !== undefined && BILLING_STATE_ALLOWED_COLUMNS.has(key)) {
       fields.push(`${key} = ?`);
       values.push(value);
     }

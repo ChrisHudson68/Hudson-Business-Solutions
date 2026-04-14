@@ -263,6 +263,10 @@ export async function resyncTenantBillingFromStripe(
     };
   }
 
+  if (!subscription) {
+    throw new Error('Unexpected state: subscription is null after all guard branches.');
+  }
+
   const patch = buildSubscriptionPatch(subscription, getEnv().stripeGracePeriodDays);
   tenantQueries.updateBillingState(db, tenant.id, patch);
 

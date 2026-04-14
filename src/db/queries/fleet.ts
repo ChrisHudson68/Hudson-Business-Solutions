@@ -173,7 +173,7 @@ function mapEntryRow(row: Record<string, unknown>): FleetEntryRecord {
   };
 }
 
-export function getMaintenanceCategoryLabel(category: FleetMaintenanceCategory | null | undefined): string {
+export function getMaintenanceCategoryLabel(category: string | null | undefined): string {
   switch (category) {
     case 'oil_change':
       return 'Oil Change';
@@ -1026,7 +1026,7 @@ function mapDocumentRow(row: Record<string, unknown>): FleetDocumentRecord {
   };
 }
 
-export function getFleetDocumentTypeLabel(documentType: FleetDocumentType | null | undefined): string {
+export function getFleetDocumentTypeLabel(documentType: string | null | undefined): string {
   switch (documentType) {
     case 'registration':
       return 'Registration';
@@ -1284,7 +1284,7 @@ export function listAttachmentHistoryForVehicle(
 
   return [...receiptRows, ...documentRows]
     .map((row) => ({
-      source_type: String(row.source_type || 'document') === 'receipt' ? 'receipt' : 'document',
+      source_type: (String(row.source_type) === 'receipt' ? 'receipt' : 'document') as 'receipt' | 'document',
       id: Number(row.id),
       entry_or_document_date: row.entry_or_document_date ? String(row.entry_or_document_date) : null,
       label: String(row.label || ''),
