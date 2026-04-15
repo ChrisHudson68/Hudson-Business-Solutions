@@ -20,10 +20,7 @@ export const AdminLoginPage: FC<AdminLoginPageProps> = ({
         </div>
 
         {error ? (
-          <div
-            class="badge badge-bad"
-            style="height:auto; padding:10px 12px; margin-bottom:14px; border-radius:12px;"
-          >
+          <div class="card" style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;">
             {error}
           </div>
         ) : null}

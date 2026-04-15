@@ -163,53 +163,49 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
       ) : null}
 
-      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Contract</div>
-          <div class="metric-value">${formatMoney(Number(job.contract_amount || 0))}</div>
+      <div class="stat-grid stat-grid-4" style="margin-bottom:14px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Contract</div>
+          <div class="stat-value">${formatMoney(Number(job.contract_amount || 0))}</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Income</div>
-          <div class="metric-value">${formatMoney(totalIncome || 0)}</div>
+        <div class="stat-card">
+          <div class="stat-label">Income</div>
+          <div class="stat-value">${formatMoney(totalIncome || 0)}</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Costs</div>
-          <div class="metric-value">${formatMoney(totalCosts || 0)}</div>
+        <div class="stat-card">
+          <div class="stat-label">Costs</div>
+          <div class="stat-value">${formatMoney(totalCosts || 0)}</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Profit</div>
-          <div class="metric-value">${formatMoney(profit || 0)}</div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Profit</div>
+          <div class="stat-value">${formatMoney(profit || 0)}</div>
         </div>
       </div>
 
-      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Expenses</div>
-          <div class="metric-value">${formatMoney(totalExpenses || 0)}</div>
+      <div class="stat-grid stat-grid-4" style="margin-bottom:14px;">
+        <div class="stat-card">
+          <div class="stat-label">Expenses</div>
+          <div class="stat-value">${formatMoney(totalExpenses || 0)}</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Labor</div>
-          <div class="metric-value">${formatMoney(totalLabor || 0)}</div>
+        <div class="stat-card">
+          <div class="stat-label">Labor</div>
+          <div class="stat-value">${formatMoney(totalLabor || 0)}</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Retainage Held</div>
-          <div class="metric-value">${formatMoney(retainageHeld || 0)}</div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Retainage Held</div>
+          <div class="stat-value">${formatMoney(retainageHeld || 0)}</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Commission Est.</div>
-          <div class="metric-value">${formatMoney(estimatedCommission || 0)}</div>
+        <div class="stat-card">
+          <div class="stat-label">Commission Est.</div>
+          <div class="stat-value">${formatMoney(estimatedCommission || 0)}</div>
         </div>
       </div>
 
       <div class="grid grid-2" style="margin-bottom:14px;">
         <div class="card">
-          <b>Job Info</b>
+          <div class="card-head" style="margin-bottom:12px;">
+            <h3>Job Info</h3>
+          </div>
           <div class="mobile-info-list">
             <div class="mobile-info-row">
               <span class="mobile-info-label">Client</span>
@@ -253,39 +249,37 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
 
         <div class="card">
-          <b>Job Description</b>
-          <div class="muted" style="white-space:pre-wrap; margin-top:12px;">
+          <div class="card-head" style="margin-bottom:12px;">
+            <h3>Job Description</h3>
+          </div>
+          <div class="muted" style="white-space:pre-wrap;">
             {job.job_description || 'No job description entered yet.'}
           </div>
         </div>
       </div>
 
-      <div class="card">
-        <b>Actions</b>
-        <div class="actions actions-mobile-stack" style="margin-top:12px;">
-          {job.archived_at ? (
-            <span class="muted">Restore this job to add new income or expenses.</span>
-          ) : (
-            <>
-              <a class="btn btn-primary" href={`/add_income/${job.id}`}>Add Income</a>
-              <a class="btn" href={`/add_expense/${job.id}`}>Add Expense</a>
-            </>
-          )}
+      {!job.archived_at ? (
+        <div class="card" style="margin-bottom:14px;">
+          <div class="card-head">
+            <div>
+              <h3>Quick Actions</h3>
+              <p>Keep job costing and cash flow accurate.</p>
+            </div>
+            <div class="actions">
+              <a class="btn btn-primary" href={`/add_income/${job.id}`}>+ Add Income</a>
+              <a class="btn" href={`/add_expense/${job.id}`}>+ Add Expense</a>
+            </div>
+          </div>
         </div>
-        <p class="muted" style="margin-top:10px;">
-          Use these to keep job costing and cash flow accurate.
-        </p>
-      </div>
+      ) : null}
 
       <div class="grid grid-2" style="margin-top:14px; align-items:start;">
         <div class="card">
-          <div class="page-head" style="margin-bottom:10px;">
-            <div>
-              <b>Income</b>
-            </div>
+          <div class="card-head">
+            <h3>Income</h3>
             {!job.archived_at ? <a class="btn" href={`/add_income/${job.id}`}>Add Income</a> : null}
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap" style="margin:0 -18px -16px;">
             <table>
               <thead>
                 <tr>
@@ -327,13 +321,11 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
         </div>
 
         <div class="card">
-          <div class="page-head" style="margin-bottom:10px;">
-            <div>
-              <b>Expenses</b>
-            </div>
+          <div class="card-head">
+            <h3>Expenses</h3>
             {!job.archived_at ? <a class="btn" href={`/add_expense/${job.id}`}>Add Expense</a> : null}
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap" style="margin:0 -18px -16px;">
             <table>
               <thead>
                 <tr>
@@ -389,8 +381,11 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
       </div>
 
       <div class="card" style="margin-top:14px;">
-        <b>Labor Time</b>
-        <div class="table-wrap" style="margin-top:10px;">
+        <div class="card-head">
+          <h3>Labor Time</h3>
+          <a class="btn" href="/timesheet">Timesheets</a>
+        </div>
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>

@@ -109,23 +109,20 @@ export const SupportPage: FC<SupportPageProps> = ({
         </div>
       ) : null}
 
-      <div class="grid grid-4">
-        <div class="card">
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
           <div class="stat-label">Open</div>
           <div class="stat-value">{openTickets}</div>
         </div>
-
-        <div class="card">
+        <div class="stat-card">
           <div class="stat-label">In Progress</div>
           <div class="stat-value">{inProgressTickets}</div>
         </div>
-
-        <div class="card">
+        <div class="stat-card stat-card-accent">
           <div class="stat-label">Waiting on You</div>
           <div class="stat-value">{waitingOnCustomerTickets}</div>
         </div>
-
-        <div class="card">
+        <div class="stat-card stat-card-red">
           <div class="stat-label">Critical Open</div>
           <div class="stat-value">{criticalOpenTickets}</div>
         </div>

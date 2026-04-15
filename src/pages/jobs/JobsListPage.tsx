@@ -43,11 +43,8 @@ interface JobsListPageProps {
   canArchiveJobs?: boolean;
 }
 
-function formatMoney(value: number): string {
-  return value.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+function fmt(value: number): string {
+  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export const JobsListPage: FC<JobsListPageProps> = ({
@@ -65,81 +62,68 @@ export const JobsListPage: FC<JobsListPageProps> = ({
   canCreateJobs,
   canEditJobs,
 }) => {
-  const hasJobs = jobs.length > 0;
-
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>Jobs</h1>
-          <p class="muted">Track project profitability, invoices, collections, labor, and estimate conversions.</p>
+          <p>Track project profitability, invoices, collections, labor, and estimate conversions.</p>
         </div>
-        <div class="actions actions-mobile-stack">
+        <div class="actions">
           <a class="btn" href={showArchived ? '/jobs' : '/jobs?show_archived=1'}>
             {showArchived ? 'Hide Archived' : 'Show Archived'}
           </a>
-          {canCreateJobs ? <a class="btn btn-primary" href="/add_job">Add Job</a> : null}
+          {canCreateJobs ? <a class="btn btn-primary" href="/add_job">+ Add Job</a> : null}
         </div>
       </div>
 
       {deleteError ? (
-        <div
-          class="card"
-          style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;"
-        >
+        <div class="card" style="margin-bottom:16px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;">
           {deleteError}
         </div>
       ) : null}
 
-      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Jobs</div>
-          <div class="metric-value">{totalJobs}</div>
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Total Jobs</div>
+          <div class="stat-value">{totalJobs}</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Contract Value</div>
-          <div class="metric-value">${formatMoney(totalContract || 0)}</div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Contract Value</div>
+          <div class="stat-value">${fmt(totalContract || 0)}</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Invoiced</div>
-          <div class="metric-value">${formatMoney(totalInvoiced || 0)}</div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Collected</div>
+          <div class="stat-value">${fmt(totalPayments || 0)}</div>
+          <div class="stat-sub">${fmt(totalInvoiced || 0)} invoiced</div>
         </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Collected</div>
-          <div class="metric-value">${formatMoney(totalPayments || 0)}</div>
-        </div>
-      </div>
-
-      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Income</div>
-          <div class="metric-value">${formatMoney(totalIncome || 0)}</div>
-        </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Costs</div>
-          <div class="metric-value">${formatMoney(totalCost || 0)}</div>
-        </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Profit</div>
-          <div class="metric-value">${formatMoney(totalProfit || 0)}</div>
-        </div>
-
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Unpaid Invoices</div>
-          <div class="metric-value">${formatMoney(totalUnpaidInvoiceBalance || 0)}</div>
+        <div class="stat-card">
+          <div class="stat-label">Profit</div>
+          <div class="stat-value">${fmt(totalProfit || 0)}</div>
+          <div class="stat-sub">${fmt(totalIncome || 0)} income · ${fmt(totalCost || 0)} costs</div>
         </div>
       </div>
 
       <div class="card">
-        {hasJobs ? (
+        <div class="card-head">
+          <div>
+            <h2>All Jobs</h2>
+            {showArchived ? <p>Showing archived jobs</p> : null}
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">
+              {totalJobs} jobs
+            </span>
+            <span class="badge" style="background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.18); color:rgba(255,255,255,.8); font-size:10.5px;">
+              Unpaid: ${fmt(totalUnpaidInvoiceBalance || 0)}
+            </span>
+          </div>
+        </div>
+
+        {jobs.length > 0 ? (
           <>
-            <div class="table-wrap table-wrap-tight">
-              <table class="table">
+            <div class="table-wrap" style="margin:0 -18px -16px;">
+              <table>
                 <thead>
                   <tr>
                     <th>Job</th>
@@ -156,14 +140,14 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                   {jobs.map((job) => (
                     <tr>
                       <td>
-                        <div><b>{job.job_name}</b></div>
-                        <div class="muted small">
-                          {job.job_code || 'No job code'}
-                          {job.archived_at ? ' • Archived' : ''}
+                        <a href={`/job/${job.id}`} style="font-weight:800; color:var(--navy);">{job.job_name}</a>
+                        <div class="muted" style="font-size:12px; margin-top:2px;">
+                          {job.job_code || 'No code'}
+                          {job.archived_at ? ' · Archived' : ''}
                         </div>
                         {job.source_estimate_id ? (
-                          <div class="small" style="margin-top:6px;">
-                            <span class="badge badge-good">
+                          <div style="margin-top:5px;">
+                            <span class="badge badge-good" style="font-size:10px;">
                               From {job.source_estimate_number || `Estimate #${job.source_estimate_id}`}
                             </span>
                           </div>
@@ -171,20 +155,21 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                       </td>
                       <td>{job.client_name || '—'}</td>
                       <td>
-                        {job.archived_at ? (
-                          <span class="badge badge-warn">Archived</span>
-                        ) : (
-                          <span class="badge">{job.status || 'Unknown'}</span>
-                        )}
+                        {job.archived_at
+                          ? <span class="badge badge-warn">Archived</span>
+                          : <span class="badge">{job.status || 'Unknown'}</span>
+                        }
                       </td>
-                      <td class="right">${formatMoney(job.contract_amount || 0)}</td>
-                      <td class="right">${formatMoney(job.income_total || 0)}</td>
-                      <td class="right">${formatMoney(job.total_costs || 0)}</td>
-                      <td class="right">${formatMoney(job.profit || 0)}</td>
+                      <td class="right" style="font-weight:700;">${fmt(job.contract_amount || 0)}</td>
+                      <td class="right">${fmt(job.income_total || 0)}</td>
+                      <td class="right">${fmt(job.total_costs || 0)}</td>
+                      <td class="right" style={`font-weight:700; color:${(job.profit || 0) >= 0 ? '#065F46' : '#991B1B'};`}>
+                        ${fmt(job.profit || 0)}
+                      </td>
                       <td class="right">
-                        <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
-                          <a class="btn" href={`/job/${job.id}`}>View</a>
-                          {canEditJobs ? <a class="btn" href={`/edit_job/${job.id}`}>Edit</a> : null}
+                        <div class="actions" style="justify-content:flex-end; gap:6px;">
+                          <a class="btn btn-sm" href={`/job/${job.id}`}>View</a>
+                          {canEditJobs ? <a class="btn btn-sm" href={`/edit_job/${job.id}`}>Edit</a> : null}
                         </div>
                       </td>
                     </tr>
@@ -192,49 +177,19 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                 </tbody>
               </table>
             </div>
-
-            <div class="muted" style="margin-top:12px;">
-              Archived jobs are hidden from normal views but preserved for historical reporting and recovery.
-            </div>
           </>
         ) : (
-          <div style="text-align:center; padding:36px 20px;">
-            <div style="
-              width:64px;
-              height:64px;
-              margin:0 auto 16px;
-              border-radius:16px;
-              background:#EFF6FF;
-              display:flex;
-              align-items:center;
-              justify-content:center;
-              font-size:28px;
-              font-weight:900;
-              color:#1D4ED8;
-            ">
-              🏗
-            </div>
-
-            <h2 style="margin:0 0 10px;">
-              {showArchived ? 'No archived jobs yet' : 'No jobs yet'}
-            </h2>
-
-            <p class="muted" style="max-width:520px; margin:0 auto 16px;">
-              Jobs are the foundation of your workspace. Track contract value,
-              labor, expenses, invoices, payments, profitability, and estimate conversions for each project.
-            </p>
-
-            {!showArchived && canCreateJobs ? (
-              <a class="btn btn-primary" href="/add_job">
-                Create Your First Job
-              </a>
-            ) : null}
-
-            <div class="muted small" style="margin-top:14px;">
+          <div class="empty-state">
+            <div class="empty-state-icon">🏗️</div>
+            <h3>{showArchived ? 'No archived jobs' : 'No jobs yet'}</h3>
+            <p>
               {showArchived
                 ? 'Archived jobs will appear here once projects are archived.'
-                : 'You can edit or archive jobs later as your projects evolve.'}
-            </div>
+                : 'Jobs are the foundation of your workspace. Track costs, invoices, and profitability per project.'}
+            </p>
+            {!showArchived && canCreateJobs ? (
+              <a class="btn btn-primary" href="/add_job">+ Create Your First Job</a>
+            ) : null}
           </div>
         )}
       </div>

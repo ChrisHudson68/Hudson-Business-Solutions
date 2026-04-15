@@ -15,336 +15,258 @@ export const LoginPage: FC<LoginPageProps> = ({
   currentTenant,
   findWorkspaceUrl,
 }) => {
-  const tenantName = currentTenant?.name || 'your company workspace';
-  const tenantSubdomain = currentTenant?.subdomain || '';
+  const tenantName = currentTenant?.name || 'Hudson Business Solutions';
 
   return (
     <div>
       <style>{`
-        .login-shell{
-          display:grid;
-          grid-template-columns:minmax(0, 1.02fr) minmax(360px, 0.98fr);
-          gap:22px;
-          align-items:start;
-        }
-
-        .login-panel{
+        .li-wrap{
           display:flex;
-          flex-direction:column;
-          gap:16px;
+          justify-content:center;
+          padding:8px 0 24px;
         }
 
-        .login-hero{
-          background:linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+        .li-card{
+          width:min(460px, 100%);
+          background:#FFFFFF;
           border:1px solid #E5EAF2;
-          border-radius:22px;
-          box-shadow:0 14px 34px rgba(15,23,42,0.06);
-          padding:26px;
+          border-radius:20px;
+          box-shadow:0 16px 40px rgba(15,23,42,0.09);
+          overflow:hidden;
         }
 
-        .login-eyebrow{
+        .li-card-head{
+          background:linear-gradient(135deg, #0F1F35 0%, #1E3A5F 100%);
+          padding:28px 28px 24px;
+        }
+
+        .li-tenant-badge{
           display:inline-flex;
           align-items:center;
-          gap:8px;
-          padding:8px 12px;
+          gap:7px;
+          padding:6px 11px;
           border-radius:999px;
-          border:1px solid #DBEAFE;
-          background:#EFF6FF;
-          color:#1D4ED8;
+          background:rgba(245,158,11,0.18);
+          border:1px solid rgba(245,158,11,0.30);
+          color:#FCD34D;
           font-size:12px;
           font-weight:800;
-          letter-spacing:.08em;
+          letter-spacing:0.04em;
           text-transform:uppercase;
           margin-bottom:14px;
         }
 
-        .login-title{
-          margin:0 0 10px;
-          font-size:38px;
-          line-height:1.05;
-          letter-spacing:-0.03em;
-          color:#0F172A;
-          font-weight:900;
-        }
-
-        .login-copy{
-          margin:0;
-          color:#64748B;
-          line-height:1.8;
-          font-size:16px;
-          max-width:760px;
-        }
-
-        .login-grid{
-          display:grid;
-          grid-template-columns:repeat(2, minmax(0,1fr));
-          gap:14px;
-        }
-
-        .login-card{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:18px;
-          box-shadow:0 10px 24px rgba(15,23,42,0.05);
-          padding:18px;
-        }
-
-        .login-card-title{
-          font-size:17px;
-          font-weight:900;
-          color:#0F172A;
-          margin-bottom:8px;
-        }
-
-        .login-card-copy{
-          color:#64748B;
-          line-height:1.75;
-          font-size:14px;
-        }
-
-        .login-form-card{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:22px;
-          box-shadow:0 14px 34px rgba(15,23,42,0.06);
-          padding:24px;
-        }
-
-        .login-form-title{
-          margin:0 0 8px;
-          font-size:28px;
-          line-height:1.1;
-          letter-spacing:-0.03em;
-          color:#0F172A;
-          font-weight:900;
-        }
-
-        .login-form-copy{
-          margin:0 0 18px;
-          color:#64748B;
-          line-height:1.75;
-        }
-
-        .login-tenant-pill{
-          display:inline-flex;
-          align-items:center;
-          gap:8px;
-          padding:9px 12px;
-          border-radius:999px;
-          background:#F8FAFC;
-          border:1px solid #E5EAF2;
-          color:#334155;
-          font-size:13px;
+        .li-card-head h2{
+          margin:0 0 6px;
+          font-size:22px;
           font-weight:800;
-          margin-bottom:14px;
+          color:#FFFFFF;
+          letter-spacing:-0.02em;
+          line-height:1.2;
         }
 
-        .login-error{
-          margin-bottom:14px;
+        .li-card-head p{
+          margin:0;
+          font-size:14px;
+          color:rgba(255,255,255,0.60);
+          line-height:1.6;
+        }
+
+        .li-card-body{
+          padding:24px 28px 28px;
+        }
+
+        .li-error{
+          margin-bottom:16px;
           border:1px solid #FECACA;
           background:#FEF2F2;
           color:#991B1B;
-          border-radius:14px;
-          padding:12px 14px;
+          border-radius:12px;
+          padding:11px 14px;
           line-height:1.6;
-          font-weight:700;
-        }
-
-        .login-note{
-          margin-top:14px;
-          padding:14px 16px;
-          border-radius:16px;
-          border:1px solid #E5EAF2;
-          background:#F8FAFC;
-          color:#475569;
-          line-height:1.7;
           font-size:14px;
-        }
-
-        .login-note strong{
-          color:#0F172A;
-        }
-
-        .login-mini-list{
-          display:grid;
+          font-weight:600;
+          display:flex;
           gap:8px;
-          margin-top:14px;
+          align-items:flex-start;
         }
 
-        .login-mini-item{
-          padding:12px 14px;
-          border-radius:14px;
-          background:#F8FAFC;
-          border:1px solid #E5EAF2;
-          color:#475569;
-          line-height:1.65;
-          font-size:14px;
-        }
-
-        .login-help{
-          margin-top:16px;
-          color:#64748B;
-          line-height:1.7;
-          font-size:14px;
-        }
-
-        .login-help a{
+        .li-label{
+          display:block;
+          font-size:13px;
           font-weight:700;
+          color:#334155;
+          margin-bottom:6px;
         }
 
-        @media (max-width: 980px){
-          .login-shell{
-            grid-template-columns:1fr;
-          }
+        .li-field{
+          margin-bottom:14px;
         }
 
-        @media (max-width: 640px){
-          .login-hero,
-          .login-form-card{
-            padding:18px;
-          }
+        .li-input{
+          width:100%;
+          padding:11px 14px;
+          border:1.5px solid #E5EAF2;
+          border-radius:12px;
+          font-size:15px;
+          background:#FAFAFA;
+          outline:none;
+          color:#0F172A;
+          transition:border-color .15s, box-shadow .15s, background .15s;
+        }
 
-          .login-title{
-            font-size:31px;
-          }
+        .li-input:focus{
+          border-color:#1E3A5F;
+          background:#FFFFFF;
+          box-shadow:0 0 0 4px rgba(30,58,95,0.10);
+        }
 
-          .login-grid{
-            grid-template-columns:1fr;
-          }
+        .li-submit{
+          width:100%;
+          margin-top:6px;
+          padding:13px 20px;
+          background:linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+          color:#0F172A;
+          font-size:15px;
+          font-weight:800;
+          border:none;
+          border-radius:12px;
+          cursor:pointer;
+          letter-spacing:0.01em;
+          transition:filter .15s, transform .1s;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          gap:8px;
+        }
 
-          .login-form-title{
-            font-size:24px;
+        .li-submit:hover{
+          filter:brightness(1.06);
+        }
+
+        .li-submit:active{
+          transform:scale(0.99);
+        }
+
+        .li-divider{
+          height:1px;
+          background:#F1F5F9;
+          margin:20px 0;
+        }
+
+        .li-links{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          flex-wrap:wrap;
+          gap:10px;
+          font-size:13px;
+          color:#64748B;
+        }
+
+        .li-links a{
+          color:#1E3A5F;
+          font-weight:700;
+          text-decoration:none;
+        }
+
+        .li-links a:hover{
+          text-decoration:underline;
+        }
+
+        @media (max-width: 520px){
+          .li-card{
+            border-radius:16px;
+          }
+          .li-card-head{
+            padding:22px 20px 20px;
+          }
+          .li-card-body{
+            padding:20px 20px 24px;
           }
         }
       `}</style>
 
-      <div class="login-shell">
-        <div class="login-panel">
-          <div class="login-hero">
-            <div class="login-eyebrow">
-              {currentTenant ? 'Company workspace sign in' : 'Workspace access'}
-            </div>
-
-            <h1 class="login-title">
+      <div class="li-wrap">
+        <div class="li-card">
+          <div class="li-card-head">
+            {currentTenant ? (
+              <div class="li-tenant-badge">
+                🏢 {currentTenant.subdomain}
+              </div>
+            ) : (
+              <div class="li-tenant-badge">
+                🔑 Workspace sign in
+              </div>
+            )}
+            <h2>
+              {currentTenant ? `Sign in to ${tenantName}` : 'Sign in'}
+            </h2>
+            <p>
               {currentTenant
-                ? `Sign in to ${tenantName}`
-                : 'Sign in to your Hudson Business Solutions workspace'}
-            </h1>
-
-            <p class="login-copy">
-              {currentTenant
-                ? 'Access your company workspace to manage jobs, labor, invoices, payments, and reporting.'
-                : 'Use your company workspace credentials to access your construction operations platform.'}
+                ? 'Access your jobs, timesheets, invoices, and reporting.'
+                : 'Use your company credentials to access your workspace.'}
             </p>
           </div>
 
-          <div class="login-grid">
-            <div class="login-card">
-              <div class="login-card-title">Built for your company workspace</div>
-              <div class="login-card-copy">
-                Each company signs in to its own isolated workspace with its own users, settings, and business data.
+          <div class="li-card-body">
+            {error ? (
+              <div class="li-error">
+                <span>⚠</span>
+                <span>{error}</span>
               </div>
-            </div>
+            ) : null}
 
-            <div class="login-card">
-              <div class="login-card-title">Need the right workspace first?</div>
-              <div class="login-card-copy">
-                If you are not sure which company workspace to use, start with the Find Workspace page instead of guessing.
+            <form method="post" action="/login">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+
+              <div class="li-field">
+                <label class="li-label" for="email">Email address</label>
+                <input
+                  class="li-input"
+                  type="email"
+                  id="email"
+                  name="email"
+                  required
+                  value={prefillEmail || ''}
+                  placeholder="you@company.com"
+                  autocomplete="email"
+                />
               </div>
-            </div>
 
-            <div class="login-card">
-              <div class="login-card-title">Use your company credentials</div>
-              <div class="login-card-copy">
-                Sign in with the email and password connected to your company account, not a personal account unless your company uses it.
+              <div class="li-field">
+                <label class="li-label" for="password">Password</label>
+                <input
+                  class="li-input"
+                  type="password"
+                  id="password"
+                  name="password"
+                  required
+                  placeholder="Enter your password"
+                  autocomplete="current-password"
+                />
               </div>
+
+              <button class="li-submit" type="submit">
+                Sign in →
+              </button>
+            </form>
+
+            <div class="li-divider"></div>
+
+            <div class="li-links">
+              {currentTenant ? (
+                <>
+                  <span>Wrong workspace?</span>
+                  <a href={findWorkspaceUrl}>Find workspace →</a>
+                </>
+              ) : (
+                <>
+                  <a href={findWorkspaceUrl}>Find your workspace</a>
+                  <a href="/signup">Create workspace</a>
+                </>
+              )}
             </div>
-
-            <div class="login-card">
-              <div class="login-card-title">New company setup</div>
-              <div class="login-card-copy">
-                If your company has not created a workspace yet, start by creating one and setting up your admin account.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="login-form-card">
-          <h2 class="login-form-title">Sign in</h2>
-          <p class="login-form-copy">
-            Enter your account details to continue.
-          </p>
-
-          {currentTenant ? (
-            <div class="login-tenant-pill">
-              Workspace: {tenantName}{tenantSubdomain ? ` (${tenantSubdomain})` : ''}
-            </div>
-          ) : null}
-
-          {error ? (
-            <div class="login-error">
-              {error}
-            </div>
-          ) : null}
-
-          <form method="post" action="/login">
-            <input type="hidden" name="csrf_token" value={csrfToken} />
-
-            <label for="email">Email</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              required
-              value={prefillEmail || ''}
-              placeholder="you@company.com"
-            />
-
-            <label for="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              required
-              placeholder="Enter your password"
-            />
-
-            <div class="actions" style="margin-top:16px;">
-              <button class="btn btn-primary" type="submit">Sign In</button>
-              {!currentTenant ? (
-                <a class="btn" href={findWorkspaceUrl}>Find Workspace</a>
-              ) : null}
-            </div>
-          </form>
-
-          <div class="login-note">
-            <strong>Tip:</strong> {currentTenant
-              ? `Make sure you are signing in to the correct company workspace for ${tenantName}.`
-              : 'If your sign-in page does not look familiar, use Find Workspace first to get to the correct company login page.'}
-          </div>
-
-          <div class="login-mini-list">
-            <div class="login-mini-item">
-              If your company invited you recently, use the same email address that received the invitation or setup instructions.
-            </div>
-            <div class="login-mini-item">
-              If your company has multiple people using the platform, each user should sign in with their own account.
-            </div>
-            <div class="login-mini-item">
-              If your company is not set up yet, create a workspace instead of trying to sign in here.
-            </div>
-          </div>
-
-          <div class="login-help">
-            {!currentTenant ? (
-              <>
-                Need a new company workspace? <a href="/signup">Create Workspace</a>
-              </>
-            ) : (
-              <>
-                Not your company workspace? <a href={findWorkspaceUrl}>Find Workspace</a>
-              </>
-            )}
           </div>
         </div>
       </div>

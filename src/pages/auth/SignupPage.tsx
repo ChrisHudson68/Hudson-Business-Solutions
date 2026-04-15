@@ -22,398 +22,374 @@ export const SignupPage: FC<SignupPageProps> = ({
   return (
     <div>
       <style>{`
-        .signup-shell{
-          display:grid;
-          grid-template-columns:minmax(0, 1.05fr) minmax(360px, 0.95fr);
-          gap:22px;
-          align-items:start;
-        }
-
-        .signup-panel{
+        .su-wrap{
           display:flex;
-          flex-direction:column;
-          gap:16px;
+          justify-content:center;
+          padding:8px 0 24px;
         }
 
-        .signup-hero{
-          background:linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+        .su-card{
+          width:min(540px, 100%);
+          background:#FFFFFF;
           border:1px solid #E5EAF2;
-          border-radius:22px;
-          box-shadow:0 14px 34px rgba(15,23,42,0.06);
-          padding:26px;
+          border-radius:20px;
+          box-shadow:0 16px 40px rgba(15,23,42,0.09);
+          overflow:hidden;
         }
 
-        .signup-eyebrow{
+        .su-card-head{
+          background:linear-gradient(135deg, #0F1F35 0%, #1E3A5F 100%);
+          padding:28px 28px 24px;
+        }
+
+        .su-card-head-badge{
           display:inline-flex;
           align-items:center;
-          gap:8px;
-          padding:8px 12px;
+          gap:7px;
+          padding:6px 11px;
           border-radius:999px;
-          border:1px solid #DBEAFE;
-          background:#EFF6FF;
-          color:#1D4ED8;
+          background:rgba(245,158,11,0.18);
+          border:1px solid rgba(245,158,11,0.30);
+          color:#FCD34D;
           font-size:12px;
           font-weight:800;
-          letter-spacing:.08em;
+          letter-spacing:0.04em;
           text-transform:uppercase;
           margin-bottom:14px;
         }
 
-        .signup-title{
-          margin:0 0 10px;
-          font-size:38px;
-          line-height:1.05;
-          letter-spacing:-0.03em;
-          color:#0F172A;
-          font-weight:900;
+        .su-card-head h2{
+          margin:0 0 6px;
+          font-size:22px;
+          font-weight:800;
+          color:#FFFFFF;
+          letter-spacing:-0.02em;
+          line-height:1.2;
         }
 
-        .signup-copy{
+        .su-card-head p{
           margin:0;
-          color:#64748B;
-          line-height:1.8;
-          font-size:16px;
-          max-width:760px;
-        }
-
-        .signup-grid{
-          display:grid;
-          grid-template-columns:repeat(2, minmax(0,1fr));
-          gap:14px;
-        }
-
-        .signup-card{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:18px;
-          box-shadow:0 10px 24px rgba(15,23,42,0.05);
-          padding:18px;
-        }
-
-        .signup-card-title{
-          font-size:17px;
-          font-weight:900;
-          color:#0F172A;
-          margin-bottom:8px;
-        }
-
-        .signup-card-copy{
-          color:#64748B;
-          line-height:1.75;
           font-size:14px;
+          color:rgba(255,255,255,0.60);
+          line-height:1.6;
         }
 
-        .signup-checklist{
-          display:grid;
-          gap:10px;
-        }
-
-        .signup-check{
+        .su-pricing{
           display:flex;
-          align-items:flex-start;
-          gap:10px;
-          color:#334155;
-          line-height:1.7;
-          font-size:14px;
-        }
-
-        .signup-check-mark{
-          color:#15803D;
-          font-weight:900;
-          flex:0 0 auto;
-        }
-
-        .signup-form-card{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:22px;
-          box-shadow:0 14px 34px rgba(15,23,42,0.06);
-          padding:24px;
-        }
-
-        .signup-form-title{
-          margin:0 0 8px;
-          font-size:28px;
-          line-height:1.1;
-          letter-spacing:-0.03em;
-          color:#0F172A;
-          font-weight:900;
-        }
-
-        .signup-form-copy{
-          margin:0 0 18px;
-          color:#64748B;
-          line-height:1.75;
-        }
-
-        .signup-note{
+          align-items:baseline;
+          gap:4px;
           margin-top:14px;
-          padding:14px 16px;
-          border-radius:16px;
-          border:1px solid #E5EAF2;
-          background:#F8FAFC;
-          color:#475569;
-          line-height:1.7;
-          font-size:14px;
         }
 
-        .signup-note strong{
-          color:#0F172A;
+        .su-pricing-amount{
+          font-size:32px;
+          font-weight:900;
+          color:#F59E0B;
+          letter-spacing:-0.03em;
+          line-height:1;
         }
 
-        .signup-error{
-          margin-bottom:14px;
+        .su-pricing-sub{
+          font-size:13px;
+          color:rgba(255,255,255,0.55);
+          font-weight:600;
+        }
+
+        .su-card-body{
+          padding:24px 28px 28px;
+        }
+
+        .su-error{
+          margin-bottom:16px;
           border:1px solid #FECACA;
           background:#FEF2F2;
           color:#991B1B;
-          border-radius:14px;
-          padding:12px 14px;
+          border-radius:12px;
+          padding:11px 14px;
           line-height:1.6;
-          font-weight:700;
-        }
-
-        .signup-help{
-          margin-top:16px;
-          color:#64748B;
-          line-height:1.7;
           font-size:14px;
-        }
-
-        .signup-help a{
-          font-weight:700;
-        }
-
-        .signup-mini-list{
-          display:grid;
-          gap:8px;
-          margin-top:14px;
-        }
-
-        .signup-mini-item{
-          padding:12px 14px;
-          border-radius:14px;
-          background:#F8FAFC;
-          border:1px solid #E5EAF2;
-          color:#475569;
-          line-height:1.65;
-          font-size:14px;
-        }
-
-        .signup-price{
+          font-weight:600;
           display:flex;
-          align-items:flex-end;
-          gap:6px;
-          margin:12px 0 14px;
+          gap:8px;
+          align-items:flex-start;
         }
 
-        .signup-price-main{
-          font-size:44px;
-          line-height:1;
-          font-weight:900;
-          letter-spacing:-0.04em;
-          color:#0F172A;
+        .su-row{
+          display:grid;
+          grid-template-columns:1fr 1fr;
+          gap:14px;
         }
 
-        .signup-price-sub{
-          font-size:14px;
-          color:#64748B;
+        .su-field{
+          margin-bottom:14px;
+        }
+
+        .su-label{
+          display:block;
+          font-size:13px;
           font-weight:700;
+          color:#334155;
           margin-bottom:6px;
         }
 
-        @media (max-width: 980px){
-          .signup-shell{
+        .su-input{
+          width:100%;
+          padding:11px 14px;
+          border:1.5px solid #E5EAF2;
+          border-radius:12px;
+          font-size:15px;
+          background:#FAFAFA;
+          outline:none;
+          color:#0F172A;
+          transition:border-color .15s, box-shadow .15s, background .15s;
+        }
+
+        .su-input:focus{
+          border-color:#1E3A5F;
+          background:#FFFFFF;
+          box-shadow:0 0 0 4px rgba(30,58,95,0.10);
+        }
+
+        .su-hint{
+          margin-top:6px;
+          font-size:12px;
+          color:#94A3B8;
+          line-height:1.5;
+        }
+
+        .su-divider{
+          height:1px;
+          background:#F1F5F9;
+          margin:6px 0 18px;
+        }
+
+        .su-section-label{
+          font-size:11px;
+          font-weight:800;
+          letter-spacing:0.08em;
+          text-transform:uppercase;
+          color:#94A3B8;
+          margin-bottom:14px;
+        }
+
+        .su-submit{
+          width:100%;
+          margin-top:6px;
+          padding:13px 20px;
+          background:linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+          color:#0F172A;
+          font-size:15px;
+          font-weight:800;
+          border:none;
+          border-radius:12px;
+          cursor:pointer;
+          letter-spacing:0.01em;
+          transition:filter .15s, transform .1s;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          gap:8px;
+        }
+
+        .su-submit:hover{
+          filter:brightness(1.06);
+        }
+
+        .su-submit:active{
+          transform:scale(0.99);
+        }
+
+        .su-note{
+          margin-top:16px;
+          padding:12px 14px;
+          border-radius:12px;
+          background:#F8FAFC;
+          border:1px solid #E5EAF2;
+          font-size:13px;
+          color:#475569;
+          line-height:1.6;
+        }
+
+        .su-note strong{
+          color:#0F172A;
+        }
+
+        .su-foot-divider{
+          height:1px;
+          background:#F1F5F9;
+          margin:18px 0;
+        }
+
+        .su-links{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          flex-wrap:wrap;
+          gap:10px;
+          font-size:13px;
+          color:#64748B;
+        }
+
+        .su-links a{
+          color:#1E3A5F;
+          font-weight:700;
+          text-decoration:none;
+        }
+
+        .su-links a:hover{
+          text-decoration:underline;
+        }
+
+        @media (max-width: 580px){
+          .su-row{
             grid-template-columns:1fr;
+            gap:0;
           }
         }
 
-        @media (max-width: 640px){
-          .signup-hero,
-          .signup-form-card{
-            padding:18px;
+        @media (max-width: 520px){
+          .su-card{
+            border-radius:16px;
           }
-
-          .signup-title{
-            font-size:31px;
+          .su-card-head{
+            padding:22px 20px 20px;
           }
-
-          .signup-grid{
-            grid-template-columns:1fr;
-          }
-
-          .signup-form-title{
-            font-size:24px;
-          }
-
-          .signup-price-main{
-            font-size:36px;
+          .su-card-body{
+            padding:20px 20px 24px;
           }
         }
       `}</style>
 
-      <div class="signup-shell">
-        <div class="signup-panel">
-          <div class="signup-hero">
-            <div class="signup-eyebrow">Create your company workspace</div>
-            <h1 class="signup-title">Start with a clean, professional system for your construction business.</h1>
-            <p class="signup-copy">
-              Hudson Business Solutions helps you bring jobs, labor tracking, invoices,
-              payments, and reporting into one organized workspace so your team can operate
-              with better visibility and less confusion.
-            </p>
-
-            <div class="signup-price">
-              <div class="signup-price-main">$49</div>
-              <div class="signup-price-sub">/ month</div>
-            </div>
-
-            <div class="signup-checklist">
-              <div class="signup-check">
-                <span class="signup-check-mark">✔</span>
-                <span>One company workspace with isolated data, users, settings, and billing.</span>
-              </div>
-              <div class="signup-check">
-                <span class="signup-check-mark">✔</span>
-                <span>Job costing, employee tracking, invoicing, payments, and reporting in one place.</span>
-              </div>
-              <div class="signup-check">
-                <span class="signup-check-mark">✔</span>
-                <span>Owner-operator friendly workflows designed for real construction operations.</span>
-              </div>
+      <div class="su-wrap">
+        <div class="su-card">
+          <div class="su-card-head">
+            <div class="su-card-head-badge">🚀 New workspace</div>
+            <h2>Create your company workspace</h2>
+            <p>Get your construction business set up with jobs, labor, invoicing, and reporting.</p>
+            <div class="su-pricing">
+              <span class="su-pricing-amount">$49</span>
+              <span class="su-pricing-sub">/ month after free trial</span>
             </div>
           </div>
 
-          <div class="signup-grid">
-            <div class="signup-card">
-              <div class="signup-card-title">What happens after signup</div>
-              <div class="signup-card-copy">
-                Your company workspace is created, your admin account is set up, and you can begin
-                entering jobs, employees, and invoices right away.
+          <div class="su-card-body">
+            {error ? (
+              <div class="su-error">
+                <span>⚠</span>
+                <span>{error}</span>
               </div>
-            </div>
-
-            <div class="signup-card">
-              <div class="signup-card-title">Best first steps</div>
-              <div class="signup-card-copy">
-                After creating your workspace, complete company settings first, then add your first
-                job, employee, and invoice to unlock the full onboarding flow.
-              </div>
-            </div>
-
-            <div class="signup-card">
-              <div class="signup-card-title">Built for clarity</div>
-              <div class="signup-card-copy">
-                The goal is not more software to babysit. The goal is a cleaner operating system for
-                project finances, labor visibility, and billing.
-              </div>
-            </div>
-
-            <div class="signup-card">
-              <div class="signup-card-title">Support built in</div>
-              <div class="signup-card-copy">
-                Billing tools and in-app support workflows are part of the platform so your team has
-                a clearer path when questions or issues come up.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="signup-form-card">
-          <h2 class="signup-form-title">Create your workspace</h2>
-          <p class="signup-form-copy">
-            Set up your company and initial admin account to start using Hudson Business Solutions.
-          </p>
-
-          {error ? (
-            <div class="signup-error">
-              {error}
-            </div>
-          ) : null}
-
-          <form method="post">
-            <input type="hidden" name="csrf_token" value={csrfToken} />
-
-            <label>Company Name</label>
-            <input
-              name="company_name"
-              value={formData?.company_name || ''}
-              placeholder="Example: Taylor's HVAC"
-              required
-            />
-
-            <label>Subdomain</label>
-            <input
-              name="subdomain"
-              value={formData?.subdomain || ''}
-              placeholder="example: taylors"
-              required
-            />
-
-            <label>Admin Name</label>
-            <input
-              name="admin_name"
-              value={formData?.admin_name || ''}
-              placeholder="Example: Christopher Hudson"
-              required
-            />
-
-            <label>Admin Email</label>
-            <input
-              name="admin_email"
-              type="email"
-              value={formData?.admin_email || ''}
-              placeholder="name@company.com"
-              required
-            />
-
-            <label>Password</label>
-            <input
-              name="password"
-              type="password"
-              placeholder="At least 8 characters"
-              required
-            />
-
-            {inviteOnly ? (
-              <>
-                <label>Invite Code</label>
-                <input
-                  name="invite_code"
-                  type="password"
-                  value={formData?.invite_code || ''}
-                  placeholder="Enter your launch code"
-                  required
-                />
-              </>
             ) : null}
 
-            <div class="actions" style="margin-top:16px;">
-              <button class="btn btn-primary" type="submit">
-                Create Workspace
+            <form method="post">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+
+              <div class="su-section-label">Company</div>
+
+              <div class="su-row">
+                <div class="su-field">
+                  <label class="su-label" for="company_name">Company name</label>
+                  <input
+                    class="su-input"
+                    id="company_name"
+                    name="company_name"
+                    value={formData?.company_name || ''}
+                    placeholder="Taylor's HVAC"
+                    required
+                    autocomplete="organization"
+                  />
+                </div>
+                <div class="su-field">
+                  <label class="su-label" for="subdomain">Subdomain</label>
+                  <input
+                    class="su-input"
+                    id="subdomain"
+                    name="subdomain"
+                    value={formData?.subdomain || ''}
+                    placeholder="taylors"
+                    required
+                    autocomplete="off"
+                    autocapitalize="none"
+                    spellcheck={false}
+                  />
+                  <div class="su-hint">Your workspace address prefix</div>
+                </div>
+              </div>
+
+              <div class="su-divider"></div>
+              <div class="su-section-label">Admin account</div>
+
+              <div class="su-row">
+                <div class="su-field">
+                  <label class="su-label" for="admin_name">Your name</label>
+                  <input
+                    class="su-input"
+                    id="admin_name"
+                    name="admin_name"
+                    value={formData?.admin_name || ''}
+                    placeholder="Christopher Hudson"
+                    required
+                    autocomplete="name"
+                  />
+                </div>
+                <div class="su-field">
+                  <label class="su-label" for="admin_email">Admin email</label>
+                  <input
+                    class="su-input"
+                    id="admin_email"
+                    name="admin_email"
+                    type="email"
+                    value={formData?.admin_email || ''}
+                    placeholder="name@company.com"
+                    required
+                    autocomplete="email"
+                  />
+                </div>
+              </div>
+
+              <div class="su-field">
+                <label class="su-label" for="password">Password</label>
+                <input
+                  class="su-input"
+                  id="password"
+                  name="password"
+                  type="password"
+                  placeholder="At least 8 characters"
+                  required
+                  autocomplete="new-password"
+                />
+              </div>
+
+              {inviteOnly ? (
+                <div class="su-field">
+                  <label class="su-label" for="invite_code">Invite code</label>
+                  <input
+                    class="su-input"
+                    id="invite_code"
+                    name="invite_code"
+                    type="password"
+                    value={formData?.invite_code || ''}
+                    placeholder="Enter your launch code"
+                    required
+                    autocomplete="off"
+                  />
+                </div>
+              ) : null}
+
+              <button class="su-submit" type="submit">
+                Create workspace →
               </button>
-            </div>
-          </form>
+            </form>
 
-          <div class="signup-note">
-            <strong>Tip:</strong> Your subdomain becomes your company login address. For example,
-            a subdomain of <strong>taylors</strong> would use a workspace like <strong>taylors.your-domain</strong>
-            in production or <strong>taylors.localhost</strong> in development.
-          </div>
+            <div class="su-note">
+              <strong>Subdomain tip:</strong> Choose something short and recognizable — e.g. <strong>taylors</strong> becomes <strong>taylors.your-domain.com</strong>. You can't change it later without support.
+            </div>
 
-          <div class="signup-mini-list">
-            <div class="signup-mini-item">
-              Use your real company name so invoices, settings, and workspace details start out clean.
-            </div>
-            <div class="signup-mini-item">
-              Choose a short, professional subdomain that your team will recognize easily.
-            </div>
-            <div class="signup-mini-item">
-              Use an admin email that you want tied to billing, setup, and day-to-day account ownership.
-            </div>
-          </div>
+            <div class="su-foot-divider"></div>
 
-          <div class="signup-help">
-            Already have a company workspace? <a href="/pick-tenant">Sign in</a>
+            <div class="su-links">
+              <span>Already have a workspace?</span>
+              <a href="/pick-tenant">Sign in →</a>
+            </div>
           </div>
         </div>
       </div>

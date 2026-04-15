@@ -384,7 +384,7 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
           ) : (
             <div>
               <p class="muted" style="margin:0 0 12px; font-size:13px;">
-                Select a job if you are working on a specific project, then punch in. You can add a note if needed.
+                Select the job you are working on, then punch in. You can add a note if needed.
               </p>
               <form method="post" action="/timeclock/punch-in" data-punch-now>
                 <input type="hidden" name="csrf_token" value={csrfToken} />
@@ -392,9 +392,9 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
 
                 <div class="row" style="max-width:800px;">
                   <div>
-                    <label>Job (optional)</label>
-                    <select name="job_id">
-                      <option value="">General — no specific job</option>
+                    <label>Job (required)</label>
+                    <select name="job_id" required>
+                      <option value="" disabled selected>Select a job...</option>
                       {jobs.map((job) => (
                         <option value={String(job.id)}>
                           {job.job_name}
@@ -461,22 +461,22 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
           </div>
         </div>
 
-        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-top:10px;">
-          <div class="card" style="margin:0;">
-            <div class="muted">Total Hours</div>
-            <div style="font-size:24px; font-weight:800; margin-top:6px;">{selectedWeekHours.toFixed(2)}</div>
+        <div class="stat-grid stat-grid-4" style="margin-top:12px;">
+          <div class="stat-card stat-card-accent">
+            <div class="stat-label">Total Hours</div>
+            <div class="stat-value">{selectedWeekHours.toFixed(2)}</div>
           </div>
-          <div class="card" style="margin:0;">
-            <div class="muted">Entries</div>
-            <div style="font-size:24px; font-weight:800; margin-top:6px;">{selectedWeekEntryCount}</div>
+          <div class="stat-card">
+            <div class="stat-label">Entries</div>
+            <div class="stat-value">{selectedWeekEntryCount}</div>
           </div>
-          <div class="card" style="margin:0;">
-            <div class="muted">Pending Edit Requests</div>
-            <div style="font-size:24px; font-weight:800; margin-top:6px;">{pendingWeekEditRequestCount}</div>
+          <div class="stat-card">
+            <div class="stat-label">Pending Edits</div>
+            <div class="stat-value">{pendingWeekEditRequestCount}</div>
           </div>
-          <div class="card" style="margin:0;">
-            <div class="muted">Open Clock Entries</div>
-            <div style="font-size:24px; font-weight:800; margin-top:6px;">{openClockEntryCount}</div>
+          <div class="stat-card">
+            <div class="stat-label">Open Clocks</div>
+            <div class="stat-value">{openClockEntryCount}</div>
           </div>
         </div>
 

@@ -30,22 +30,26 @@ interface FleetSchedulePageProps {
 export const FleetSchedulePage: FC<FleetSchedulePageProps> = ({ rows, getDocumentTypeLabel, csrfToken, canManage }) => {
   return (
     <div>
-      <style>{`
-        .card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
-        .table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;border-top:1px solid var(--border);vertical-align:top}.table th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left}
-        .badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#eef2ff;font-size:12px;font-weight:700}.badge-good{background:#ecfdf3;color:#166534}.badge-danger{background:#FEF2F2;color:#991B1B}.muted{color:var(--muted)}.small{font-size:12px}.complete-box{margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:#F8FAFC}.inline-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);font-weight:700;text-decoration:none;cursor:pointer} label{display:block;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px} input,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text)} @media (max-width:1000px){.inline-grid{grid-template-columns:1fr 1fr}} @media (max-width:700px){.inline-grid{grid-template-columns:1fr}}
-      `}</style>
-
       <div class="page-head">
         <div>
-          <h1>Fleet Schedule View</h1>
-          <p>See upcoming and overdue fleet service reminders along with expiring registration and insurance documents.</p>
+          <h1>Fleet Schedule</h1>
+          <p>Upcoming and overdue service reminders plus expiring registration and insurance documents.</p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="/fleet">← Fleet</a>
+          <a class="btn" href="/settings">Reminder Settings</a>
         </div>
       </div>
 
       <div class="card">
-        <div class="table-wrap">
-          <table class="table">
+        <div class="card-head">
+          <h2>Service & Renewal Schedule</h2>
+          <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">
+            {rows.length} items
+          </span>
+        </div>
+        <div class="table-wrap" style="margin:0 -18px -16px;">
+          <table>
             <thead>
               <tr>
                 <th>Vehicle</th>
@@ -71,7 +75,7 @@ export const FleetSchedulePage: FC<FleetSchedulePageProps> = ({ rows, getDocumen
                     <div class="muted small" style="margin-top:4px;">Mileage: {row.reminder.dueAtOdometer ?? '—'}</div>
                   </td>
                   <td>
-                    <span class={row.reminder.isDue ? 'badge badge-danger' : 'badge badge-good'}>
+                    <span class={row.reminder.isDue ? 'badge badge-bad' : 'badge badge-good'}>
                       {row.reminder.isDue ? 'Due' : 'Upcoming'}
                     </span>
                     <div class="muted small" style="margin-top:4px;">
@@ -88,12 +92,13 @@ export const FleetSchedulePage: FC<FleetSchedulePageProps> = ({ rows, getDocumen
                     )) : <span class="muted">No expiring docs</span>}
 
                     {canManage ? (
-                      <form method="post" action={`/fleet/vehicles/${row.vehicle_id}/reminders/complete`} class="complete-box">
+                      <form method="post" action={`/fleet/vehicles/${row.vehicle_id}/reminders/complete`}
+                        style="margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:12px; background:#F8FAFC;">
                         <input type="hidden" name="csrf_token" value={csrfToken} />
                         <input type="hidden" name="category" value={row.reminder.category} />
                         <input type="hidden" name="return_to" value="/fleet/schedule" />
                         <div style="font-weight:800; margin-bottom:10px;">Mark {row.reminder.label} Complete</div>
-                        <div class="inline-grid">
+                        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px;">
                           <div>
                             <label>Date</label>
                             <input type="date" name="entry_date" value={new Date().toISOString().slice(0, 10)} required />

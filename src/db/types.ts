@@ -86,6 +86,7 @@ export interface Job {
   source_estimate_id?: number | null;
   source_estimate_number?: string | null;
   source_estimate_customer_name?: string | null;
+  is_overhead?: number | null;
 }
 
 export interface Estimate {

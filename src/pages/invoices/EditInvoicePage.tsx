@@ -183,7 +183,7 @@ export const EditInvoicePage: FC<EditInvoicePageProps> = ({ invoice, jobs, csrfT
         </div>
       </div>
 
-      {error ? <div class="card" style="border-color:#FECACA; background:#FEF2F2; color:#991B1B;">{error}</div> : null}
+      {error ? <div class="card" style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;">{error}</div> : null}
 
       {invoice.archived_at ? (
         <div class="card" style="border-color:#FDE68A; background:#FFFBEB; color:#92400E;">

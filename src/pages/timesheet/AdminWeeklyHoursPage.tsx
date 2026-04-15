@@ -57,31 +57,38 @@ export const AdminWeeklyHoursPage: FC<AdminWeeklyHoursPageProps> = ({
         </div>
       </div>
 
-      <div class="grid grid-4" style="margin-bottom:16px;">
-        <div class="card">
-          <div class="muted">Week</div>
-          <div style="font-size:22px;font-weight:900;">{start}</div>
-          <div class="muted">through {end}</div>
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Week</div>
+          <div class="stat-value" style="font-size:18px;">{start}</div>
+          <div class="stat-sub">through {end}</div>
         </div>
-        <div class="card">
-          <div class="muted">Employees</div>
-          <div style="font-size:22px;font-weight:900;">{employeeCount}</div>
-          <div class="muted">shown in report</div>
+        <div class="stat-card">
+          <div class="stat-label">Employees</div>
+          <div class="stat-value">{employeeCount}</div>
+          <div class="stat-sub">shown in report</div>
         </div>
-        <div class="card">
-          <div class="muted">Total Hours</div>
-          <div style="font-size:22px;font-weight:900;">{fmtHours(totalHours)}</div>
-          <div class="muted">for selected week</div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Total Hours</div>
+          <div class="stat-value">{fmtHours(totalHours)}</div>
+          <div class="stat-sub">for selected week</div>
         </div>
-        <div class="card">
-          <div class="muted">Approved Weeks</div>
-          <div style="font-size:22px;font-weight:900;">{approvedCount}</div>
-          <div class="muted">employee weeks locked</div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Approved</div>
+          <div class="stat-value">{approvedCount}</div>
+          <div class="stat-sub">employee weeks locked</div>
         </div>
       </div>
 
       <div class="card">
-        <div class="table-wrap">
+        <div class="card-head">
+          <h2>Employee Hours</h2>
+          <div class="actions">
+            <a class="btn" href={`/timesheet/admin-hours/export.csv?start=${start}`}>Export CSV</a>
+            <a class="btn btn-primary" href={`/timesheet/admin-hours/export.pdf?start=${start}`} target="_blank" rel="noreferrer">Export PDF</a>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>

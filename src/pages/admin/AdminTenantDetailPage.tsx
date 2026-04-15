@@ -146,20 +146,20 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
         </div>
       ) : null}
 
-      <div class="grid grid-4">
-        <div class="card">
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
           <div class="stat-label">Users</div>
           <div class="stat-value">{tenant.user_count}</div>
         </div>
-        <div class="card">
+        <div class="stat-card">
           <div class="stat-label">Jobs</div>
           <div class="stat-value">{tenant.job_count}</div>
         </div>
-        <div class="card">
+        <div class="stat-card stat-card-accent">
           <div class="stat-label">Invoices</div>
           <div class="stat-value">{tenant.invoice_count}</div>
         </div>
-        <div class="card">
+        <div class="stat-card stat-card-green">
           <div class="stat-label">Payments</div>
           <div class="stat-value">{tenant.payment_count}</div>
         </div>
@@ -406,7 +406,7 @@ export const AdminTenantDetailPage: FC<AdminTenantDetailPageProps> = ({
           </div>
         </form>
 
-        <div class="table-wrap">
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>

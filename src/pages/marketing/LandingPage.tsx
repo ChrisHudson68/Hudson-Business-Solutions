@@ -9,892 +9,662 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
   return (
     <div>
       <style>{`
-        .landing-page{
-          display:flex;
-          flex-direction:column;
-          gap:18px;
-        }
+        .lp { display:flex; flex-direction:column; gap:0; }
 
-        .landing-hero{
+        /* ── HERO ── */
+        .lp-hero {
+          background:linear-gradient(135deg, #0F1F35 0%, #1E3A5F 60%, #1a3356 100%);
+          border-radius:22px;
+          padding:56px 52px 52px;
+          position:relative;
+          overflow:hidden;
+          margin-bottom:20px;
+        }
+        .lp-hero::before {
+          content:'';
+          position:absolute;
+          inset:0;
+          background:radial-gradient(ellipse 80% 60% at 70% 50%, rgba(245,158,11,0.07) 0%, transparent 70%);
+          pointer-events:none;
+        }
+        .lp-hero-inner {
           display:grid;
-          grid-template-columns:minmax(0, 1.08fr) minmax(340px, 0.92fr);
-          gap:28px;
+          grid-template-columns:1fr minmax(0,420px);
+          gap:48px;
           align-items:center;
-          padding:10px 0 6px;
+          position:relative;
+          z-index:1;
         }
-
-        .landing-eyebrow{
+        .lp-eyebrow {
           display:inline-flex;
           align-items:center;
           gap:8px;
-          padding:8px 12px;
+          padding:6px 14px;
           border-radius:999px;
-          border:1px solid #DBEAFE;
-          background:#EFF6FF;
-          color:#1D4ED8;
+          border:1px solid rgba(245,158,11,0.4);
+          background:rgba(245,158,11,0.12);
+          color:#FCD34D;
           font-size:12px;
           font-weight:800;
           letter-spacing:.08em;
           text-transform:uppercase;
-          margin-bottom:14px;
+          margin-bottom:20px;
         }
-
-        .landing-brand{
-          display:flex;
-          align-items:center;
-          gap:14px;
-          margin-bottom:18px;
-        }
-
-        .landing-brand img{
-          width:60px;
-          height:60px;
-          object-fit:contain;
-          flex:0 0 60px;
-        }
-
-        .landing-brand-title{
-          font-size:36px;
-          line-height:1.02;
-          font-weight:900;
-          letter-spacing:-0.03em;
-          color:#0F172A;
-        }
-
-        .landing-brand-sub{
-          margin-top:6px;
-          color:#64748B;
-          font-size:13px;
-          font-weight:700;
-          letter-spacing:.06em;
-          text-transform:uppercase;
-        }
-
-        .landing-title{
-          margin:0 0 16px;
+        .lp-h1 {
+          margin:0 0 18px;
           font-size:52px;
           line-height:1.02;
           letter-spacing:-0.04em;
-          color:#0F172A;
           font-weight:900;
-          max-width:760px;
+          color:#FFFFFF;
         }
-
-        .landing-copy{
-          margin:0 0 24px;
-          font-size:18px;
+        .lp-h1 span { color:#F59E0B; }
+        .lp-hero-copy {
+          margin:0 0 28px;
+          font-size:17px;
           line-height:1.75;
-          color:#475569;
-          max-width:720px;
+          color:rgba(255,255,255,0.72);
+          max-width:580px;
         }
-
-        .landing-actions{
+        .lp-hero-actions {
           display:flex;
           gap:12px;
           flex-wrap:wrap;
-          margin-bottom:18px;
         }
-
-        .landing-actions .btn{
-          min-height:46px;
-          padding:0 18px;
-          font-size:15px;
-        }
-
-        .landing-tags{
-          display:flex;
-          gap:10px;
-          flex-wrap:wrap;
-        }
-
-        .landing-showcase{
-          background:linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
-          border:1px solid #E5EAF2;
-          border-radius:22px;
-          box-shadow:0 20px 50px rgba(15,23,42,0.08);
-          padding:20px;
-        }
-
-        .landing-showcase-grid{
-          display:grid;
-          grid-template-columns:repeat(2, minmax(0, 1fr));
-          gap:14px;
-        }
-
-        .landing-stat{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:16px;
-          padding:16px;
-          box-shadow:0 8px 20px rgba(15,23,42,0.05);
-        }
-
-        .landing-stat-label{
-          color:#64748B;
-          font-size:12px;
-          font-weight:800;
-          text-transform:uppercase;
-          letter-spacing:.05em;
-        }
-
-        .landing-stat-value{
-          font-size:29px;
-          font-weight:900;
-          letter-spacing:-0.03em;
-          margin-top:8px;
-          color:#0F172A;
-        }
-
-        .landing-stat-sub{
-          color:#64748B;
-          font-size:12px;
-          margin-top:6px;
-          line-height:1.5;
-        }
-
-        .landing-callout{
-          margin-top:16px;
-          padding:15px 16px;
-          border:1px solid #E5EAF2;
-          border-radius:16px;
-          background:#F8FAFC;
-        }
-
-        .landing-callout-title{
-          font-weight:900;
-          color:#0F172A;
-          margin-bottom:6px;
-        }
-
-        .landing-callout-copy{
-          color:#64748B;
-          line-height:1.7;
-        }
-
-        .landing-value-grid{
-          display:grid;
-          grid-template-columns:repeat(3, minmax(0,1fr));
-          gap:16px;
-        }
-
-        .landing-feature-grid{
-          display:grid;
-          grid-template-columns:repeat(3, minmax(0,1fr));
-          gap:16px;
-        }
-
-        .landing-feature-card{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:18px;
-          box-shadow:0 10px 24px rgba(15,23,42,0.06);
-          padding:20px;
-        }
-
-        .landing-feature-title{
-          font-weight:900;
-          font-size:18px;
-          margin-bottom:8px;
-          color:#0F172A;
-        }
-
-        .landing-feature-copy{
-          color:#64748B;
-          line-height:1.75;
-        }
-
-        .landing-trust{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:20px;
-          box-shadow:0 10px 24px rgba(15,23,42,0.06);
-          padding:24px;
-        }
-
-        .landing-trust-grid{
-          display:grid;
-          grid-template-columns:repeat(3, minmax(0,1fr));
-          gap:16px;
-          margin-top:16px;
-        }
-
-        .landing-trust-item{
-          border:1px solid #E5EAF2;
-          background:#F8FAFC;
-          border-radius:16px;
-          padding:18px;
-        }
-
-        .landing-trust-title{
-          font-weight:900;
-          color:#0F172A;
-          margin-bottom:8px;
-        }
-
-        .landing-trust-copy{
-          color:#64748B;
-          line-height:1.75;
-        }
-
-        .landing-pricing{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:20px;
-          box-shadow:0 10px 24px rgba(15,23,42,0.06);
-          padding:24px;
-        }
-
-        .landing-pricing-header{
-          text-align:center;
-          margin-bottom:20px;
-        }
-
-        .landing-pricing-title{
-          margin:0 0 10px;
-          font-weight:900;
-          font-size:28px;
-          color:#0F172A;
-          letter-spacing:-0.03em;
-        }
-
-        .landing-pricing-copy{
-          max-width:760px;
-          margin:0 auto;
-          color:#64748B;
-          line-height:1.8;
-          font-size:16px;
-        }
-
-        .landing-pricing-grid{
-          display:grid;
-          grid-template-columns:minmax(0, 1fr);
-          justify-content:center;
-        }
-
-        .landing-pricing-card{
-          max-width:520px;
-          margin:0 auto;
-          background:linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
-          border:2px solid #1E3A5F;
-          border-radius:22px;
-          box-shadow:0 16px 34px rgba(15,23,42,0.08);
-          padding:24px;
-        }
-
-        .landing-pricing-plan{
+        .lp-btn-primary {
           display:inline-flex;
           align-items:center;
           justify-content:center;
-          padding:8px 12px;
+          height:48px;
+          padding:0 24px;
+          border-radius:12px;
+          background:#F59E0B;
+          color:#0F172A;
+          font-weight:800;
+          font-size:15px;
+          text-decoration:none;
+          border:none;
+          cursor:pointer;
+          transition:filter .15s;
+        }
+        .lp-btn-primary:hover { filter:brightness(1.08); text-decoration:none; }
+        .lp-btn-ghost {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          height:48px;
+          padding:0 22px;
+          border-radius:12px;
+          background:rgba(255,255,255,0.1);
+          border:1px solid rgba(255,255,255,0.22);
+          color:#FFFFFF;
+          font-weight:700;
+          font-size:15px;
+          text-decoration:none;
+          cursor:pointer;
+          transition:background .15s;
+        }
+        .lp-btn-ghost:hover { background:rgba(255,255,255,0.16); text-decoration:none; }
+
+        /* hero right panel */
+        .lp-hero-panel {
+          background:rgba(255,255,255,0.06);
+          border:1px solid rgba(255,255,255,0.12);
+          border-radius:18px;
+          padding:24px;
+          backdrop-filter:blur(4px);
+        }
+        .lp-stats-grid {
+          display:grid;
+          grid-template-columns:1fr 1fr;
+          gap:12px;
+          margin-bottom:14px;
+        }
+        .lp-stat {
+          background:rgba(255,255,255,0.07);
+          border:1px solid rgba(255,255,255,0.1);
+          border-radius:14px;
+          padding:16px 14px;
+        }
+        .lp-stat-icon { font-size:20px; margin-bottom:6px; }
+        .lp-stat-label {
+          color:rgba(255,255,255,0.5);
+          font-size:11px;
+          font-weight:800;
+          text-transform:uppercase;
+          letter-spacing:.06em;
+        }
+        .lp-stat-value {
+          color:#FFFFFF;
+          font-size:20px;
+          font-weight:900;
+          margin-top:4px;
+        }
+        .lp-hero-callout {
+          background:rgba(245,158,11,0.12);
+          border:1px solid rgba(245,158,11,0.25);
+          border-radius:14px;
+          padding:14px 16px;
+        }
+        .lp-hero-callout-title {
+          color:#FCD34D;
+          font-weight:800;
+          font-size:13px;
+          margin-bottom:6px;
+        }
+        .lp-hero-callout-copy {
+          color:rgba(255,255,255,0.65);
+          font-size:13px;
+          line-height:1.65;
+        }
+
+        /* ── SECTION WRAPPERS ── */
+        .lp-section {
+          padding:40px 0 20px;
+        }
+        .lp-section-tag {
+          display:inline-flex;
+          align-items:center;
+          gap:7px;
+          padding:5px 12px;
           border-radius:999px;
           background:#EFF6FF;
           border:1px solid #DBEAFE;
           color:#1D4ED8;
-          font-size:12px;
+          font-size:11px;
           font-weight:800;
-          text-transform:uppercase;
           letter-spacing:.08em;
-          margin-bottom:14px;
+          text-transform:uppercase;
+          margin-bottom:12px;
         }
-
-        .landing-pricing-price{
-          display:flex;
-          align-items:flex-end;
-          justify-content:center;
-          gap:6px;
-          margin-bottom:8px;
-        }
-
-        .landing-pricing-price-main{
-          font-size:56px;
-          line-height:1;
+        .lp-section-h2 {
+          margin:0 0 8px;
+          font-size:34px;
           font-weight:900;
-          letter-spacing:-0.04em;
+          letter-spacing:-0.03em;
           color:#0F172A;
         }
-
-        .landing-pricing-price-sub{
-          font-size:15px;
-          color:#64748B;
-          font-weight:700;
-          margin-bottom:8px;
-        }
-
-        .landing-pricing-description{
-          text-align:center;
+        .lp-section-copy {
+          margin:0 0 28px;
           color:#475569;
           line-height:1.8;
-          margin-bottom:18px;
+          font-size:16px;
+          max-width:680px;
         }
 
-        .landing-pricing-features{
+        /* ── FEATURES ── */
+        .lp-feature-grid {
           display:grid;
-          gap:10px;
-          margin-bottom:20px;
+          grid-template-columns:repeat(3,minmax(0,1fr));
+          gap:16px;
         }
-
-        .landing-pricing-feature{
-          display:flex;
-          align-items:flex-start;
-          gap:10px;
-          color:#334155;
-          line-height:1.7;
-        }
-
-        .landing-pricing-check{
-          color:#15803D;
-          font-weight:900;
-          flex:0 0 auto;
-        }
-
-        .landing-pricing-note{
-          text-align:center;
-          color:#64748B;
-          font-size:13px;
-          line-height:1.6;
-          margin-top:14px;
-        }
-
-        .landing-steps{
+        .lp-feature-card {
           background:#FFFFFF;
           border:1px solid #E5EAF2;
-          border-radius:20px;
-          box-shadow:0 10px 24px rgba(15,23,42,0.06);
-          padding:24px;
+          border-radius:18px;
+          padding:22px 20px;
+          box-shadow:0 4px 16px rgba(15,23,42,0.05);
+          transition:box-shadow .15s, transform .15s;
         }
-
-        .landing-section-title{
-          font-weight:900;
-          font-size:28px;
-          color:#0F172A;
-          margin:0 0 8px;
-          letter-spacing:-0.03em;
+        .lp-feature-card:hover {
+          box-shadow:0 8px 28px rgba(15,23,42,0.1);
+          transform:translateY(-2px);
         }
-
-        .landing-section-copy{
-          color:#64748B;
-          line-height:1.8;
-          margin:0 0 18px;
-        }
-
-        .landing-step-grid{
-          display:grid;
-          grid-template-columns:repeat(3, minmax(0,1fr));
-          gap:18px;
-        }
-
-        .landing-step{
-          min-width:0;
-        }
-
-        .landing-step-number{
-          width:40px;
-          height:40px;
-          border-radius:999px;
+        .lp-feature-icon {
+          width:44px;
+          height:44px;
+          border-radius:12px;
+          background:linear-gradient(135deg, #1E3A5F 0%, #2d5a9e 100%);
           display:flex;
           align-items:center;
           justify-content:center;
+          font-size:20px;
+          margin-bottom:14px;
+        }
+        .lp-feature-title {
           font-weight:900;
-          background:#0F172A;
-          color:#FFFFFF;
-          margin-bottom:12px;
-        }
-
-        .landing-step-title{
-          font-weight:800;
-          margin-bottom:6px;
-          color:#0F172A;
-        }
-
-        .landing-step-copy{
-          color:#64748B;
-          line-height:1.75;
-        }
-
-        .landing-faq{
-          background:#FFFFFF;
-          border:1px solid #E5EAF2;
-          border-radius:20px;
-          box-shadow:0 10px 24px rgba(15,23,42,0.06);
-          padding:24px;
-        }
-
-        .landing-faq-grid{
-          display:grid;
-          grid-template-columns:repeat(2, minmax(0,1fr));
-          gap:16px;
-        }
-
-        .landing-faq-item{
-          border:1px solid #E5EAF2;
-          border-radius:16px;
-          background:#F8FAFC;
-          padding:18px;
-        }
-
-        .landing-faq-question{
-          font-weight:900;
+          font-size:16px;
           color:#0F172A;
           margin-bottom:8px;
         }
+        .lp-feature-copy {
+          color:#64748B;
+          line-height:1.7;
+          font-size:14px;
+        }
 
-        .landing-faq-answer{
+        /* ── HOW IT WORKS ── */
+        .lp-steps {
+          background:linear-gradient(135deg, #0F1F35 0%, #1E3A5F 100%);
+          border-radius:22px;
+          padding:40px 44px;
+          margin:8px 0;
+        }
+        .lp-steps .lp-section-h2 { color:#FFFFFF; }
+        .lp-steps .lp-section-copy { color:rgba(255,255,255,0.6); margin-bottom:32px; }
+        .lp-steps .lp-section-tag {
+          background:rgba(245,158,11,0.15);
+          border-color:rgba(245,158,11,0.3);
+          color:#FCD34D;
+        }
+        .lp-step-grid {
+          display:grid;
+          grid-template-columns:repeat(3,minmax(0,1fr));
+          gap:20px;
+        }
+        .lp-step {
+          position:relative;
+        }
+        .lp-step-num {
+          width:44px;
+          height:44px;
+          border-radius:999px;
+          background:#F59E0B;
+          color:#0F172A;
+          font-weight:900;
+          font-size:18px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          margin-bottom:14px;
+          flex-shrink:0;
+        }
+        .lp-step-title {
+          font-weight:900;
+          font-size:16px;
+          color:#FFFFFF;
+          margin-bottom:8px;
+        }
+        .lp-step-copy {
+          color:rgba(255,255,255,0.6);
+          line-height:1.7;
+          font-size:14px;
+        }
+
+        /* ── PRICING ── */
+        .lp-pricing-wrap {
+          display:grid;
+          grid-template-columns:minmax(0,1fr) minmax(0,400px);
+          gap:32px;
+          align-items:center;
+          padding:40px 0 20px;
+        }
+        .lp-pricing-card {
+          background:#FFFFFF;
+          border:2px solid #1E3A5F;
+          border-radius:22px;
+          padding:32px;
+          box-shadow:0 20px 48px rgba(30,58,95,0.12);
+        }
+        .lp-price-tag {
+          display:inline-flex;
+          align-items:center;
+          padding:5px 12px;
+          border-radius:999px;
+          background:#EFF6FF;
+          border:1px solid #DBEAFE;
+          color:#1D4ED8;
+          font-size:11px;
+          font-weight:800;
+          letter-spacing:.08em;
+          text-transform:uppercase;
+          margin-bottom:16px;
+        }
+        .lp-price-amount {
+          display:flex;
+          align-items:flex-end;
+          gap:4px;
+          margin-bottom:8px;
+        }
+        .lp-price-num {
+          font-size:60px;
+          font-weight:900;
+          letter-spacing:-0.05em;
+          color:#0F172A;
+          line-height:1;
+        }
+        .lp-price-sub {
+          font-size:16px;
+          color:#64748B;
+          font-weight:700;
+          margin-bottom:10px;
+        }
+        .lp-price-desc {
+          color:#475569;
+          line-height:1.75;
+          margin-bottom:20px;
+          font-size:15px;
+        }
+        .lp-price-features {
+          display:grid;
+          gap:10px;
+          margin-bottom:24px;
+        }
+        .lp-price-feature {
+          display:flex;
+          align-items:flex-start;
+          gap:10px;
+          font-size:14px;
+          color:#334155;
+          line-height:1.6;
+        }
+        .lp-check { color:#16A34A; font-weight:900; flex-shrink:0; }
+        .lp-price-note {
+          text-align:center;
+          color:#64748B;
+          font-size:13px;
+          margin-top:14px;
+          line-height:1.6;
+        }
+
+        /* ── FAQ ── */
+        .lp-faq-grid {
+          display:grid;
+          grid-template-columns:repeat(2,minmax(0,1fr));
+          gap:14px;
+        }
+        .lp-faq-item {
+          background:#FFFFFF;
+          border:1px solid #E5EAF2;
+          border-radius:16px;
+          padding:20px;
+          box-shadow:0 4px 14px rgba(15,23,42,0.04);
+        }
+        .lp-faq-q {
+          font-weight:900;
+          color:#0F172A;
+          margin-bottom:8px;
+          font-size:15px;
+        }
+        .lp-faq-a {
           color:#64748B;
           line-height:1.75;
+          font-size:14px;
         }
 
-        .landing-bottom{
+        /* ── BOTTOM CTA ── */
+        .lp-cta {
+          background:linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+          border-radius:22px;
+          padding:44px 40px;
           text-align:center;
-          padding:10px 0 4px;
+          margin-top:8px;
         }
-
-        .landing-bottom-title{
-          margin:0 0 10px;
-          font-size:30px;
-          line-height:1.15;
+        .lp-cta h2 {
+          margin:0 0 12px;
+          font-size:34px;
           font-weight:900;
           letter-spacing:-0.03em;
           color:#0F172A;
         }
-
-        .landing-bottom-copy{
-          max-width:760px;
-          margin:0 auto 18px;
-          color:#64748B;
-          line-height:1.8;
+        .lp-cta p {
+          max-width:600px;
+          margin:0 auto 24px;
+          color:rgba(15,23,42,0.7);
+          line-height:1.75;
           font-size:16px;
         }
-
-        @media (max-width: 1050px){
-          .landing-hero{
-            grid-template-columns:1fr;
-          }
-
-          .landing-title{
-            max-width:none;
-          }
+        .lp-cta-actions {
+          display:flex;
+          gap:12px;
+          justify-content:center;
+          flex-wrap:wrap;
         }
-
-        @media (max-width: 900px){
-          .landing-value-grid,
-          .landing-feature-grid,
-          .landing-trust-grid,
-          .landing-step-grid,
-          .landing-faq-grid{
-            grid-template-columns:1fr;
-          }
-
-          .landing-showcase-grid{
-            grid-template-columns:1fr 1fr;
-          }
+        .lp-btn-dark {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          height:50px;
+          padding:0 28px;
+          border-radius:12px;
+          background:#0F172A;
+          color:#FFFFFF;
+          font-weight:800;
+          font-size:15px;
+          text-decoration:none;
+          cursor:pointer;
         }
+        .lp-btn-dark:hover { filter:brightness(1.15); text-decoration:none; }
+        .lp-btn-outline-dark {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          height:50px;
+          padding:0 24px;
+          border-radius:12px;
+          background:transparent;
+          border:2px solid rgba(15,23,42,0.3);
+          color:#0F172A;
+          font-weight:700;
+          font-size:15px;
+          text-decoration:none;
+          cursor:pointer;
+        }
+        .lp-btn-outline-dark:hover { background:rgba(15,23,42,0.08); text-decoration:none; }
 
-        @media (max-width: 640px){
-          .landing-page{
-            gap:16px;
-          }
-
-          .landing-hero{
-            gap:18px;
-            padding:0;
-          }
-
-          .landing-brand{
-            align-items:flex-start;
-            gap:12px;
-            margin-bottom:14px;
-          }
-
-          .landing-brand img{
-            width:52px;
-            height:52px;
-            flex-basis:52px;
-          }
-
-          .landing-brand-title{
-            font-size:28px;
-          }
-
-          .landing-brand-sub{
-            font-size:12px;
-          }
-
-          .landing-title{
-            font-size:36px;
-            margin-bottom:12px;
-          }
-
-          .landing-copy{
-            font-size:16px;
-            margin-bottom:18px;
-          }
-
-          .landing-actions{
-            flex-direction:column;
-            align-items:stretch;
-          }
-
-          .landing-actions .btn{
-            width:100%;
-          }
-
-          .landing-showcase{
-            padding:16px;
-          }
-
-          .landing-showcase-grid{
-            grid-template-columns:1fr;
-          }
-
-          .landing-section-title,
-          .landing-pricing-title{
-            font-size:24px;
-          }
-
-          .landing-pricing-card,
-          .landing-steps,
-          .landing-trust,
-          .landing-faq{
-            padding:18px;
-          }
-
-          .landing-pricing-price-main{
-            font-size:44px;
-          }
-
-          .landing-bottom-title{
-            font-size:25px;
-          }
+        /* ── RESPONSIVE ── */
+        @media (max-width:1050px) {
+          .lp-hero-inner { grid-template-columns:1fr; gap:32px; }
+          .lp-pricing-wrap { grid-template-columns:1fr; }
+        }
+        @media (max-width:860px) {
+          .lp-feature-grid,
+          .lp-step-grid { grid-template-columns:1fr 1fr; }
+          .lp-faq-grid { grid-template-columns:1fr; }
+        }
+        @media (max-width:640px) {
+          .lp-hero { padding:32px 22px 28px; border-radius:18px; }
+          .lp-h1 { font-size:34px; }
+          .lp-hero-copy { font-size:15px; }
+          .lp-hero-actions { flex-direction:column; }
+          .lp-btn-primary, .lp-btn-ghost { width:100%; }
+          .lp-feature-grid, .lp-step-grid { grid-template-columns:1fr; }
+          .lp-steps { padding:28px 20px; border-radius:18px; }
+          .lp-section-h2 { font-size:26px; }
+          .lp-pricing-card { padding:22px; }
+          .lp-price-num { font-size:46px; }
+          .lp-cta { padding:32px 22px; border-radius:18px; }
+          .lp-cta h2 { font-size:26px; }
+          .lp-cta-actions { flex-direction:column; align-items:stretch; }
+          .lp-btn-dark, .lp-btn-outline-dark { width:100%; }
+          .lp-stats-grid { grid-template-columns:1fr 1fr; }
         }
       `}</style>
 
-      <div class="landing-page">
-        <section class="landing-hero">
+      <div class="lp">
+
+        {/* ── HERO ── */}
+        <section class="lp-hero">
+          <div class="lp-hero-inner">
+            <div>
+              <div class="lp-eyebrow">Construction operations platform</div>
+              <h1 class="lp-h1">
+                Run your business with <span>cleaner numbers</span> and faster workflows.
+              </h1>
+              <p class="lp-hero-copy">
+                {appName} helps construction companies track jobs, labor, invoices, and
+                profitability in one professional system — built for owner-operators and growing teams.
+              </p>
+              <div class="lp-hero-actions">
+                <a href="/signup" class="lp-btn-primary">Get Started Free</a>
+                <a href="/pick-tenant" class="lp-btn-ghost">Find My Workspace</a>
+              </div>
+            </div>
+
+            <div class="lp-hero-panel">
+              <div class="lp-stats-grid">
+                <div class="lp-stat">
+                  <div class="lp-stat-icon">📋</div>
+                  <div class="lp-stat-label">Job Costing</div>
+                  <div class="lp-stat-value">Clear</div>
+                </div>
+                <div class="lp-stat">
+                  <div class="lp-stat-icon">⏱</div>
+                  <div class="lp-stat-label">Time Tracking</div>
+                  <div class="lp-stat-value">Simple</div>
+                </div>
+                <div class="lp-stat">
+                  <div class="lp-stat-icon">🧾</div>
+                  <div class="lp-stat-label">Invoicing</div>
+                  <div class="lp-stat-value">Faster</div>
+                </div>
+                <div class="lp-stat">
+                  <div class="lp-stat-icon">📊</div>
+                  <div class="lp-stat-label">Reporting</div>
+                  <div class="lp-stat-value">Actionable</div>
+                </div>
+              </div>
+              <div class="lp-hero-callout">
+                <div class="lp-hero-callout-title">Built for day-to-day business control</div>
+                <div class="lp-hero-callout-copy">
+                  Jobs, labor, billing, and financial visibility tied together — replace scattered spreadsheets with one operating system.
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── FEATURES ── */}
+        <section class="lp-section">
+          <div class="lp-section-tag">Platform capabilities</div>
+          <h2 class="lp-section-h2">Everything your team needs, in one place</h2>
+          <p class="lp-section-copy">
+            Centered around the workflows construction businesses actually use every week — no bloat, no missing pieces.
+          </p>
+
+          <div class="lp-feature-grid">
+            <div class="lp-feature-card">
+              <div class="lp-feature-icon">📋</div>
+              <div class="lp-feature-title">Jobs & Project Finances</div>
+              <div class="lp-feature-copy">Create jobs, record income and expenses, and monitor performance at the project level with full cost visibility.</div>
+            </div>
+            <div class="lp-feature-card">
+              <div class="lp-feature-icon">👷</div>
+              <div class="lp-feature-title">Employees & Labor Tracking</div>
+              <div class="lp-feature-copy">Manage employee records, track time entries, and keep labor visibility tied directly to your job data.</div>
+            </div>
+            <div class="lp-feature-card">
+              <div class="lp-feature-icon">🧾</div>
+              <div class="lp-feature-title">Invoices & Payments</div>
+              <div class="lp-feature-copy">Create professional invoices, record payments, and keep receivables organized so billing never slips through.</div>
+            </div>
+            <div class="lp-feature-card">
+              <div class="lp-feature-icon">📊</div>
+              <div class="lp-feature-title">Reports & Trends</div>
+              <div class="lp-feature-copy">Review cash flow, invoice aging, job profitability rankings, and financial trends — no manual rollups required.</div>
+            </div>
+            <div class="lp-feature-card">
+              <div class="lp-feature-icon">🚚</div>
+              <div class="lp-feature-title">Fleet Management</div>
+              <div class="lp-feature-copy">Track vehicles, maintenance schedules, fuel logs, and expiring documents across your entire fleet.</div>
+            </div>
+            <div class="lp-feature-card">
+              <div class="lp-feature-icon">📱</div>
+              <div class="lp-feature-title">Mobile-Ready</div>
+              <div class="lp-feature-copy">Clock in, log expenses, and check job status from any device — your team stays connected from the field.</div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── HOW IT WORKS ── */}
+        <section class="lp-steps">
+          <div class="lp-section-tag">Getting started</div>
+          <h2 class="lp-section-h2">Up and running in minutes</h2>
+          <p class="lp-section-copy">A clean first-run experience gets your workspace ready for real work fast.</p>
+
+          <div class="lp-step-grid">
+            <div class="lp-step">
+              <div class="lp-step-num">1</div>
+              <div class="lp-step-title">Create your workspace</div>
+              <div class="lp-step-copy">Set up your company, admin account, invoice defaults, and basic business details in a few minutes.</div>
+            </div>
+            <div class="lp-step">
+              <div class="lp-step-num">2</div>
+              <div class="lp-step-title">Add your operating data</div>
+              <div class="lp-step-copy">Start with jobs, employees, and invoices so the platform reflects your real workflow from day one.</div>
+            </div>
+            <div class="lp-step">
+              <div class="lp-step-num">3</div>
+              <div class="lp-step-title">Run and review</div>
+              <div class="lp-step-copy">Use dashboards and reports to track profitability, billing, labor, and cash movement more confidently.</div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── PRICING ── */}
+        <div class="lp-pricing-wrap">
           <div>
-            <div class="landing-eyebrow">Construction software built for real operations</div>
-
-            <div class="landing-brand">
-              <img src={appLogo} alt={`${appName} logo`} />
-              <div>
-                <div class="landing-brand-title">{appName}</div>
-                <div class="landing-brand-sub">Job costing • Labor tracking • Invoicing • Reporting</div>
-              </div>
-            </div>
-
-            <h1 class="landing-title">
-              Run your construction business with cleaner numbers, faster workflows, and better visibility.
-            </h1>
-
-            <p class="landing-copy">
-              Hudson Business Solutions helps construction companies track jobs, labor, invoices, payments,
-              and profitability in one professional system. Replace disconnected spreadsheets and scattered
-              processes with a workspace built for owner-operators and growing teams.
+            <div class="lp-section-tag">Pricing</div>
+            <h2 class="lp-section-h2">Simple, transparent pricing</h2>
+            <p class="lp-section-copy">
+              One straightforward plan that gives your company full access to every feature — no tiers,
+              no surprises, no per-seat fees that scale against you.
             </p>
-
-            <div class="landing-actions">
-              <a href="/signup" class="btn btn-primary">Create Workspace</a>
-              <a href="/pick-tenant" class="btn">Find My Workspace</a>
-              <a href="/contact" class="btn">Contact Us</a>
-            </div>
-
-            <div class="landing-tags">
-              <span class="badge">Multi-tenant SaaS</span>
-              <span class="badge">Cloud-based</span>
-              <span class="badge">Mobile-friendly</span>
-              <span class="badge">Construction-focused</span>
-            </div>
-          </div>
-
-          <div class="landing-showcase">
-            <div class="landing-showcase-grid">
-              <div class="landing-stat">
-                <div class="landing-stat-label">Job Costing</div>
-                <div class="landing-stat-value">Clear</div>
-                <div class="landing-stat-sub">Track financial performance by job without juggling separate files.</div>
-              </div>
-
-              <div class="landing-stat">
-                <div class="landing-stat-label">Time Tracking</div>
-                <div class="landing-stat-value">Simple</div>
-                <div class="landing-stat-sub">Capture employee time and labor impact inside the same platform.</div>
-              </div>
-
-              <div class="landing-stat">
-                <div class="landing-stat-label">Invoicing</div>
-                <div class="landing-stat-value">Faster</div>
-                <div class="landing-stat-sub">Generate invoices and monitor payments and receivables in one place.</div>
-              </div>
-
-              <div class="landing-stat">
-                <div class="landing-stat-label">Reporting</div>
-                <div class="landing-stat-value">Actionable</div>
-                <div class="landing-stat-sub">See trends, profitability, and cash movement without manual reporting work.</div>
-              </div>
-            </div>
-
-            <div class="landing-callout">
-              <div class="landing-callout-title">Built for day-to-day business control</div>
-              <div class="landing-callout-copy">
-                The goal is not more software to manage. The goal is a cleaner operating system for your company:
-                jobs, labor, billing, and financial visibility tied together in one place.
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h2 class="landing-section-title">Why companies switch</h2>
-          <p class="landing-section-copy">
-            Most small construction teams do not need bloated enterprise software. They need dependable workflows,
-            easier billing, and a better view of what is happening across jobs and cash flow.
-          </p>
-
-          <div class="landing-value-grid">
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Less spreadsheet dependence</div>
-              <div class="landing-feature-copy">
-                Bring jobs, employees, invoices, expenses, and payments into one workspace instead of chasing information across files and messages.
-              </div>
-            </div>
-
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Better owner visibility</div>
-              <div class="landing-feature-copy">
-                See job profitability, receivables, labor cost impact, and financial trends without waiting for manual rollups.
-              </div>
-            </div>
-
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Cleaner day-to-day operations</div>
-              <div class="landing-feature-copy">
-                Give admins and managers a more consistent process for entering work, reviewing data, and keeping the business organized.
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h2 class="landing-section-title">Core platform capabilities</h2>
-          <p class="landing-section-copy">
-            Everything is centered around the workflows construction businesses actually use every week.
-          </p>
-
-          <div class="landing-feature-grid">
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Jobs and project finances</div>
-              <div class="landing-feature-copy">
-                Create jobs, record income and expenses, and monitor performance at the project level.
-              </div>
-            </div>
-
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Employees and labor tracking</div>
-              <div class="landing-feature-copy">
-                Manage employee records, track time entries, and keep labor visibility tied to your operational data.
-              </div>
-            </div>
-
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Invoices and payments</div>
-              <div class="landing-feature-copy">
-                Create invoices, record payments, and keep receivables organized so billing stays visible.
-              </div>
-            </div>
-
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Reports and trends</div>
-              <div class="landing-feature-copy">
-                Review cash flow, invoice aging, rankings, profitability, and trend reporting from inside the platform.
-              </div>
-            </div>
-
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Company setup and branding</div>
-              <div class="landing-feature-copy">
-                Configure company details, invoice defaults, and branding so your workspace feels production-ready from day one.
-              </div>
-            </div>
-
-            <div class="landing-feature-card">
-              <div class="landing-feature-title">Support and billing tools</div>
-              <div class="landing-feature-copy">
-                Access billing controls and in-app support workflows without leaving the platform.
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="landing-trust">
-          <h2 class="landing-section-title">Professional from the start</h2>
-          <p class="landing-section-copy">
-            Hudson Business Solutions is designed to feel like a real business system, not a rough internal tool.
-          </p>
-
-          <div class="landing-trust-grid">
-            <div class="landing-trust-item">
-              <div class="landing-trust-title">Secure account-based access</div>
-              <div class="landing-trust-copy">
-                Each company operates in its own workspace with its own users, settings, and subscription status.
-              </div>
-            </div>
-
-            <div class="landing-trust-item">
-              <div class="landing-trust-title">Owner and manager visibility</div>
-              <div class="landing-trust-copy">
-                Built to support decision-making, not just data entry, with reporting and operational oversight built in.
-              </div>
-            </div>
-
-            <div class="landing-trust-item">
-              <div class="landing-trust-title">Support-ready platform</div>
-              <div class="landing-trust-copy">
-                Billing and support workflows are built directly into the product to help teams resolve issues quickly.
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="landing-pricing">
-          <div class="landing-pricing-header">
-            <h2 class="landing-pricing-title">Simple launch pricing</h2>
-            <p class="landing-pricing-copy">
-              Clear pricing helps reduce hesitation and makes it easier for companies to understand how to get started.
+            <p class="lp-section-copy" style="margin-top:-12px;">
+              Owner-operators and growing construction teams can finally have the same kind of
+              business visibility that larger companies rely on, without the enterprise price tag.
             </p>
           </div>
 
-          <div class="landing-pricing-grid">
-            <div class="landing-pricing-card">
-              <div style="text-align:center;">
-                <div class="landing-pricing-plan">Standard plan</div>
-              </div>
+          <div class="lp-pricing-card">
+            <div class="lp-price-tag">Standard Plan</div>
+            <div class="lp-price-amount">
+              <div class="lp-price-num">$49</div>
+              <div class="lp-price-sub">/ month</div>
+            </div>
+            <p class="lp-price-desc">Everything you need to run a more organized, more profitable construction business.</p>
+            <div class="lp-price-features">
+              <div class="lp-price-feature"><span class="lp-check">✓</span><span>Your own isolated company workspace</span></div>
+              <div class="lp-price-feature"><span class="lp-check">✓</span><span>Job costing and profitability tracking</span></div>
+              <div class="lp-price-feature"><span class="lp-check">✓</span><span>Employee time tracking and labor visibility</span></div>
+              <div class="lp-price-feature"><span class="lp-check">✓</span><span>Invoices, payments, and receivables</span></div>
+              <div class="lp-price-feature"><span class="lp-check">✓</span><span>Fleet management and maintenance logs</span></div>
+              <div class="lp-price-feature"><span class="lp-check">✓</span><span>Reports, dashboards, and CSV exports</span></div>
+              <div class="lp-price-feature"><span class="lp-check">✓</span><span>Mobile app for field teams</span></div>
+            </div>
+            <a href="/signup" class="lp-btn-primary" style="width:100%;height:50px;font-size:16px;">Start Your Workspace</a>
+            <div class="lp-price-note">No credit card required to get started. Cancel anytime.</div>
+          </div>
+        </div>
 
-              <div class="landing-pricing-price">
-                <div class="landing-pricing-price-main">$49</div>
-                <div class="landing-pricing-price-sub">/ month</div>
-              </div>
+        {/* ── FAQ ── */}
+        <section class="lp-section" style="padding-bottom:8px;">
+          <div class="lp-section-tag">Questions</div>
+          <h2 class="lp-section-h2">Common questions</h2>
+          <p class="lp-section-copy">Everything most visitors need to know before signing up.</p>
 
-              <div class="landing-pricing-description">
-                A professional starting point for construction businesses that want better control over job costing,
-                labor tracking, invoicing, and reporting.
-              </div>
-
-              <div class="landing-pricing-features">
-                <div class="landing-pricing-feature">
-                  <span class="landing-pricing-check">✔</span>
-                  <span>One company workspace with isolated data and settings</span>
-                </div>
-                <div class="landing-pricing-feature">
-                  <span class="landing-pricing-check">✔</span>
-                  <span>Job costing and profitability tracking</span>
-                </div>
-                <div class="landing-pricing-feature">
-                  <span class="landing-pricing-check">✔</span>
-                  <span>Employee time tracking and labor visibility</span>
-                </div>
-                <div class="landing-pricing-feature">
-                  <span class="landing-pricing-check">✔</span>
-                  <span>Invoices, payments, and receivables visibility</span>
-                </div>
-                <div class="landing-pricing-feature">
-                  <span class="landing-pricing-check">✔</span>
-                  <span>Reports, dashboard visibility, and in-app support</span>
-                </div>
-              </div>
-
-              <div class="landing-actions" style="justify-content:center; margin-bottom:0;">
-                <a href="/signup" class="btn btn-primary">Create Workspace</a>
-              </div>
-
-              <div class="landing-pricing-note">
-                Start with a clear monthly plan and move your operations into a more organized system.
-              </div>
+          <div class="lp-faq-grid">
+            <div class="lp-faq-item">
+              <div class="lp-faq-q">Who is this built for?</div>
+              <div class="lp-faq-a">Construction companies that want better financial and operational visibility without overly complex enterprise software. Owner-operators and small-to-mid teams.</div>
+            </div>
+            <div class="lp-faq-item">
+              <div class="lp-faq-q">Do I get my own company workspace?</div>
+              <div class="lp-faq-a">Yes. Each company has its own isolated workspace with its own users, settings, billing, and business data. Your data is never shared with other companies.</div>
+            </div>
+            <div class="lp-faq-item">
+              <div class="lp-faq-q">Can my field team use it on mobile?</div>
+              <div class="lp-faq-a">Yes. Employees can clock in, log time to jobs, and check their schedules from any phone or tablet. No app store download needed — it works in the browser.</div>
+            </div>
+            <div class="lp-faq-item">
+              <div class="lp-faq-q">How do I get support?</div>
+              <div class="lp-faq-a">Support and billing workflows are available inside the platform. You can also reach us through the contact page before you sign up.</div>
             </div>
           </div>
         </section>
 
-        <section class="landing-steps">
-          <h2 class="landing-section-title">How it works</h2>
-          <p class="landing-section-copy">
-            Getting started is straightforward and built around a clean first-run experience.
+        {/* ── CTA ── */}
+        <section class="lp-cta">
+          <h2>Ready to get organized?</h2>
+          <p>
+            Start your workspace today and bring your jobs, labor, invoices, and reporting into one system built for construction.
           </p>
-
-          <div class="landing-step-grid">
-            <div class="landing-step">
-              <div class="landing-step-number">1</div>
-              <div class="landing-step-title">Create your workspace</div>
-              <div class="landing-step-copy">
-                Set up your company, admin account, invoice defaults, and basic business details.
-              </div>
-            </div>
-
-            <div class="landing-step">
-              <div class="landing-step-number">2</div>
-              <div class="landing-step-title">Add your operating data</div>
-              <div class="landing-step-copy">
-                Start with jobs, employees, and invoices so the platform can begin reflecting your real workflow.
-              </div>
-            </div>
-
-            <div class="landing-step">
-              <div class="landing-step-number">3</div>
-              <div class="landing-step-title">Run and review</div>
-              <div class="landing-step-copy">
-                Use dashboards and reports to track profitability, billing, labor, and financial movement more confidently.
-              </div>
-            </div>
+          <div class="lp-cta-actions">
+            <a href="/signup" class="lp-btn-dark">Create Your Workspace</a>
+            <a href="/contact" class="lp-btn-outline-dark">Talk to Us</a>
           </div>
         </section>
 
-        <section class="landing-faq">
-          <h2 class="landing-section-title">Common questions</h2>
-          <p class="landing-section-copy">
-            These are the questions most visitors usually need answered before signing up.
-          </p>
-
-          <div class="landing-faq-grid">
-            <div class="landing-faq-item">
-              <div class="landing-faq-question">Who is this built for?</div>
-              <div class="landing-faq-answer">
-                Hudson Business Solutions is designed for construction companies that want better financial and operational visibility without overly complex software.
-              </div>
-            </div>
-
-            <div class="landing-faq-item">
-              <div class="landing-faq-question">Do I get my own company workspace?</div>
-              <div class="landing-faq-answer">
-                Yes. Each company uses its own isolated workspace with its own users, settings, billing status, and business data.
-              </div>
-            </div>
-
-            <div class="landing-faq-item">
-              <div class="landing-faq-question">Can my team track labor and invoices in one place?</div>
-              <div class="landing-faq-answer">
-                Yes. The platform is designed to bring employees, time tracking, jobs, invoices, payments, and reporting together in one workflow.
-              </div>
-            </div>
-
-            <div class="landing-faq-item">
-              <div class="landing-faq-question">How do I get help if I run into an issue?</div>
-              <div class="landing-faq-answer">
-                Support and billing workflows are available inside the platform, and public contact information is also available before signup.
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="landing-bottom">
-          <h2 class="landing-bottom-title">A better operating system for your construction business</h2>
-          <p class="landing-bottom-copy">
-            If you want cleaner job costing, better billing visibility, and a more professional workflow for your team,
-            Hudson Business Solutions gives you a strong place to start.
-          </p>
-
-          <div class="landing-actions" style="justify-content:center;">
-            <a href="/signup" class="btn btn-primary">Create Workspace</a>
-            <a href="/contact" class="btn">Talk to Us</a>
-            <a href="/pick-tenant" class="btn">Find My Workspace</a>
-          </div>
-        </section>
       </div>
     </div>
   );

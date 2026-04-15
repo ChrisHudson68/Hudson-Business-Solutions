@@ -296,7 +296,7 @@ export const BillingPage: FC<BillingPageProps> = ({
           <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start;">
             <div>
               <div class="stat-label">Subscription Status</div>
-              <div style="font-size:24px; font-weight:900; margin-top:6px;">{statusHeadline(effectiveState)}</div>
+              <h3 style="margin:6px 0 0;">{statusHeadline(effectiveState)}</h3>
             </div>
             <span class={stateBadgeClass(effectiveState)}>{humanStatus(effectiveState)}</span>
           </div>
@@ -320,7 +320,7 @@ export const BillingPage: FC<BillingPageProps> = ({
         </div>
 
         <div class="card">
-          <div style="font-weight:900; font-size:18px; margin-bottom:8px;">Billing Actions</div>
+          <h3 style="margin-top:0; margin-bottom:8px;">Billing Actions</h3>
           <div class="muted" style="line-height:1.6; margin-bottom:14px;">
             {secondaryActionHint(effectiveState)}
           </div>
@@ -365,7 +365,7 @@ export const BillingPage: FC<BillingPageProps> = ({
 
       <div class="grid grid-2" style="margin-top:14px;">
         <div class="card">
-          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Subscription Details</div>
+          <h3 style="margin-top:0; margin-bottom:12px;">Subscription Details</h3>
 
           <div class="list">
             <div class="list-item">
@@ -388,7 +388,7 @@ export const BillingPage: FC<BillingPageProps> = ({
         </div>
 
         <div class="card">
-          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">Stripe Connection</div>
+          <h3 style="margin-top:0; margin-bottom:12px;">Stripe Connection</h3>
 
           <div class="list">
             <div class="list-item">
@@ -408,7 +408,7 @@ export const BillingPage: FC<BillingPageProps> = ({
       </div>
 
       <div class="card" style="margin-top:14px;">
-        <div style="font-weight:900; font-size:18px; margin-bottom:10px;">Launch Verification</div>
+        <h3 style="margin-top:0; margin-bottom:10px;">Launch Verification</h3>
         <div class="muted" style="line-height:1.6;">
           Before onboarding customers, run the billing launch test checklist included in this release with one trial tenant and one paid tenant. Verify checkout success, portal recovery, billing gate redirects, and platform-admin Stripe refresh behavior before going live.
         </div>
@@ -416,7 +416,7 @@ export const BillingPage: FC<BillingPageProps> = ({
 
       {tenant.billing_override_reason || tenant.billing_overridden_at ? (
         <div class="card" style="margin-top:14px;">
-          <div style="font-weight:900; font-size:18px; margin-bottom:10px;">Platform Billing Override</div>
+          <h3 style="margin-top:0; margin-bottom:10px;">Platform Billing Override</h3>
           <div class="muted" style="line-height:1.6;">
             This workspace has platform-level billing override information saved. Tenant admins can view it here for clarity, but only platform administration should change override behavior.
           </div>

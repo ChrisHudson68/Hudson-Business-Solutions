@@ -160,10 +160,7 @@ export const EditUserPage: FC<EditUserPageProps> = ({
 
       <div class="card" style="max-width:1140px;">
         {error ? (
-          <div
-            class="badge badge-bad"
-            style="display:block; height:auto; padding:12px 14px; margin-bottom:14px; border-radius:12px;"
-          >
+          <div class="card" style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;">
             {error}
           </div>
         ) : null}

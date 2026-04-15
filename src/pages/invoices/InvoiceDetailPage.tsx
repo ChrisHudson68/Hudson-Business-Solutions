@@ -169,37 +169,38 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
         </div>
 
         <div class="card">
-          <b>Invoice Summary</b>
-          <div class="muted" style="margin-top:10px; line-height:1.8;">
+          <div class="card-head" style="margin-bottom:12px;">
+            <h3>Invoice Summary</h3>
+          </div>
+          <div class="muted" style="line-height:1.8;">
             <div><b>Invoice #:</b> {inv.invoice_number}</div>
             <div><b>Date Issued:</b> {inv.date_issued}</div>
             <div><b>Due Date:</b> {inv.due_date}</div>
-            <div><b>Status:</b> {inv.archived_at ? 'Archived' : status}</div>
             <div><b>Client:</b> {inv.client_name}</div>
             <div><b>Job:</b> {inv.job_name}</div>
           </div>
         </div>
       </div>
 
-      <div class="grid grid-3" style="margin-top:14px;">
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Invoice Amount</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatCurrency(inv.amount || 0)}
-          </div>
+      <div class="stat-grid stat-grid-4" style="margin-top:14px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Invoice Amount</div>
+          <div class="stat-value">${formatCurrency(inv.amount || 0)}</div>
         </div>
-
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Paid</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatCurrency(paid || 0)}
-          </div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Paid</div>
+          <div class="stat-value">${formatCurrency(paid || 0)}</div>
         </div>
-
-        <div class="card">
-          <div class="muted" style="font-weight:900; font-size:12px;">Outstanding</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">
-            ${formatCurrency(outstanding || 0)}
+        <div class="stat-card stat-card-red">
+          <div class="stat-label">Outstanding</div>
+          <div class="stat-value">${formatCurrency(outstanding || 0)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Status</div>
+          <div style="margin-top:10px;">
+            <span class={`badge${status === 'Overdue' ? ' badge-bad' : status === 'Paid' ? ' badge-good' : ''}`}>
+              {inv.archived_at ? 'Archived' : status}
+            </span>
           </div>
         </div>
       </div>

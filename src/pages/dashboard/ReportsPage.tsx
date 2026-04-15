@@ -65,12 +65,14 @@ function RankingTable({
 }) {
   return (
     <div class="card">
-      <h3 style="margin-top:0;">{title}</h3>
+      <div class="card-head">
+        <h3>{title}</h3>
+      </div>
       {rows.length === 0 ? (
-        <div class="muted">No jobs found.</div>
+        <div class="muted" style="padding:16px 0;">No jobs found.</div>
       ) : (
-        <div class="table-wrap table-wrap-tight">
-          <table class="table">
+        <div class="table-wrap" style="margin:0 -18px -16px;">
+          <table>
             <thead>
               <tr>
                 <th>Job</th>
@@ -83,11 +85,11 @@ function RankingTable({
               {rows.map((row) => (
                 <tr>
                   <td>
-                    <div><b>{row.job_name || `Job #${row.id}`}</b></div>
-                    <div class="muted small">{row.archived ? 'Archived' : row.status}</div>
+                    <div style="font-weight:700;">{row.job_name || `Job #${row.id}`}</div>
+                    <div class="muted" style="font-size:12px; margin-top:2px;">{row.archived ? 'Archived' : row.status}</div>
                   </td>
                   <td>{row.client || '—'}</td>
-                  <td class="right">{valueSelector(row)}</td>
+                  <td class="right" style="font-weight:700;">{valueSelector(row)}</td>
                   <td class="right">{secondarySelector(row)}</td>
                 </tr>
               ))}
@@ -145,22 +147,23 @@ export const ReportsPage: FC<ReportsPageProps> = ({
           <p>Cash flow, invoice aging, trends, and job profitability for {filter.label}.</p>
         </div>
 
-        <div class="actions actions-mobile-stack">
+        <div class="actions">
           <a class="btn" href={csvHref}>Export CSV</a>
-          <a class="btn" href={printHref} target="_blank" rel="noreferrer">Printable View</a>
+          <a class="btn" href={printHref} target="_blank" rel="noreferrer">Print View</a>
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:14px;">
+      <div class="card" style="margin-bottom:16px;">
         <div class="card-head">
-          <b>Quick Ranges</b>
-          <span class="badge">{filter.label}</span>
-        </div>
-
-        <div class="actions actions-mobile-stack" style="margin-bottom:14px;">
-          <a class={activeRangeClass(filter.range, '1w')} href={rangeHref('1w', filter)}>1 Week</a>
-          <a class={activeRangeClass(filter.range, '1m')} href={rangeHref('1m', filter)}>1 Month</a>
-          <a class={activeRangeClass(filter.range, '1y')} href={rangeHref('1y', filter)}>1 Year</a>
+          <div>
+            <h3>Date Range</h3>
+            <p>Currently: {filter.label}</p>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <a class={activeRangeClass(filter.range, '1w')} href={rangeHref('1w', filter)}>1 Week</a>
+            <a class={activeRangeClass(filter.range, '1m')} href={rangeHref('1m', filter)}>1 Month</a>
+            <a class={activeRangeClass(filter.range, '1y')} href={rangeHref('1y', filter)}>1 Year</a>
+          </div>
         </div>
 
         <form method="get" action="/reports">
@@ -174,150 +177,123 @@ export const ReportsPage: FC<ReportsPageProps> = ({
               <label>End Date</label>
               <input type="date" name="end" value={filter.endDate} required />
             </div>
-            <div style="flex:0;">
-              <label>&nbsp;</label>
-              <button class="btn btn-primary" type="submit">Apply</button>
+            <div style="flex:0; align-self:flex-end; padding-bottom:0;">
+              <button class="btn btn-primary" type="submit" style="margin-top:14px;">Apply</button>
             </div>
           </div>
         </form>
       </div>
 
       {!hasReportData ? (
-        <div class="card" style="text-align:center; padding:36px 20px;">
-          <div style="
-            width:64px;
-            height:64px;
-            margin:0 auto 16px;
-            border-radius:16px;
-            background:#EFF6FF;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            font-size:28px;
-            font-weight:900;
-            color:#1D4ED8;
-          ">
-            📊
-          </div>
-
-          <h2 style="margin:0 0 10px;">No report data yet</h2>
-
-          <p class="muted" style="max-width:560px; margin:0 auto 16px;">
-            Reports become useful once your workspace has jobs, invoices, expenses, payments,
-            labor entries, or income activity. As data is added, this page will show trends,
-            receivables, profitability, and operating performance.
-          </p>
-
-          <p class="muted small" style="max-width:560px; margin:0 auto 18px;">
-            Most companies begin by creating a job, adding employees, tracking time, and issuing invoices.
-            Once those workflows are in place, your reporting dashboard will populate automatically.
-          </p>
-
-          <div class="actions actions-mobile-stack" style="justify-content:center;">
-            <a class="btn" href="/jobs">Go to Jobs</a>
-            <a class="btn" href="/timesheet">Go to Timesheets</a>
-            <a class="btn btn-primary" href="/invoices">Go to Invoices</a>
+        <div class="card">
+          <div class="empty-state">
+            <div class="empty-state-icon">📊</div>
+            <h3>No report data yet</h3>
+            <p>
+              Reports populate automatically as you add jobs, record time, log expenses, and issue invoices.
+              Most companies start by creating a job, adding employees, tracking time, and billing a customer.
+            </p>
+            <div class="actions" style="justify-content:center;">
+              <a class="btn" href="/jobs">Jobs</a>
+              <a class="btn" href="/timesheet">Timesheets</a>
+              <a class="btn btn-primary" href="/invoices">Invoices</a>
+            </div>
           </div>
         </div>
       ) : (
         <>
-          <div class="grid grid-4">
-            <div class="card">
-              <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Recorded Income</div>
-              <div style="font-size:28px; font-weight:900; margin-top:8px;">{formatMoney(cash.recordedIncome)}</div>
+          <div class="stat-grid stat-grid-4">
+            <div class="stat-card stat-card-green">
+              <div class="stat-label">Recorded Income</div>
+              <div class="stat-value">{formatMoney(cash.recordedIncome)}</div>
             </div>
-
-            <div class="card">
-              <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Payments Collected</div>
-              <div style="font-size:28px; font-weight:900; margin-top:8px;">{formatMoney(cash.collectedPayments)}</div>
+            <div class="stat-card stat-card-navy">
+              <div class="stat-label">Payments Collected</div>
+              <div class="stat-value">{formatMoney(cash.collectedPayments)}</div>
             </div>
-
-            <div class="card">
-              <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Cash Outflow</div>
-              <div style="font-size:28px; font-weight:900; margin-top:8px;">{formatMoney(cash.cashOutflow)}</div>
-              <div class="muted small" style="margin-top:6px;">
-                {formatMoney(cash.recordedExpenses)} expenses • {formatMoney(cash.laborCost)} labor
-              </div>
+            <div class="stat-card">
+              <div class="stat-label">Cash Outflow</div>
+              <div class="stat-value">{formatMoney(cash.cashOutflow)}</div>
+              <div class="stat-sub">{formatMoney(cash.recordedExpenses)} exp · {formatMoney(cash.laborCost)} labor</div>
             </div>
-
-            <div class="card">
-              <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Net Cash Movement</div>
-              <div style="font-size:28px; font-weight:900; margin-top:8px;">{formatMoney(cash.netCash)}</div>
+            <div class="stat-card stat-card-navy">
+              <div class="stat-label">Net Cash Movement</div>
+              <div class="stat-value">{formatMoney(cash.netCash)}</div>
             </div>
           </div>
 
-          <div class="grid grid-4" style="margin-top:14px;">
-            <div class="card">
-              <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Invoiced</div>
-              <div style="font-size:28px; font-weight:900; margin-top:8px;">{formatMoney(cash.invoicedAmount)}</div>
+          <div class="stat-grid stat-grid-4" style="margin-top:14px;">
+            <div class="stat-card stat-card-accent">
+              <div class="stat-label">Invoiced</div>
+              <div class="stat-value">{formatMoney(cash.invoicedAmount)}</div>
             </div>
-
-            <div class="card">
-              <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Open Receivables</div>
-              <div style="font-size:28px; font-weight:900; margin-top:8px;">{formatMoney(cash.openReceivables)}</div>
+            <div class="stat-card stat-card-accent">
+              <div class="stat-label">Open Receivables</div>
+              <div class="stat-value">{formatMoney(cash.openReceivables)}</div>
             </div>
-
-            <div class="card">
-              <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Open Invoices</div>
-              <div style="font-size:28px; font-weight:900; margin-top:8px;">{aging.openCount}</div>
+            <div class="stat-card">
+              <div class="stat-label">Open Invoices</div>
+              <div class="stat-value">{aging.openCount}</div>
             </div>
-
-            <div class="card">
-              <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Overdue Total</div>
-              <div style="font-size:28px; font-weight:900; margin-top:8px;">{formatMoney(aging.overdueTotal)}</div>
+            <div class="stat-card stat-card-red">
+              <div class="stat-label">Overdue Total</div>
+              <div class="stat-value">{formatMoney(aging.overdueTotal)}</div>
             </div>
           </div>
 
           <div class="card" style="margin-top:14px;">
             <div class="card-head">
-              <h3 style="margin:0;">Invoice Aging</h3>
-              <span class="badge">{aging.openCount} open invoice{aging.openCount === 1 ? '' : 's'}</span>
+              <h3>Invoice Aging</h3>
+              <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">
+                {aging.openCount} open invoice{aging.openCount === 1 ? '' : 's'}
+              </span>
             </div>
-
-            <div class="grid grid-4" style="margin-bottom:14px;">
-              <div class="card" style="padding:14px;">
-                <div class="muted small strong">Current</div>
-                <div style="font-size:24px; font-weight:900; margin-top:6px;">{formatMoney(aging.current)}</div>
+            <div class="stat-grid stat-grid-4" style="margin-bottom:12px;">
+              <div class="stat-card">
+                <div class="stat-label">Current</div>
+                <div class="stat-value" style="font-size:20px;">{formatMoney(aging.current)}</div>
               </div>
-              <div class="card" style="padding:14px;">
-                <div class="muted small strong">1-30 Days</div>
-                <div style="font-size:24px; font-weight:900; margin-top:6px;">{formatMoney(aging.days1to30)}</div>
+              <div class="stat-card stat-card-accent">
+                <div class="stat-label">1–30 Days</div>
+                <div class="stat-value" style="font-size:20px;">{formatMoney(aging.days1to30)}</div>
               </div>
-              <div class="card" style="padding:14px;">
-                <div class="muted small strong">31-60 Days</div>
-                <div style="font-size:24px; font-weight:900; margin-top:6px;">{formatMoney(aging.days31to60)}</div>
+              <div class="stat-card stat-card-accent">
+                <div class="stat-label">31–60 Days</div>
+                <div class="stat-value" style="font-size:20px;">{formatMoney(aging.days31to60)}</div>
               </div>
-              <div class="card" style="padding:14px;">
-                <div class="muted small strong">61-90 Days</div>
-                <div style="font-size:24px; font-weight:900; margin-top:6px;">{formatMoney(aging.days61to90)}</div>
+              <div class="stat-card stat-card-red">
+                <div class="stat-label">61–90 Days</div>
+                <div class="stat-value" style="font-size:20px;">{formatMoney(aging.days61to90)}</div>
               </div>
             </div>
-
-            <div class="grid grid-2">
-              <div class="card" style="padding:14px;">
-                <div class="muted small strong">90+ Days</div>
-                <div style="font-size:24px; font-weight:900; margin-top:6px;">{formatMoney(aging.days90Plus)}</div>
+            <div class="stat-grid stat-grid-2">
+              <div class="stat-card stat-card-red">
+                <div class="stat-label">90+ Days</div>
+                <div class="stat-value" style="font-size:20px;">{formatMoney(aging.days90Plus)}</div>
               </div>
-              <div class="card" style="padding:14px;">
-                <div class="muted small strong">Total Open A/R</div>
-                <div style="font-size:24px; font-weight:900; margin-top:6px;">{formatMoney(aging.totalOpen)}</div>
+              <div class="stat-card stat-card-navy">
+                <div class="stat-label">Total Open A/R</div>
+                <div class="stat-value" style="font-size:20px;">{formatMoney(aging.totalOpen)}</div>
               </div>
             </div>
           </div>
 
           <div class="grid grid-2" style="margin-top:14px;">
             <div class="card">
-              <h3 style="margin-top:0;">Operations Trend</h3>
-              <div class="muted" style="margin-bottom:12px;">
+              <div class="card-head">
+                <h3>Operations Trend</h3>
+              </div>
+              <div class="muted" style="margin-bottom:14px; font-size:13px;">
                 Income, outflow, and net movement over the selected period.
               </div>
               <canvas id="cashTrendChart"></canvas>
             </div>
-
             <div class="card">
-              <h3 style="margin-top:0;">Billing Trend</h3>
-              <div class="muted" style="margin-bottom:12px;">
-                Compare invoiced work against actual cash collected.
+              <div class="card-head">
+                <h3>Billing Trend</h3>
+              </div>
+              <div class="muted" style="margin-bottom:14px; font-size:13px;">
+                Invoiced work compared to actual cash collected.
               </div>
               <canvas id="billingTrendChart"></canvas>
             </div>
@@ -325,20 +301,23 @@ export const ReportsPage: FC<ReportsPageProps> = ({
 
           <div class="grid grid-2" style="margin-top:14px;">
             <div class="card">
-              <h3 style="margin-top:0;">Expense Categories</h3>
-              <div class="muted" style="margin-bottom:12px;">
-                Recorded expenses for the selected reporting period.
+              <div class="card-head">
+                <h3>Expense Breakdown</h3>
+              </div>
+              <div class="muted" style="margin-bottom:14px; font-size:13px;">
+                Recorded expenses for the selected period.
               </div>
               <canvas id="expenseBreakdownChart"></canvas>
             </div>
-
             <div class="card">
-              <h3 style="margin-top:0;">Expense Category Totals</h3>
+              <div class="card-head">
+                <h3>Expense Category Totals</h3>
+              </div>
               {expenseCategories.length === 0 ? (
-                <div class="muted">No expense category data found for this range.</div>
+                <div class="muted">No expense category data for this range.</div>
               ) : (
-                <div class="table-wrap table-wrap-tight">
-                  <table class="table">
+                <div class="table-wrap" style="margin:0 -18px -16px;">
+                  <table>
                     <thead>
                       <tr>
                         <th>Category</th>
@@ -349,7 +328,7 @@ export const ReportsPage: FC<ReportsPageProps> = ({
                       {expenseCategories.map((item) => (
                         <tr>
                           <td>{item.label}</td>
-                          <td class="right">{formatMoney(item.value)}</td>
+                          <td class="right" style="font-weight:700;">{formatMoney(item.value)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -396,9 +375,11 @@ export const ReportsPage: FC<ReportsPageProps> = ({
           </div>
 
           <div class="card" style="margin-top:14px;">
-            <h3 style="margin-top:0;">Job Profitability Summary</h3>
-            <div class="table-wrap table-wrap-tight">
-              <table class="table">
+            <div class="card-head">
+              <h3>Job Profitability Summary</h3>
+            </div>
+            <div class="table-wrap" style="margin:0 -18px -16px;">
+              <table>
                 <thead>
                   <tr>
                     <th>Job</th>

@@ -62,40 +62,47 @@ export const EstimatesListPage: FC<EstimatesListPageProps> = ({
         </div>
       </div>
 
-      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Total Estimates</div>
-          <div class="metric-value">{totalCount}</div>
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Total Estimates</div>
+          <div class="stat-value">{totalCount}</div>
         </div>
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Pipeline Value</div>
-          <div class="metric-value">${formatMoney(totalValue)}</div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Pipeline Value</div>
+          <div class="stat-value">${formatMoney(totalValue)}</div>
         </div>
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Draft + Ready</div>
-          <div class="metric-value">{draftCount + readyCount}</div>
+        <div class="stat-card">
+          <div class="stat-label">Draft + Ready</div>
+          <div class="stat-value">{draftCount + readyCount}</div>
         </div>
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Approved</div>
-          <div class="metric-value">{approvedCount}</div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Approved</div>
+          <div class="stat-value">{approvedCount}</div>
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:14px;">
-        <div class="actions actions-mobile-stack">
-          <a class={`btn ${selectedStatus === '' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived' : '/estimates'}>All</a>
-          <a class={`btn ${selectedStatus === 'draft' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=draft' : '/estimates?status=draft'}>Draft ({draftCount})</a>
-          <a class={`btn ${selectedStatus === 'ready' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=ready' : '/estimates?status=ready'}>Ready ({readyCount})</a>
-          <a class={`btn ${selectedStatus === 'sent' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=sent' : '/estimates?status=sent'}>Sent ({sentCount})</a>
-          <a class={`btn ${selectedStatus === 'approved' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=approved' : '/estimates?status=approved'}>Approved ({approvedCount})</a>
-          <a class={`btn ${selectedStatus === 'rejected' ? 'btn-primary' : ''}`} href={showArchived ? '/estimates/archived?status=rejected' : '/estimates?status=rejected'}>Rejected ({rejectedCount})</a>
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-head">
+          <h3>Filter by Status</h3>
+        </div>
+        <div class="actions" style="flex-wrap:wrap; gap:6px;">
+          <a class={`btn btn-sm ${selectedStatus === '' ? 'btn-navy' : ''}`} href={showArchived ? '/estimates/archived' : '/estimates'}>All ({totalCount})</a>
+          <a class={`btn btn-sm ${selectedStatus === 'draft' ? 'btn-navy' : ''}`} href={showArchived ? '/estimates/archived?status=draft' : '/estimates?status=draft'}>Draft ({draftCount})</a>
+          <a class={`btn btn-sm ${selectedStatus === 'ready' ? 'btn-navy' : ''}`} href={showArchived ? '/estimates/archived?status=ready' : '/estimates?status=ready'}>Ready ({readyCount})</a>
+          <a class={`btn btn-sm ${selectedStatus === 'sent' ? 'btn-navy' : ''}`} href={showArchived ? '/estimates/archived?status=sent' : '/estimates?status=sent'}>Sent ({sentCount})</a>
+          <a class={`btn btn-sm ${selectedStatus === 'approved' ? 'btn-navy' : ''}`} href={showArchived ? '/estimates/archived?status=approved' : '/estimates?status=approved'}>Approved ({approvedCount})</a>
+          <a class={`btn btn-sm ${selectedStatus === 'rejected' ? 'btn-navy' : ''}`} href={showArchived ? '/estimates/archived?status=rejected' : '/estimates?status=rejected'}>Rejected ({rejectedCount})</a>
         </div>
       </div>
 
       <div class="card">
         {hasEstimates ? (
-          <div class="table-wrap table-wrap-tight">
-            <table class="table">
+          <>
+          <div class="card-head">
+            <h2>{showArchived ? 'Archived Estimates' : 'Estimates'}</h2>
+          </div>
+          <div class="table-wrap" style="margin:0 -18px -16px;">
+            <table>
               <thead>
                 <tr>
                   <th>Estimate</th>
@@ -123,10 +130,10 @@ export const EstimatesListPage: FC<EstimatesListPageProps> = ({
                     <td class="right">${formatMoney(estimate.total)}</td>
                     <td>{estimate.updated_at?.slice(0, 10) || '—'}</td>
                     <td class="right">
-                      <div class="actions actions-mobile-stack" style="justify-content:flex-end;">
-                        <a class="btn" href={`/estimate/${estimate.id}`}>View</a>
+                      <div class="actions" style="justify-content:flex-end; gap:6px;">
+                        <a class="btn btn-sm" href={`/estimate/${estimate.id}`}>View</a>
                         {(estimate.status === 'draft' || estimate.status === 'ready') && canCreateEstimates ? (
-                          <a class="btn" href={`/estimate/${estimate.id}/edit`}>Edit</a>
+                          <a class="btn btn-sm" href={`/estimate/${estimate.id}/edit`}>Edit</a>
                         ) : null}
                       </div>
                     </td>
@@ -135,28 +142,13 @@ export const EstimatesListPage: FC<EstimatesListPageProps> = ({
               </tbody>
             </table>
           </div>
+          </>
         ) : (
-          <div style="text-align:center; padding:36px 20px;">
-            <div
-              style="
-                width:64px;
-                height:64px;
-                margin:0 auto 16px;
-                border-radius:18px;
-                background:#EFF6FF;
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                font-size:28px;
-              "
-            >
-              📋
-            </div>
-            <h2 style="margin:0 0 8px;">No estimates yet</h2>
-            <p class="muted" style="max-width:560px; margin:0 auto 16px;">
-              Use estimates to capture scope, pricing, and customer details before a job becomes active.
-            </p>
-            {canCreateEstimates ? <a class="btn btn-primary" href="/estimates/new">Create First Estimate</a> : null}
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <h3>No estimates yet</h3>
+            <p>Use estimates to capture scope, pricing, and customer details before a job becomes active.</p>
+            {canCreateEstimates ? <a class="btn btn-primary" href="/estimates/new">+ Create First Estimate</a> : null}
           </div>
         )}
       </div>

@@ -121,49 +121,46 @@ export const AdminDashboardPage: FC<AdminDashboardPageProps> = ({
         </div>
       </div>
 
-      <div class="grid grid-4">
-        <div class="card">
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
           <div class="stat-label">Total Tenants</div>
           <div class="stat-value">{metrics.totalTenants}</div>
-          <div class="muted" style="margin-top:8px;">{metrics.activeTenants} active · {metrics.trialingTenants} trialing</div>
+          <div class="stat-sub">{metrics.activeTenants} active · {metrics.trialingTenants} trialing</div>
         </div>
-
-        <div class="card">
+        <div class="stat-card stat-card-green">
           <div class="stat-label">Onboarding Complete</div>
           <div class="stat-value">{metrics.onboardingCompleteTenants}</div>
-          <div class="muted" style="margin-top:8px;">{metrics.onboardingInProgressTenants} in progress · {metrics.onboardingNotStartedTenants} not started</div>
+          <div class="stat-sub">{metrics.onboardingInProgressTenants} in progress</div>
         </div>
-
-        <div class="card">
+        <div class="stat-card stat-card-red">
           <div class="stat-label">At-Risk Tenants</div>
           <div class="stat-value">{metrics.atRiskTenants}</div>
-          <div class="muted" style="margin-top:8px;">{metrics.dormantTenants} dormant by recent activity</div>
+          <div class="stat-sub">{metrics.dormantTenants} dormant</div>
         </div>
-
-        <div class="card">
+        <div class="stat-card stat-card-accent">
           <div class="stat-label">Open Support Tickets</div>
           <div class="stat-value">{metrics.openSupportTickets}</div>
-          <div class="muted" style="margin-top:8px;">{metrics.criticalSupportTickets} critical · {metrics.tenantsWithNoActivity7d} with no activity in 7 days</div>
+          <div class="stat-sub">{metrics.criticalSupportTickets} critical</div>
         </div>
       </div>
 
-      <div class="grid grid-4" style="margin-top:14px;">
-        <div class="card">
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-green">
           <div class="stat-label">Billing — Active</div>
           <div class="stat-value">{metrics.activeTenants}</div>
         </div>
-        <div class="card">
+        <div class="stat-card">
           <div class="stat-label">Billing — Trialing</div>
           <div class="stat-value">{metrics.trialingTenants}</div>
         </div>
-        <div class="card">
+        <div class="stat-card stat-card-red">
           <div class="stat-label">Billing — Past Due</div>
           <div class="stat-value">{metrics.pastDueTenants}</div>
         </div>
-        <div class="card">
+        <div class="stat-card">
           <div class="stat-label">Billing — Internal / Canceled</div>
           <div class="stat-value">{metrics.internalTenants + metrics.canceledTenants}</div>
-          <div class="muted" style="margin-top:8px;">{metrics.internalTenants} internal · {metrics.canceledTenants} canceled</div>
+          <div class="stat-sub">{metrics.internalTenants} internal · {metrics.canceledTenants} canceled</div>
         </div>
       </div>
 
@@ -223,7 +220,7 @@ export const AdminDashboardPage: FC<AdminDashboardPageProps> = ({
           <a class="btn" href="/admin/activity">View activity log</a>
         </div>
 
-        <div class="table-wrap">
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>

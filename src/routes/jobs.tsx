@@ -178,6 +178,7 @@ function buildJobFormData(source: Record<string, unknown>) {
     retainage_percent: String(source.retainage_percent ?? '0'),
     start_date: String(source.start_date ?? ''),
     status: String(source.status ?? 'Active'),
+    is_overhead: source.is_overhead === '1' || source.is_overhead === 1 ? '1' : '0',
   };
 }
 
@@ -417,6 +418,8 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
 
     ensureUniqueJobCode(db, tenantId, jobCode);
 
+    const isOverhead = body.is_overhead === '1' ? 1 : 0;
+
     const jobId = jobs.create(db, tenantId, {
       job_name: jobName,
       job_code: jobCode,
@@ -428,6 +431,7 @@ jobRoutes.post('/add_job', roleRequired('Admin', 'Manager'), async (c) => {
       retainage_percent: retainagePercent,
       start_date: startDate,
       status,
+      is_overhead: isOverhead,
     });
 
     if (currentUser) {
@@ -501,6 +505,7 @@ jobRoutes.get('/edit_job/:id', roleRequired('Admin', 'Manager'), (c) => {
         retainage_percent: String(Number(job.retainage_percent || 0)),
         start_date: job.start_date || '',
         status: job.status || 'Active',
+        is_overhead: Number(job.is_overhead || 0) === 1 ? '1' : '0',
       }}
       csrfToken={c.get('csrfToken')}
     />,
@@ -540,6 +545,8 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
 
     ensureUniqueJobCode(db, tenantId, jobCode, jobId);
 
+    const isOverhead = body.is_overhead === '1' ? 1 : 0;
+
     jobs.update(db, jobId, tenantId, {
       job_name: jobName,
       job_code: jobCode,
@@ -551,6 +558,7 @@ jobRoutes.post('/edit_job/:id', roleRequired('Admin', 'Manager'), async (c) => {
       retainage_percent: retainagePercent,
       start_date: startDate,
       status,
+      is_overhead: isOverhead,
     });
 
     if (currentUser) {

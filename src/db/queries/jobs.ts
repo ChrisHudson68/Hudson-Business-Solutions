@@ -21,7 +21,8 @@ function baseJobColumns(alias = 'j'): string {
     ${alias}.tenant_id,
     ${alias}.archived_at,
     ${alias}.archived_by_user_id,
-    ${alias}.source_estimate_id
+    ${alias}.source_estimate_id,
+    ${alias}.is_overhead
   `;
 }
 
@@ -205,6 +206,7 @@ export function create(db: DB, tenantId: number, data: {
   start_date?: string | null;
   status?: string | null;
   source_estimate_id?: number | null;
+  is_overhead?: number | null;
 }) {
   const result = db.prepare(
     `INSERT INTO jobs (
@@ -221,8 +223,9 @@ export function create(db: DB, tenantId: number, data: {
       tenant_id,
       archived_at,
       archived_by_user_id,
-      source_estimate_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`
+      source_estimate_id,
+      is_overhead
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`
   ).run(
     data.job_name,
     data.job_code || null,
@@ -236,6 +239,7 @@ export function create(db: DB, tenantId: number, data: {
     data.status || 'Active',
     tenantId,
     data.source_estimate_id ?? null,
+    data.is_overhead ? 1 : 0,
   );
   return result.lastInsertRowid as number;
 }
@@ -252,6 +256,7 @@ export function update(db: DB, jobId: number, tenantId: number, data: {
   start_date?: string | null;
   status?: string | null;
   source_estimate_id?: number | null;
+  is_overhead?: number | null;
 }) {
   db.prepare(`
     UPDATE jobs
@@ -265,7 +270,8 @@ export function update(db: DB, jobId: number, tenantId: number, data: {
         retainage_percent = ?,
         start_date = ?,
         status = ?,
-        source_estimate_id = COALESCE(?, source_estimate_id)
+        source_estimate_id = COALESCE(?, source_estimate_id),
+        is_overhead = ?
     WHERE id = ? AND tenant_id = ?
   `).run(
     data.job_name ?? null,
@@ -279,6 +285,7 @@ export function update(db: DB, jobId: number, tenantId: number, data: {
     data.start_date ?? null,
     data.status || 'Active',
     data.source_estimate_id ?? null,
+    data.is_overhead ? 1 : 0,
     jobId,
     tenantId,
   );

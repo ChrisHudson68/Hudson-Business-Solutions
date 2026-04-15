@@ -153,13 +153,6 @@ export const FleetPage: FC<FleetPageProps> = ({
 
   return (
     <div>
-      <style>{`
-        .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px}.stat,.card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:var(--shadow)}.label{font-size:12px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em}.value{font-size:24px;font-weight:800;margin-top:8px}.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.row.two{grid-template-columns:repeat(2,minmax(0,1fr))}.filters{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}.filters .wide{grid-column:span 2}.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}.muted{color:var(--muted)}.small{font-size:12px}.badge{display:inline-flex;align-items:center;justify-content:center;padding:5px 8px;border-radius:999px;background:#eef2ff;font-size:12px;font-weight:700}.badge-good{background:#ecfdf3;color:#166534}.badge-warn{background:#fff7ed;color:#9a3412}.badge-danger{background:#FEF2F2;color:#991B1B}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;border-top:1px solid var(--border);vertical-align:top}.table th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left}.right{text-align:right}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);font-weight:700;text-decoration:none;cursor:pointer}.btn-primary{background:var(--navy);color:#fff;border-color:var(--navy)}label{display:block;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text)}
-        .reminders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px}
-        @media (max-width:1100px){.stats,.filters,.reminders{grid-template-columns:repeat(2,minmax(0,1fr))}.row,.row.two{grid-template-columns:1fr}}
-        @media (max-width:700px){.stats,.filters,.reminders{grid-template-columns:1fr}}
-      `}</style>
-
       <div class="page-head">
         <div>
           <h1>Fleet</h1>
@@ -175,21 +168,35 @@ export const FleetPage: FC<FleetPageProps> = ({
       {error ? <div class="card" style="margin-bottom:14px;border-color:#FECACA;background:#FEF2F2;color:#991B1B;">{error}</div> : null}
       {success ? <div class="card" style="margin-bottom:14px;border-color:#BBF7D0;background:#F0FDF4;color:#166534;">{success}</div> : null}
 
-      <div class="stats">
-        <div class="stat"><div class="label">Active Vehicles</div><div class="value">{summary.activeVehicles}</div></div>
-        <div class="stat"><div class="label">Assigned Drivers</div><div class="value">{assignmentSummary.assignedVehicles}</div></div>
-        <div class="stat"><div class="label">Fuel MTD</div><div class="value">{fmtMoney(summary.fuelMtd)}</div></div>
-        <div class="stat"><div class="label">Maintenance MTD</div><div class="value">{fmtMoney(summary.maintenanceMtd)}</div></div>
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Active Vehicles</div>
+          <div class="stat-value">{summary.activeVehicles}</div>
+          <div class="stat-sub">{summary.archivedVehicles} archived</div>
+        </div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Assigned Drivers</div>
+          <div class="stat-value">{assignmentSummary.assignedVehicles}</div>
+          <div class="stat-sub">{assignmentSummary.unassignedVehicles} unassigned</div>
+        </div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Fuel MTD</div>
+          <div class="stat-value">{fmtMoney(summary.fuelMtd)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Maintenance MTD</div>
+          <div class="stat-value">{fmtMoney(summary.maintenanceMtd)}</div>
+        </div>
       </div>
 
-      <div class="reminders">
+      <div class="grid grid-3" style="margin-bottom:14px;">
         <div class="card">
           <div class="card-head"><b>Service Reminders</b><span class="badge">{dueReminders.length}</span></div>
           {dueReminders.length > 0 ? dueReminders.slice(0, 5).map((item) => (
             <div style="padding:10px 0;border-top:1px solid var(--border);">
               <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
                 <a href={`/fleet/vehicles/${item.vehicleId}`}><b>{item.vehicleName}</b></a>
-                <span class={item.isDue ? 'badge badge-danger' : 'badge badge-good'}>{item.label}</span>
+                <span class={item.isDue ? 'badge badge-bad' : 'badge badge-good'}>{item.label}</span>
               </div>
               <div class="muted small" style="margin-top:4px;">{item.reason}</div>
             </div>
@@ -202,7 +209,7 @@ export const FleetPage: FC<FleetPageProps> = ({
             <div style="padding:10px 0;border-top:1px solid var(--border);">
               <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
                 <a href={`/fleet/vehicles/${document.vehicle_id}`}><b>{document.vehicle_display_name}</b></a>
-                <span class={document.days_remaining !== null && document.days_remaining <= 7 ? 'badge badge-danger' : 'badge badge-warn'}>
+                <span class={document.days_remaining !== null && document.days_remaining <= 7 ? 'badge badge-bad' : 'badge badge-warn'}>
                   {document.days_remaining === null ? 'Needs Date' : document.days_remaining < 0 ? `${Math.abs(document.days_remaining)}d past` : `${document.days_remaining}d`}
                 </span>
               </div>
@@ -225,7 +232,7 @@ export const FleetPage: FC<FleetPageProps> = ({
       <div class="card" style="margin-bottom:14px;">
         <div class="card-head"><b>Filter Fleet Records</b></div>
         <form method="get" action="/fleet">
-          <div class="filters">
+          <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:12px;">
             <div>
               <label>Vehicle</label>
               <select name="vehicleId">
@@ -264,7 +271,7 @@ export const FleetPage: FC<FleetPageProps> = ({
               <label>Date To</label>
               <input type="date" name="dateTo" value={filters.date_to} />
             </div>
-            <div class="wide">
+            <div style="grid-column:span 2;">
               <label>Search</label>
               <input type="text" name="search" value={filters.search} placeholder="Vehicle, vendor, service, notes..." />
             </div>
@@ -286,7 +293,7 @@ export const FleetPage: FC<FleetPageProps> = ({
             </div>
             <form method="post" action={isEditingVehicle ? `/fleet/vehicles/${editingVehicleId}/update` : '/fleet/vehicles'}>
               <input type="hidden" name="csrf_token" value={csrfToken} />
-              <div class="row two">
+              <div class="grid grid-2">
                 <div><label>Display Name</label><input type="text" name="display_name" value={vehicleFormData.display_name} required /></div>
                 <div><label>Unit Number</label><input type="text" name="unit_number" value={vehicleFormData.unit_number} /></div>
               </div>
@@ -313,7 +320,7 @@ export const FleetPage: FC<FleetPageProps> = ({
             </div>
             <form method="post" enctype="multipart/form-data" action={isEditingEntry ? `/fleet/entries/${editingEntryId}/update` : '/fleet/entries'}>
               <input type="hidden" name="csrf_token" value={csrfToken} />
-              <div class="row two">
+              <div class="grid grid-2">
                 <div>
                   <label>Vehicle</label>
                   <select name="vehicle_id" required>
@@ -335,7 +342,7 @@ export const FleetPage: FC<FleetPageProps> = ({
                 <div><label>Gallons</label><input type="number" name="gallons" value={recordFormData.gallons} min="0" step="0.001" /></div>
                 <div><label>Service Type</label><input type="text" name="service_type" value={recordFormData.service_type} placeholder="Oil and filter, state inspection, brake pads..." /></div>
               </div>
-              <div class="row two">
+              <div class="grid grid-2">
                 <div>
                   <label>Maintenance Category</label>
                   <select name="maintenance_category">
@@ -365,8 +372,8 @@ export const FleetPage: FC<FleetPageProps> = ({
 
       <div class="card" style="margin-bottom:14px;">
         <div class="card-head"><b>Vehicles</b><span class="badge">{vehicles.length} total</span></div>
-        <div class="table-wrap">
-          <table class="table">
+        <div class="table-wrap" style="margin:0 -18px -16px;">
+          <table class="">
             <thead><tr><th>Vehicle</th><th>Identification</th><th>Status</th><th class="right">Actions</th></tr></thead>
             <tbody>
               {vehicles.length > 0 ? vehicles.map((vehicle) => (
@@ -398,8 +405,8 @@ export const FleetPage: FC<FleetPageProps> = ({
 
       <div class="card">
         <div class="card-head"><b>Fuel & Maintenance Records</b><span class="badge">{entries.length} shown</span></div>
-        <div class="table-wrap">
-          <table class="table">
+        <div class="table-wrap" style="margin:0 -18px -16px;">
+          <table class="">
             <thead><tr><th>Date / Type</th><th>Vehicle</th><th>Vendor / Detail</th><th class="right">Amount</th><th>Status</th><th class="right">Actions</th></tr></thead>
             <tbody>
               {entries.length > 0 ? entries.map((entry) => (

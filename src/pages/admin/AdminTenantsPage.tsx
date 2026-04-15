@@ -68,7 +68,7 @@ export const AdminTenantsPage: FC<AdminTenantsPageProps> = ({ tenants, csrfToken
       </div>
 
       <div class="card">
-        <div class="table-wrap">
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>

@@ -137,115 +137,171 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
 
   return (
     <div>
-      <style>{`
-        .crumbs{display:flex;gap:8px;align-items:center;margin-bottom:14px;color:var(--muted);font-size:13px}.crumbs a{font-weight:700}
-        .hero{background:#fff;border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:var(--shadow);margin-bottom:14px}
-        .hero-grid{display:grid;grid-template-columns:2fr 1fr;gap:14px}
-        .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px}
-        .stat,.card{background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
-        .label{font-size:12px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.04em}.value{font-size:24px;font-weight:800;margin-top:8px}
-        .small-value{font-size:18px;font-weight:800;margin-top:8px}
-        .meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.meta-item{padding:12px;border:1px solid var(--border);border-radius:12px;background:#f8fafc}.meta-item b{display:block;margin-bottom:6px;font-size:12px;text-transform:uppercase;color:var(--muted)}
-        .actions{display:flex;gap:8px;flex-wrap:wrap}.btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);font-weight:700;text-decoration:none;cursor:pointer}.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#eef2ff;font-size:12px;font-weight:700}.badge-good{background:#ecfdf3;color:#166534}.badge-warn{background:#fff7ed;color:#9a3412}.badge-danger{background:#FEF2F2;color:#991B1B}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px;border-top:1px solid var(--border);vertical-align:top}.table th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left}.right{text-align:right}.muted{color:var(--muted)}.small{font-size:12px}
-        .reminders{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:14px}.reminder{border:1px solid var(--border);border-radius:16px;padding:16px;background:#fff;box-shadow:var(--shadow)}
-        .grid-2{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
-        label{display:block;font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
-        input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text)}
-        @media (max-width:1100px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-grid,.meta,.reminders,.grid-2{grid-template-columns:1fr}}
-        @media (max-width:700px){.stats{grid-template-columns:1fr}}
-      `}</style>
-
-      <div class="crumbs"><a href="/fleet">Fleet</a><span>›</span><span>{vehicle.display_name}</span></div>
-
-      <div class="hero">
-        <div class="hero-grid">
-          <div>
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-              <h1 style="margin:0;font-size:28px;line-height:1.1;">{vehicle.display_name}</h1>
-              {vehicle.archived_at ? <span class="badge">Archived</span> : vehicle.active ? <span class="badge badge-good">Active</span> : <span class="badge badge-warn">Inactive</span>}
-            </div>
-            <div class="muted" style="margin-top:8px;">{vehicleLabel}</div>
-            <div class="muted" style="margin-top:8px;">Assigned driver: {assignedDriverLabel}</div>
-            {vehicle.notes ? <div style="margin-top:12px;">{vehicle.notes}</div> : null}
-          </div>
-          <div>
-            <div class="actions" style="justify-content:flex-end;">
-              <a class="btn" href={`/fleet?vehicleId=${vehicle.id}`}>Add Record</a>
-              <a class="btn" href={`/fleet/vehicles/${vehicle.id}/packet`} target="_blank" rel="noreferrer">Print Packet</a>
-              <a class="btn" href="/fleet/schedule">Schedule View</a>
-              {canManage ? <a class="btn" href={`/fleet?editVehicle=${vehicle.id}`}>Edit Vehicle</a> : null}
-              <a class="btn" href="/fleet">Back to Fleet</a>
-            </div>
-          </div>
+      <div class="page-head">
+        <div>
+          <h1>
+            {vehicle.display_name}
+            {' '}
+            {vehicle.archived_at
+              ? <span class="badge badge-warn">Archived</span>
+              : vehicle.active
+                ? <span class="badge badge-good">Active</span>
+                : <span class="badge">Inactive</span>}
+          </h1>
+          <p class="muted">
+            {vehicleLabel} · Driver: {assignedDriverLabel}
+            {vehicle.notes ? ` · ${vehicle.notes}` : ''}
+          </p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="/fleet">← Fleet</a>
+          <a class="btn" href={`/fleet?vehicleId=${vehicle.id}`}>Add Record</a>
+          <a class="btn" href={`/fleet/vehicles/${vehicle.id}/packet`} target="_blank" rel="noreferrer">Print Packet</a>
+          <a class="btn" href="/fleet/schedule">Schedule</a>
+          {canManage ? <a class="btn btn-primary" href={`/fleet?editVehicle=${vehicle.id}`}>Edit Vehicle</a> : null}
         </div>
       </div>
 
-      <div class="reminders">
-        {reminders.map((reminder) => (
-          <div class="reminder">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-              <b>{reminder.label}</b>
-              <span class={reminder.isDue ? 'badge badge-danger' : 'badge badge-good'}>{reminder.isDue ? 'Due' : 'On Track'}</span>
+      {reminders.length > 0 ? (
+        <div class="grid grid-3" style="margin-bottom:14px;">
+          {reminders.map((reminder) => (
+            <div class="card" style={reminder.isDue ? 'border-color:#FECACA;' : ''}>
+              <div class="card-head" style="margin-bottom:10px;">
+                <b>{reminder.label}</b>
+                <span class={reminder.isDue ? 'badge badge-bad' : 'badge badge-good'}>{reminder.isDue ? 'Due' : 'On Track'}</span>
+              </div>
+              <div class="muted" style="font-size:12px; margin-bottom:10px;">{reminder.reason}</div>
+              <div class="grid grid-2" style="gap:8px;">
+                <div class="list-item" style="padding:8px 10px;">
+                  <div class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase;">Last Service</div>
+                  <div style="font-weight:700; margin-top:4px;">{reminder.lastServiceDate || '—'}</div>
+                </div>
+                <div class="list-item" style="padding:8px 10px;">
+                  <div class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase;">Last Odometer</div>
+                  <div style="font-weight:700; margin-top:4px;">{reminder.lastServiceOdometer ?? '—'}</div>
+                </div>
+                <div class="list-item" style="padding:8px 10px;">
+                  <div class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase;">Due Date</div>
+                  <div style="font-weight:700; margin-top:4px;">{reminder.dueAtDate || '—'}</div>
+                </div>
+                <div class="list-item" style="padding:8px 10px;">
+                  <div class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase;">Due Mileage</div>
+                  <div style="font-weight:700; margin-top:4px;">{reminder.dueAtOdometer ?? '—'}</div>
+                </div>
+              </div>
             </div>
-            <div class="muted small" style="margin-top:8px;">{reminder.reason}</div>
-            <div class="meta" style="margin-top:12px;">
-              <div class="meta-item"><b>Last Service</b>{reminder.lastServiceDate || '—'}</div>
-              <div class="meta-item"><b>Last Odometer</b>{reminder.lastServiceOdometer ?? '—'}</div>
-              <div class="meta-item"><b>Due Date</b>{reminder.dueAtDate || '—'}</div>
-              <div class="meta-item"><b>Due Mileage</b>{reminder.dueAtOdometer ?? '—'}</div>
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      ) : null}
+
+      <div class="stat-grid stat-grid-4" style="margin-bottom:14px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Lifetime Spend</div>
+          <div class="stat-value">{fmtMoney(summary.totalSpend)}</div>
+        </div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Fuel Spend</div>
+          <div class="stat-value">{fmtMoney(summary.fuelSpend)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Maintenance Spend</div>
+          <div class="stat-value">{fmtMoney(summary.maintenanceSpend)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Latest Odometer</div>
+          <div class="stat-value">{summary.latestOdometer ?? '—'}</div>
+        </div>
       </div>
 
-      <div class="stats">
-        <div class="stat"><div class="label">Lifetime Spend</div><div class="value">{fmtMoney(summary.totalSpend)}</div></div>
-        <div class="stat"><div class="label">Fuel Spend</div><div class="value">{fmtMoney(summary.fuelSpend)}</div></div>
-        <div class="stat"><div class="label">Maintenance Spend</div><div class="value">{fmtMoney(summary.maintenanceSpend)}</div></div>
-        <div class="stat"><div class="label">Latest Odometer</div><div class="value">{summary.latestOdometer ?? '—'}</div></div>
-      </div>
-
-      <div class="stats">
-        <div class="stat"><div class="label">Fuel Records</div><div class="small-value">{summary.fuelRecordCount}</div></div>
-        <div class="stat"><div class="label">Maintenance Records</div><div class="small-value">{summary.maintenanceRecordCount}</div></div>
-        <div class="stat"><div class="label">Fuel Gallons</div><div class="small-value">{summary.fuelGallons ? summary.fuelGallons.toFixed(3) : '0.000'}</div></div>
-        <div class="stat"><div class="label">Avg Fuel Cost / Gallon</div><div class="small-value">{summary.avgFuelCostPerGallon === null ? '—' : `$${summary.avgFuelCostPerGallon.toFixed(3)}`}</div></div>
+      <div class="stat-grid stat-grid-4" style="margin-bottom:14px;">
+        <div class="stat-card">
+          <div class="stat-label">Fuel Records</div>
+          <div class="stat-value">{summary.fuelRecordCount}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Maintenance Records</div>
+          <div class="stat-value">{summary.maintenanceRecordCount}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Fuel Gallons</div>
+          <div class="stat-value">{summary.fuelGallons ? summary.fuelGallons.toFixed(1) : '0.0'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg Cost / Gallon</div>
+          <div class="stat-value">{summary.avgFuelCostPerGallon === null ? '—' : `$${summary.avgFuelCostPerGallon.toFixed(2)}`}</div>
+        </div>
       </div>
 
       <div class="card" style="margin-bottom:14px;">
-        <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:14px;">
-          <div class="meta">
-            <div class="meta-item"><b>Unit Number</b>{vehicle.unit_number || '—'}</div>
-            <div class="meta-item"><b>License Plate</b>{vehicle.license_plate || '—'}</div>
-            <div class="meta-item"><b>VIN</b>{vehicle.vin || '—'}</div>
-            <div class="meta-item"><b>Assigned Driver</b>{assignedDriverLabel}</div>
-            <div class="meta-item"><b>Latest Entry Date</b>{summary.latestEntryDate || '—'}</div>
+        <div class="card-head" style="margin-bottom:12px;">
+          <h3>Vehicle Details</h3>
+        </div>
+        <div class="grid grid-2">
+          <div class="list">
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Unit Number</span>
+              <span style="font-weight:700;">{vehicle.unit_number || '—'}</span>
+            </div>
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">License Plate</span>
+              <span style="font-weight:700;">{vehicle.license_plate || '—'}</span>
+            </div>
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">VIN</span>
+              <span style="font-weight:700;">{vehicle.vin || '—'}</span>
+            </div>
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Assigned Driver</span>
+              <span style="font-weight:700;">{assignedDriverLabel}</span>
+            </div>
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Latest Entry Date</span>
+              <span style="font-weight:700;">{summary.latestEntryDate || '—'}</span>
+            </div>
           </div>
-          <div class="meta">
-            <div class="meta-item"><b>Active Records</b>{summary.activeRecordCount}</div>
-            <div class="meta-item"><b>Archived Records</b>{summary.archivedRecordCount}</div>
-            <div class="meta-item"><b>Fuel Share</b>{summary.totalSpend > 0 ? `${((summary.fuelSpend / summary.totalSpend) * 100).toFixed(1)}%` : '0.0%'}</div>
-            <div class="meta-item"><b>Maintenance Share</b>{summary.totalSpend > 0 ? `${((summary.maintenanceSpend / summary.totalSpend) * 100).toFixed(1)}%` : '0.0%'}</div>
+          <div class="list">
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Active Records</span>
+              <span style="font-weight:700;">{summary.activeRecordCount}</span>
+            </div>
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Archived Records</span>
+              <span style="font-weight:700;">{summary.archivedRecordCount}</span>
+            </div>
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Fuel Share</span>
+              <span style="font-weight:700;">{summary.totalSpend > 0 ? `${((summary.fuelSpend / summary.totalSpend) * 100).toFixed(1)}%` : '0.0%'}</span>
+            </div>
+            <div class="list-item">
+              <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Maintenance Share</span>
+              <span style="font-weight:700;">{summary.totalSpend > 0 ? `${((summary.maintenanceSpend / summary.totalSpend) * 100).toFixed(1)}%` : '0.0%'}</span>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="card" style="margin-bottom:14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
-          <b>Driver Assignment</b>
-          <span class="badge">{assignedDriverLabel === 'Unassigned' ? 'Unassigned' : 'Assigned'}</span>
+        <div class="card-head">
+          <h3>Driver Assignment</h3>
+          <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">
+            {assignedDriverLabel === 'Unassigned' ? 'Unassigned' : 'Assigned'}
+          </span>
         </div>
-        <div class="meta" style="margin-bottom:12px;">
-          <div class="meta-item"><b>Assigned Employee</b>{vehicle.assigned_employee_name || '—'}</div>
-          <div class="meta-item"><b>Driver Label</b>{vehicle.assigned_driver_name || '—'}</div>
-          <div class="meta-item"><b>Printable Packet</b><a href={`/fleet/vehicles/${vehicle.id}/packet`} target="_blank" rel="noreferrer">Open packet</a></div>
-          <div class="meta-item"><b>Status</b>{vehicle.archived_at ? 'Archived' : vehicle.active ? 'Active' : 'Inactive'}</div>
+        <div class="grid grid-2" style="margin-bottom:14px; margin-top:4px;">
+          <div class="list-item">
+            <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Assigned Employee</span>
+            <span style="font-weight:700;">{vehicle.assigned_employee_name || '—'}</span>
+          </div>
+          <div class="list-item">
+            <span class="muted" style="font-size:11px; font-weight:800; text-transform:uppercase; display:block; margin-bottom:4px;">Driver Label</span>
+            <span style="font-weight:700;">{vehicle.assigned_driver_name || '—'}</span>
+          </div>
         </div>
 
         {canManage ? (
           <form method="post" action={`/fleet/vehicles/${vehicle.id}/assignment`}>
             <input type="hidden" name="csrf_token" value={csrfToken} />
-            <div class="meta" style="margin-bottom:12px;">
+            <div class="grid grid-2" style="margin-bottom:12px;">
               <div>
                 <label>Assigned Employee</label>
                 <select name="assigned_employee_id">
@@ -259,21 +315,21 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
               </div>
             </div>
             <div class="actions">
-              <button class="btn" type="submit">Save Assignment</button>
+              <button class="btn btn-primary" type="submit">Save Assignment</button>
             </div>
           </form>
         ) : null}
       </div>
 
-<div class="card" style="margin-bottom:14px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
-    <b>Assignment History</b>
-    <span class="badge">{assignmentHistory.length}</span>
-  </div>
-  {assignmentHistory.length > 0 ? (
-    <div class="table-wrap">
-      <table class="table">
-        <thead>
+      <div class="card" style="margin-bottom:14px;">
+        <div class="card-head">
+          <h3>Assignment History</h3>
+          <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">{assignmentHistory.length}</span>
+        </div>
+        {assignmentHistory.length > 0 ? (
+          <div class="table-wrap" style="margin:0 -18px -16px;">
+            <table>
+              <thead>
           <tr>
             <th>Changed</th>
             <th>Employee</th>
@@ -303,24 +359,28 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
               <td>{item.note || 'Assignment updated'}</td>
             </tr>
           ))}
-        </tbody>
-      </table>
-    </div>
-  ) : (
-    <div class="muted">No assignment history yet.</div>
-  )}
-</div>
+            </tbody>
+          </table>
+        </div>
+        ) : (
+          <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <h3>No assignment history yet</h3>
+            <p>Driver assignment changes will appear here.</p>
+          </div>
+        )}
+      </div>
 
-      <div class="grid-2" style="margin-bottom:14px;">
+      <div class="grid grid-2" style="margin-bottom:14px;">
         <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
-            <b>Vehicle Documents</b>
-            <span class="badge">{documents.length}</span>
+          <div class="card-head">
+            <h3>Vehicle Documents</h3>
+            <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">{documents.length}</span>
           </div>
 
           {documents.length > 0 ? (
-            <div class="table-wrap">
-              <table class="table">
+            <div class="table-wrap" style="margin:0 -18px -16px;">
+              <table>
                 <thead>
                   <tr>
                     <th>Document</th>
@@ -345,7 +405,7 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
                     const statusClass = document.archived_at
                       ? 'badge'
                       : days !== null && days <= 7
-                        ? 'badge badge-danger'
+                        ? 'badge badge-bad'
                         : days !== null && days <= 30
                           ? 'badge badge-warn'
                           : 'badge badge-good';
@@ -383,14 +443,20 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
                 </tbody>
               </table>
             </div>
-          ) : <div class="muted">No registration, insurance, or truck documents have been uploaded yet.</div>}
+          ) : (
+            <div class="empty-state">
+              <div class="empty-state-icon">📄</div>
+              <h3>No documents yet</h3>
+              <p>Upload registration, insurance, and other vehicle documents below.</p>
+            </div>
+          )}
 
           {canManage ? (
-            <form method="post" action="/fleet/documents" enctype="multipart/form-data" style="margin-top:16px;">
+            <form method="post" action="/fleet/documents" enctype="multipart/form-data" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
               <input type="hidden" name="csrf_token" value={csrfToken} />
               <input type="hidden" name="vehicle_id" value={String(vehicle.id)} />
 
-              <div class="meta" style="margin-bottom:12px;">
+              <div class="grid grid-2" style="margin-bottom:12px;">
                 <div>
                   <label>Document Type</label>
                   <select name="document_type">
@@ -417,40 +483,44 @@ export const FleetVehicleDetailPage: FC<FleetVehicleDetailPageProps> = ({
               <input type="file" name="document" accept=".png,.jpg,.jpeg,.webp,.pdf" required />
 
               <div class="actions" style="margin-top:12px;">
-                <button class="btn" type="submit">Upload Document</button>
+                <button class="btn btn-primary" type="submit">Upload Document</button>
               </div>
             </form>
           ) : null}
         </div>
 
         <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
-            <b>Attachment History</b>
-            <span class="badge">{attachmentHistory.length}</span>
+          <div class="card-head">
+            <h3>Attachment History</h3>
+            <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">{attachmentHistory.length}</span>
           </div>
-          {attachmentHistory.length > 0 ? attachmentHistory.map((item) => (
-            <div style="padding:10px 0;border-top:1px solid var(--border);">
-              <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;">
-                <div>
-                  <div><b>{item.label}</b></div>
-                  <div class="muted small" style="margin-top:4px;">{item.entry_or_document_date || '—'} • {item.source_type === 'receipt' ? 'Receipt' : 'Document'} • {item.kind}</div>
+          {attachmentHistory.length > 0 ? (
+            <div class="list">
+              {attachmentHistory.map((item) => (
+                <div class="list-item" style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                  <div>
+                    <div style="font-weight:700;">{item.label}</div>
+                    <div class="muted" style="font-size:12px; margin-top:2px;">
+                      {item.entry_or_document_date || '—'} · {item.source_type === 'receipt' ? 'Receipt' : 'Document'} · {item.kind}
+                    </div>
+                  </div>
+                  <a class="btn btn-sm" href={item.source_type === 'receipt' ? `/fleet/entries/${item.id}/receipt` : `/fleet/documents/${item.id}/file`}>Open</a>
                 </div>
-                <div class="actions">
-                  <a class="btn" href={item.source_type === 'receipt' ? `/fleet/entries/${item.id}/receipt` : `/fleet/documents/${item.id}/file`}>Open</a>
-                </div>
-              </div>
+              ))}
             </div>
-          )) : <div class="muted">No receipts or fleet documents have been uploaded for this vehicle yet.</div>}
+          ) : (
+            <div class="muted" style="margin-top:4px;">No receipts or fleet documents uploaded yet.</div>
+          )}
         </div>
       </div>
 
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;">
-          <b>Recent Activity</b>
-          <span class="badge">{recentEntries.length} records shown</span>
+        <div class="card-head">
+          <h3>Recent Activity</h3>
+          <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">{recentEntries.length} records</span>
         </div>
-        <div class="table-wrap">
-          <table class="table">
+        <div class="table-wrap" style="margin:0 -18px -16px;">
+          <table>
             <thead><tr><th>Date / Type</th><th>Vendor / Detail</th><th class="right">Amount</th><th>Status</th><th class="right">Actions</th></tr></thead>
             <tbody>
               {recentEntries.length > 0 ? recentEntries.map((entry) => (

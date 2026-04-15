@@ -35,17 +35,52 @@ export const JobCostDashboardPage: FC<JobCostDashboardPageProps> = ({
   selectedValues,
   rows,
 }) => {
+  const totalIncome = rows.reduce((s, r) => s + (r.income || 0), 0);
+  const totalExpenses = rows.reduce((s, r) => s + (r.expenses || 0), 0);
+  const totalLabor = rows.reduce((s, r) => s + (r.labor || 0), 0);
+  const totalNet = totalIncome - totalExpenses - totalLabor;
+
   return (
     <div>
       <div class="page-head">
         <div>
           <h1>Job Cost Breakdown</h1>
-          <p>Where money is going by job.</p>
+          <p>Where income, expenses, and labor are going by job.</p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="/reports">Reports</a>
+          <a class="btn" href="/jobs">View Jobs</a>
+        </div>
+      </div>
+
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Total Income</div>
+          <div class="stat-value">${fmt(totalIncome)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Expenses</div>
+          <div class="stat-value">${fmt(totalExpenses)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Labor</div>
+          <div class="stat-value">${fmt(totalLabor)}</div>
+        </div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Net</div>
+          <div class="stat-value">${fmt(totalNet)}</div>
+          <div class="stat-sub">{rows.length} jobs</div>
         </div>
       </div>
 
       <div class="card">
-        <div class="table-wrap">
+        <div class="card-head">
+          <h2>Cost Breakdown by Job</h2>
+          <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">
+            {rows.length} jobs
+          </span>
+        </div>
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>

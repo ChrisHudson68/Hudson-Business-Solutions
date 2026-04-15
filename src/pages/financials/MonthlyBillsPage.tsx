@@ -80,22 +80,22 @@ export const MonthlyBillsPage: FC<MonthlyBillsPageProps> = ({
         </div>
       </div>
 
-      <div class="grid grid-4" style="margin-bottom:14px;">
-        <div class="card">
-          <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Active Bills</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">{summary.activeCount}</div>
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Active Bills</div>
+          <div class="stat-value">{summary.activeCount}</div>
         </div>
-        <div class="card">
-          <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Scheduled This Month</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">{fmtMoney(summary.scheduledThisMonth)}</div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Scheduled This Month</div>
+          <div class="stat-value">{fmtMoney(summary.scheduledThisMonth)}</div>
         </div>
-        <div class="card">
-          <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Next 30 Days</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">{fmtMoney(summary.nextThirtyDays)}</div>
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Next 30 Days</div>
+          <div class="stat-value">{fmtMoney(summary.nextThirtyDays)}</div>
         </div>
-        <div class="card">
-          <div class="muted" style="font-size:12px; font-weight:900; text-transform:uppercase;">Archived</div>
-          <div style="font-size:28px; font-weight:900; margin-top:8px;">{summary.archivedCount}</div>
+        <div class="stat-card">
+          <div class="stat-label">Archived</div>
+          <div class="stat-value">{summary.archivedCount}</div>
         </div>
       </div>
 

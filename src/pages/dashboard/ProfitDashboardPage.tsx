@@ -47,12 +47,43 @@ export const ProfitDashboardPage: FC<ProfitDashboardPageProps> = ({
       <div class="page-head">
         <div>
           <h1>Profit Dashboard</h1>
-          <p>High-level profitability snapshot.</p>
+          <p>High-level profitability snapshot across all jobs.</p>
+        </div>
+        <div class="actions">
+          <a class="btn" href="/reports">Reports</a>
+          <a class="btn" href="/jobs">View Jobs</a>
+        </div>
+      </div>
+
+      <div class="stat-grid stat-grid-4" style="margin-bottom:16px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Total Income</div>
+          <div class="stat-value">${fmt(totalIncome || 0)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Expenses</div>
+          <div class="stat-value">${fmt(totalExpenses || 0)}</div>
+        </div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Total Profit</div>
+          <div class="stat-value">${fmt(totalProfit || 0)}</div>
+          <div class="stat-sub">Avg margin {fmt(avgMargin || 0)}%</div>
+        </div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Active Contract Value</div>
+          <div class="stat-value">${fmt(activeContractValue || 0)}</div>
+          <div class="stat-sub">{profitableJobs} profitable · {losingJobs} losing</div>
         </div>
       </div>
 
       <div class="card">
-        <div class="table-wrap">
+        <div class="card-head">
+          <h2>All Jobs — Profit Summary</h2>
+          <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">
+            {rows.length} jobs
+          </span>
+        </div>
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>

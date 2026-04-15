@@ -363,7 +363,7 @@ function loadJobs(db: any, tenantId: number): JobOption[] {
   return db.prepare(`
     SELECT id, job_name, client_name, status
     FROM jobs
-    WHERE tenant_id = ? AND COALESCE(status, 'Active') != 'Cancelled'
+    WHERE tenant_id = ? AND archived_at IS NULL AND COALESCE(status, 'Active') != 'Cancelled'
     ORDER BY job_name ASC
   `).all(tenantId) as JobOption[];
 }
@@ -1314,19 +1314,18 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
     const nowUtc = resolveClientNowUtc(body.client_now_utc);
     const note = normalizeNote(body.note);
 
-    // 🆕 NEW: Optional job selection
     const rawJobId = String(body.job_id ?? '').trim();
-    let jobId: number | null = null;
-
-    if (rawJobId) {
-      const parsed = parsePositiveInt(rawJobId);
-      if (!parsed) {
-        throw new Error('Invalid job selected.');
-      }
-
-      ensureJobExists(db, parsed, tenant.id);
-      jobId = parsed;
+    if (!rawJobId) {
+      throw new Error('You must select a job before clocking in.');
     }
+
+    const parsed = parsePositiveInt(rawJobId);
+    if (!parsed) {
+      throw new Error('Invalid job selected.');
+    }
+
+    ensureJobExists(db, parsed, tenant.id);
+    const jobId: number = parsed;
 
     db.prepare(`
       INSERT INTO time_entries (
@@ -1335,7 +1334,7 @@ timesheetRoutes.post('/timeclock/punch-in', permissionRequired('time.clock'), as
       )
       VALUES (?, ?, ?, 0, ?, 0, ?, ?, NULL, 'clock', 'approved', ?, CURRENT_TIMESTAMP)
     `).run(
-      jobId, // 🆕 NOW STORES JOB OR NULL
+      jobId,
       employeeId,
       toIsoDate(new Date(nowUtc)),
       note,

@@ -13,6 +13,7 @@ interface EditJobPageProps {
     retainage_percent?: string;
     start_date?: string;
     status?: string;
+    is_overhead?: string;
   };
   error?: string;
   csrfToken: string;
@@ -35,6 +36,7 @@ export const EditJobPage: FC<EditJobPageProps> = ({
     retainage_percent: formData?.retainage_percent ?? '0',
     start_date: formData?.start_date ?? '',
     status: formData?.status ?? 'Active',
+    is_overhead: formData?.is_overhead === '1',
   };
 
   return (
@@ -51,10 +53,7 @@ export const EditJobPage: FC<EditJobPageProps> = ({
 
       <div class="card" style="max-width:760px;">
         {error ? (
-          <div
-            class="badge badge-bad"
-            style="height:auto; padding:10px 12px; margin-bottom:14px; border-radius:12px;"
-          >
+          <div class="card" style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;">
             {error}
           </div>
         ) : null}
@@ -152,6 +151,17 @@ export const EditJobPage: FC<EditJobPageProps> = ({
               </select>
             </div>
           </div>
+
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+            <input
+              type="checkbox"
+              name="is_overhead"
+              value="1"
+              checked={values.is_overhead}
+              style="width:auto; margin:0;"
+            />
+            Overhead / Admin Job (e.g. Office Time, Shop Time)
+          </label>
 
           <div class="actions actions-mobile-stack" style="margin-top:16px;">
             <button class="btn btn-primary" type="submit">Save Changes</button>

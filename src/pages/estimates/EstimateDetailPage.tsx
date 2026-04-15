@@ -88,10 +88,10 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
         </div>
       ) : null}
 
-      <div class="grid grid-4 mobile-card-grid" style="margin-bottom:14px;">
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Status</div>
-          <div style="margin-top:8px;">
+      <div class="stat-grid stat-grid-4" style="margin-bottom:14px;">
+        <div class="stat-card stat-card-navy">
+          <div class="stat-label">Status</div>
+          <div style="margin-top:10px;">
             {estimate.archived_at ? (
               <span class="badge badge-warn">Archived</span>
             ) : (
@@ -99,17 +99,17 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
             )}
           </div>
         </div>
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Base Cost</div>
-          <div class="metric-value">${formatMoney(totalBaseCost)}</div>
+        <div class="stat-card">
+          <div class="stat-label">Base Cost</div>
+          <div class="stat-value">${formatMoney(totalBaseCost)}</div>
         </div>
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Subtotal</div>
-          <div class="metric-value">${formatMoney(estimate.subtotal)}</div>
+        <div class="stat-card stat-card-accent">
+          <div class="stat-label">Subtotal</div>
+          <div class="stat-value">${formatMoney(estimate.subtotal)}</div>
         </div>
-        <div class="card mobile-kpi-card">
-          <div class="metric-label">Markup Value</div>
-          <div class="metric-value">${formatMoney(grossMarkupValue)}</div>
+        <div class="stat-card stat-card-green">
+          <div class="stat-label">Markup Value</div>
+          <div class="stat-value">${formatMoney(grossMarkupValue)}</div>
         </div>
       </div>
 
@@ -260,27 +260,25 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
       </div>
 
       {(estimate.rejection_reason || estimate.approval_notes || estimate.converted_job_id) ? (
-        <div class="grid grid-3 mobile-card-grid" style="margin-top:14px;">
+        <div class="grid grid-3" style="margin-top:14px;">
           {estimate.approval_notes ? (
             <div class="card">
-              <div class="metric-label">Approval Notes</div>
-              <div style="margin-top:8px; white-space:pre-wrap;">{estimate.approval_notes}</div>
+              <div class="card-head" style="margin-bottom:8px;"><h3>Approval Notes</h3></div>
+              <div class="muted" style="white-space:pre-wrap;">{estimate.approval_notes}</div>
             </div>
           ) : null}
           {estimate.rejection_reason ? (
-            <div class="card">
-              <div class="metric-label">Rejection Reason</div>
-              <div style="margin-top:8px; white-space:pre-wrap;">{estimate.rejection_reason}</div>
+            <div class="card" style="border-color:#FECACA;">
+              <div class="card-head" style="margin-bottom:8px; background:linear-gradient(135deg,#991B1B,#B91C1C);"><h3>Rejection Reason</h3></div>
+              <div class="muted" style="white-space:pre-wrap;">{estimate.rejection_reason}</div>
             </div>
           ) : null}
           {estimate.converted_job_id ? (
-            <div class="card">
-              <div class="metric-label">Converted Job</div>
-              <div style="margin-top:8px;">
-                <a class="btn" href={`/job/${estimate.converted_job_id}`}>
-                  {estimate.converted_job_name || `Job #${estimate.converted_job_id}`}
-                </a>
-              </div>
+            <div class="card" style="border-color:#BBF7D0;">
+              <div class="card-head" style="margin-bottom:8px; background:linear-gradient(135deg,#065F46,#059669);"><h3>Converted Job</h3></div>
+              <a class="btn btn-primary" href={`/job/${estimate.converted_job_id}`}>
+                {estimate.converted_job_name || `Job #${estimate.converted_job_id}`}
+              </a>
             </div>
           ) : null}
         </div>

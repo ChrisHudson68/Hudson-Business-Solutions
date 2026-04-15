@@ -104,7 +104,7 @@ export const AdminActivityPage: FC<AdminActivityPageProps> = ({
       </div>
 
       <div class="card">
-        <div class="table-wrap">
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>

@@ -98,7 +98,7 @@ export const EstimateFormPage: FC<EstimateFormPageProps> = ({
       </div>
 
       {error ? (
-        <div class="card" style="border-color:#FECACA; background:#FEF2F2; color:#991B1B;">
+        <div class="card" style="margin-bottom:14px; border-color:#FECACA; background:#FEF2F2; color:#991B1B;">
           {error}
         </div>
       ) : null}

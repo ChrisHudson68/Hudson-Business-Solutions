@@ -59,7 +59,10 @@ const ActivityPage: FC<ActivityPageProps> = ({
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:14px;">
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-head">
+          <h2>Filter Activity</h2>
+        </div>
         <form method="get" action="/activity">
           <div class="row">
             <div>
@@ -101,7 +104,13 @@ const ActivityPage: FC<ActivityPageProps> = ({
       </div>
 
       <div class="card">
-        <div class="table-wrap">
+        <div class="card-head">
+          <h2>Event Log</h2>
+          <span class="badge" style="background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.2); color:#fff;">
+            {rows.length} event{rows.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div class="table-wrap" style="margin:0 -18px -16px;">
           <table>
             <thead>
               <tr>
@@ -118,40 +127,32 @@ const ActivityPage: FC<ActivityPageProps> = ({
                 rows.map((row) => (
                   <>
                     <tr>
-                      <td>{row.created_at}</td>
+                      <td style="white-space:nowrap; font-size:12px;">{row.created_at}</td>
                       <td>
                         {row.actor_name ? (
                           <div>
-                            <div><b>{row.actor_name}</b></div>
-                            <div class="muted">{row.actor_email || ''}</div>
+                            <div style="font-weight:700;">{row.actor_name}</div>
+                            <div class="muted" style="font-size:12px;">{row.actor_email || ''}</div>
                           </div>
                         ) : (
-                          <span class="muted">System / Unknown</span>
+                          <span class="muted">System</span>
                         )}
                       </td>
-                      <td>{row.event_type}</td>
-                      <td>
-                        {row.entity_type ? (
-                          <span>
-                            {row.entity_type}
-                            {row.entity_id ? ` #${row.entity_id}` : ''}
-                          </span>
-                        ) : (
-                          <span class="muted">—</span>
-                        )}
+                      <td><span class="badge" style="font-size:10.5px;">{row.event_type}</span></td>
+                      <td class="muted" style="font-size:12px;">
+                        {row.entity_type
+                          ? `${row.entity_type}${row.entity_id ? ` #${row.entity_id}` : ''}`
+                          : '—'}
                       </td>
-                      <td>{row.description}</td>
-                      <td>{row.ip_address || <span class="muted">—</span>}</td>
+                      <td style="font-size:13px;">{row.description}</td>
+                      <td class="muted" style="font-size:12px;">{row.ip_address || '—'}</td>
                     </tr>
-
                     {row.metadata_json ? (
                       <tr>
-                        <td colspan={6} style="background:#F8FAFC;">
+                        <td colSpan={6} style="background:#F8FAFC; padding:8px 14px;">
                           <details>
-                            <summary style="cursor:pointer; font-weight:800;">Metadata</summary>
-                            <pre
-                              style="margin:10px 0 0; white-space:pre-wrap; word-break:break-word; font-size:12px;"
-                            >
+                            <summary style="cursor:pointer; font-weight:700; font-size:12px;">View metadata</summary>
+                            <pre style="margin:8px 0 0; white-space:pre-wrap; word-break:break-word; font-size:11px; color:var(--muted);">
                               {formatMetadata(row.metadata_json)}
                             </pre>
                           </details>
@@ -162,15 +163,17 @@ const ActivityPage: FC<ActivityPageProps> = ({
                 ))
               ) : (
                 <tr>
-                  <td colspan={6} class="muted">No activity has been logged yet.</td>
+                  <td colSpan={6}>
+                    <div class="empty-state" style="padding:32px 20px;">
+                      <div class="empty-state-icon">📝</div>
+                      <h3>No activity logged yet</h3>
+                      <p>Events will appear here as users interact with the workspace.</p>
+                    </div>
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
-
-        <div class="muted" style="margin-top:12px;">
-          Phase 1 currently focuses on login and tenant creation events. More business events can be added next without changing the page structure.
         </div>
       </div>
     </div>
