@@ -8,6 +8,7 @@ import {
   createSessionCookie,
   getImpersonationToken,
   getSessionUser,
+  getSessionUserId,
   SESSION_COOKIE_NAME,
 } from '../services/session.js';
 import { hashPassword, verifyPassword } from '../services/password.js';
@@ -67,6 +68,14 @@ function buildPlatformAdminTenantDetailUrl(tenantId: number): string {
   }
 
   return `https://${env.baseDomain}/admin/tenants/${tenantId}`;
+}
+
+function buildTenantDemoUrl(path = '/demo-access'): string {
+  const env = getEnv();
+  if (env.baseDomain === 'localhost') {
+    return `http://demo.localhost:${env.port}${path}`;
+  }
+  return `https://demo.${env.baseDomain}${path}`;
 }
 
 function buildTenantTrialEndDate(): string {
@@ -693,6 +702,73 @@ authRoutes.use('*', async (c, next) => {
   });
 
   return next();
+});
+
+// ── DEMO ACCESS ────────────────────────────────────────────────────────────
+// Root domain: find the demo tenant + a demo user, create a signed session,
+// and redirect the visitor to demo.{baseDomain}/demo-access?t=<value>
+authRoutes.get('/try-demo', (c) => {
+  const tenant = c.get('tenant');
+  // This route is only valid on the root domain (no tenant)
+  if (tenant) return c.redirect('/dashboard');
+
+  const env = getEnv();
+  const db = getDb();
+
+  const demoTenant = db
+    .prepare(`SELECT id FROM tenants WHERE subdomain = 'demo' LIMIT 1`)
+    .get() as { id: number } | undefined;
+
+  if (!demoTenant) {
+    return c.html(
+      renderPublicLayout(
+        <div style="padding:60px 20px; text-align:center; color:#64748B;">
+          <h2 style="margin-bottom:12px;">Demo Not Available</h2>
+          <p>The demo workspace hasn't been set up yet. <a href="/signup">Sign up free</a> to try the platform.</p>
+        </div>,
+      ),
+    );
+  }
+
+  // Find the demo user: prefer a Viewer role, fall back to any active user
+  const demoUser = db
+    .prepare(
+      `SELECT id FROM users WHERE tenant_id = ? AND active = 1 ORDER BY CASE WHEN role = 'Viewer' THEN 0 ELSE 1 END, id ASC LIMIT 1`,
+    )
+    .get(demoTenant.id) as { id: number } | undefined;
+
+  if (!demoUser) {
+    return c.html(
+      renderPublicLayout(
+        <div style="padding:60px 20px; text-align:center; color:#64748B;">
+          <h2 style="margin-bottom:12px;">Demo Not Available</h2>
+          <p>The demo workspace has no users configured. <a href="/signup">Sign up free</a> instead.</p>
+        </div>,
+      ),
+    );
+  }
+
+  // Short-lived session (2 hours) — signed exactly like a normal session
+  const sessionValue = createSessionCookie(demoUser.id, env.secretKey, 60 * 60 * 2);
+  const redirectUrl = `${buildTenantDemoUrl('/demo-access')}?t=${encodeURIComponent(sessionValue)}`;
+  return c.redirect(redirectUrl);
+});
+
+// Demo subdomain: receive the signed session token from /try-demo and set it as a cookie
+authRoutes.get('/demo-access', (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant || tenant.subdomain !== 'demo') return c.redirect('/');
+
+  const env = getEnv();
+  const t = (c.req.query('t') ?? '').trim();
+  if (!t) return c.redirect('/login');
+
+  // Validate the token is a legitimate signed session before accepting it
+  const userId = getSessionUserId(t, env.secretKey);
+  if (!userId) return c.redirect('/login');
+
+  setSessionCookie(c, t);
+  return c.redirect('/dashboard');
 });
 
 export default authRoutes;

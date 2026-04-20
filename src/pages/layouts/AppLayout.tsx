@@ -1385,6 +1385,16 @@ export const AppLayout: FC<AppLayoutProps> = ({
             <div class="content">
               <div class="container">
 
+                {currentTenant?.subdomain === 'demo' ? (
+                  <div class="billing-banner billing-banner-warn" style="align-items:center;">
+                    <div>
+                      <strong>You're exploring a demo workspace</strong>
+                      <p>This is a pre-loaded sample account. Sign up free to create your own workspace with your real data.</p>
+                    </div>
+                    <a class="btn btn-navy" href="/" style="white-space:nowrap;">Get Started Free</a>
+                  </div>
+                ) : null}
+
                 {billingBanner && path !== '/billing' ? (
                   <div class={billingBannerClass(billingBanner.tone)}>
                     <div>

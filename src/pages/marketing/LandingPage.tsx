@@ -487,7 +487,8 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
               </p>
               <div class="lp-hero-actions">
                 <a href="/signup" class="lp-btn-primary">Get Started Free</a>
-                <a href="/pick-tenant" class="lp-btn-ghost">Find My Workspace</a>
+                <a href="/try-demo" class="lp-btn-ghost">Try the Demo</a>
+                <a href="/pick-tenant" class="lp-btn-ghost" style="font-size:13px; height:40px; padding:0 16px;">Find My Workspace</a>
               </div>
             </div>
 
@@ -661,6 +662,7 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           </p>
           <div class="lp-cta-actions">
             <a href="/signup" class="lp-btn-dark">Create Your Workspace</a>
+            <a href="/try-demo" class="lp-btn-outline-dark">Try the Demo</a>
             <a href="/contact" class="lp-btn-outline-dark">Talk to Us</a>
           </div>
         </section>

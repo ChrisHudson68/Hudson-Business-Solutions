@@ -97,6 +97,7 @@ function sanitizeJobRowForApi(row: any, includeFinancials: boolean) {
     clientName: row.client_name,
     startDate: row.start_date,
     status: row.status,
+    isOverhead: Number(row.is_overhead || 0) === 1,
     sourceEstimateId: row.source_estimate_id,
     sourceEstimateNumber: row.source_estimate_number || null,
     sourceEstimateCustomerName: row.source_estimate_customer_name || null,
@@ -150,6 +151,7 @@ function sanitizeClockInJobRow(row: any) {
     jobCode: row.job_code,
     clientName: row.client_name,
     status: row.status,
+    isOverhead: Number(row.is_overhead || 0) === 1,
   };
 }
 
@@ -671,28 +673,34 @@ apiRoutes.post('/api/timesheets/clock-in', async (c) => {
   const note =
     typeof body.note === 'string' && body.note.trim().length > 0 ? body.note.trim() : null;
 
-  let jobId: number | null = null;
-
-  if (requestedJobId) {
-    const job = db.prepare(`
-      SELECT id, job_name
-      FROM jobs
-      WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
-      LIMIT 1
-    `).get(requestedJobId, tenant.id) as { id: number; job_name: string } | undefined;
-
-    if (!job) {
-      return c.json(
-        {
-          ok: false,
-          error: 'invalid_job',
-        },
-        400,
-      );
-    }
-
-    jobId = job.id;
+  if (!requestedJobId) {
+    return c.json(
+      {
+        ok: false,
+        error: 'job_required',
+      },
+      400,
+    );
   }
+
+  const job = db.prepare(`
+    SELECT id, job_name
+    FROM jobs
+    WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+    LIMIT 1
+  `).get(requestedJobId, tenant.id) as { id: number; job_name: string } | undefined;
+
+  if (!job) {
+    return c.json(
+      {
+        ok: false,
+        error: 'invalid_job',
+      },
+      400,
+    );
+  }
+
+  const jobId: number = job.id;
 
   const now = new Date();
   const nowIso = now.toISOString();
