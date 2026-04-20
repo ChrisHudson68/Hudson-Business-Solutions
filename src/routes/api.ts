@@ -6,6 +6,10 @@ import { getDb } from '../db/connection.js';
 import * as jobs from '../db/queries/jobs.js';
 import * as expenses from '../db/queries/expenses.js';
 import * as receiptOcrResults from '../db/queries/receipt-ocr-results.js';
+import * as income from '../db/queries/income.js';
+import * as invoices from '../db/queries/invoices.js';
+import * as payments from '../db/queries/payments.js';
+import * as employees from '../db/queries/employees.js';
 import { resolveRequestUser, userHasPermission } from '../middleware/auth.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import {
@@ -991,5 +995,402 @@ apiRoutes.post('/api/expenses', async (c) => {
       },
       400,
     );
+  }
+});
+
+// ─── Jobs CRUD ────────────────────────────────────────────────────────────────
+
+apiRoutes.post('/api/jobs', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+
+  try {
+    const jobName = requireText(body.jobName, 'Job name', 200);
+    const jobCode = optionalText(body.jobCode, 'Job code', 50);
+    const clientName = optionalText(body.clientName, 'Client name', 200);
+    const soldBy = optionalText(body.soldBy, 'Sold by', 200);
+    const jobDescription = optionalText(body.jobDescription, 'Description', 2000);
+    const status = optionalText(body.status, 'Status', 50) ?? 'Active';
+    const isOverhead = body.isOverhead === true ? 1 : 0;
+    const contractAmount = body.contractAmount != null ? Number(body.contractAmount) : null;
+    const startDate = body.startDate ? optionalText(body.startDate, 'Start date', 20) : undefined;
+
+    const jobId = jobs.create(db, tenant.id, {
+      job_name: jobName,
+      job_code: jobCode,
+      client_name: clientName,
+      sold_by: soldBy,
+      job_description: jobDescription,
+      contract_amount: contractAmount && isFinite(contractAmount) ? contractAmount : null,
+      start_date: startDate ?? null,
+      status,
+      is_overhead: isOverhead,
+    });
+
+    return c.json({ ok: true, jobId });
+  } catch (error) {
+    return c.json({ ok: false, error: error instanceof Error ? error.message : 'Failed to create job.' }, 400);
+  }
+});
+
+apiRoutes.patch('/api/jobs/:id', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const jobId = parsePositiveInt(c.req.param('id'));
+  if (!jobId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const existing = jobs.findById(db, jobId, tenant.id);
+  if (!existing || existing.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+
+  try {
+    const row = existing as any;
+    jobs.update(db, jobId, tenant.id, {
+      job_name: body.jobName != null ? requireText(body.jobName, 'Job name', 200) : row.job_name,
+      job_code: body.jobCode != null ? (optionalText(body.jobCode, 'Job code', 50) ?? null) : row.job_code,
+      client_name: body.clientName != null ? (optionalText(body.clientName, 'Client name', 200) ?? null) : row.client_name,
+      sold_by: body.soldBy != null ? (optionalText(body.soldBy, 'Sold by', 200) ?? null) : row.sold_by,
+      job_description: body.jobDescription != null ? (optionalText(body.jobDescription, 'Description', 2000) ?? null) : row.job_description,
+      status: body.status != null ? String(body.status) : row.status,
+      is_overhead: body.isOverhead != null ? (body.isOverhead ? 1 : 0) : row.is_overhead,
+      contract_amount: body.contractAmount != null ? Number(body.contractAmount) : row.contract_amount,
+      start_date: body.startDate != null ? (optionalText(body.startDate, 'Start date', 20) ?? null) : row.start_date,
+    });
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ ok: false, error: error instanceof Error ? error.message : 'Failed to update job.' }, 400);
+  }
+});
+
+// ─── Job Income ───────────────────────────────────────────────────────────────
+
+apiRoutes.get('/api/jobs/:id/income', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const jobId = parsePositiveInt(c.req.param('id'));
+  if (!jobId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const job = jobs.findById(db, jobId, tenant.id);
+  if (!job || job.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const rows = income.listByJob(db, jobId, tenant.id);
+  return c.json({
+    ok: true,
+    income: rows.map(r => ({
+      id: r.id,
+      jobId: r.job_id,
+      amount: Number(r.amount),
+      date: r.date,
+      description: r.description ?? null,
+    })),
+  });
+});
+
+apiRoutes.post('/api/jobs/:id/income', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const jobId = parsePositiveInt(c.req.param('id'));
+  if (!jobId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const job = jobs.findById(db, jobId, tenant.id);
+  if (!job || job.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  try {
+    const amount = parsePositiveMoney(body.amount, 'Amount');
+    const date = requireDate(body.date, 'Date');
+    const description = optionalText(body.description, 'Description', 500);
+
+    const incomeId = income.create(db, tenant.id, { job_id: jobId, amount, date, description });
+    const saved = income.findById(db, incomeId, tenant.id);
+    return c.json({
+      ok: true,
+      income: { id: incomeId, jobId, amount: Number(saved?.amount ?? amount), date, description: description ?? null },
+    });
+  } catch (error) {
+    return c.json({ ok: false, error: error instanceof Error ? error.message : 'Failed to add income.' }, 400);
+  }
+});
+
+apiRoutes.delete('/api/jobs/:id/income/:incomeId', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const jobId = parsePositiveInt(c.req.param('id'));
+  const incomeId = parsePositiveInt(c.req.param('incomeId'));
+  if (!jobId || !incomeId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const row = income.findById(db, incomeId, tenant.id);
+  if (!row || (row as any).job_id !== jobId) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  income.deleteById(db, incomeId, tenant.id);
+  return c.json({ ok: true });
+});
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+
+apiRoutes.get('/api/invoices', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const rows = invoices.listByTenant(db, tenant.id, false);
+
+  return c.json({
+    ok: true,
+    invoices: rows.map(r => {
+      const totalPaid = payments.sumByInvoice(db, r.id, tenant.id);
+      return {
+        id: r.id,
+        jobId: r.job_id,
+        jobName: r.job_name ?? null,
+        clientName: r.client_name ?? null,
+        invoiceNumber: r.invoice_number ?? null,
+        dateIssued: r.date_issued,
+        dueDate: r.due_date,
+        amount: Number(r.amount),
+        status: r.status,
+        notes: r.notes ?? null,
+        totalPaid: Number(totalPaid),
+        balance: Math.max(0, Number(r.amount) - Number(totalPaid)),
+      };
+    }),
+  });
+});
+
+apiRoutes.get('/api/invoices/:id', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const invoiceId = parsePositiveInt(c.req.param('id'));
+  if (!invoiceId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const row = invoices.findById(db, invoiceId, tenant.id);
+  if (!row || row.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const invPayments = payments.listByInvoice(db, invoiceId, tenant.id);
+  const totalPaid = invPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+  return c.json({
+    ok: true,
+    invoice: {
+      id: row.id,
+      jobId: row.job_id,
+      jobName: row.job_name ?? null,
+      clientName: row.client_name ?? null,
+      invoiceNumber: row.invoice_number ?? null,
+      dateIssued: row.date_issued,
+      dueDate: row.due_date,
+      amount: Number(row.amount),
+      status: row.status,
+      notes: row.notes ?? null,
+      totalPaid: Number(totalPaid),
+      balance: Math.max(0, Number(row.amount) - Number(totalPaid)),
+      payments: invPayments.map(p => ({
+        id: p.id,
+        date: p.date,
+        amount: Number(p.amount),
+        method: p.method ?? null,
+        reference: p.reference ?? null,
+      })),
+    },
+  });
+});
+
+apiRoutes.post('/api/invoices', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+
+  try {
+    const jobId = parsePositiveInt(body.jobId);
+    if (!jobId) throw new Error('Job is required.');
+    const job = jobs.findById(db, jobId, tenant.id);
+    if (!job || job.archived_at) return c.json({ ok: false, error: 'job_not_found' }, 404);
+
+    const dateIssued = requireDate(body.dateIssued, 'Date issued');
+    const dueDate = requireDate(body.dueDate, 'Due date');
+    const amount = parsePositiveMoney(body.amount, 'Amount');
+    const notes = optionalText(body.notes, 'Notes', 2000);
+
+    const invoiceNumber = invoices.nextInvoiceNumber(db, tenant.id, 'INV');
+    const invoiceId = invoices.create(db, tenant.id, {
+      job_id: jobId,
+      invoice_number: invoiceNumber,
+      date_issued: dateIssued,
+      due_date: dueDate,
+      amount,
+      notes,
+    });
+
+    const saved = invoices.findById(db, invoiceId, tenant.id);
+    return c.json({
+      ok: true,
+      invoice: {
+        id: invoiceId,
+        jobId,
+        jobName: saved?.job_name ?? null,
+        invoiceNumber,
+        dateIssued,
+        dueDate,
+        amount,
+        status: 'Unpaid',
+        notes: notes ?? null,
+        totalPaid: 0,
+        balance: amount,
+      },
+    });
+  } catch (error) {
+    return c.json({ ok: false, error: error instanceof Error ? error.message : 'Failed to create invoice.' }, 400);
+  }
+});
+
+apiRoutes.post('/api/invoices/:id/payments', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const invoiceId = parsePositiveInt(c.req.param('id'));
+  if (!invoiceId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const row = invoices.findById(db, invoiceId, tenant.id);
+  if (!row || row.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+  try {
+    const amount = parsePositiveMoney(body.amount, 'Amount');
+    const date = requireDate(body.date, 'Date');
+    const method = optionalText(body.method, 'Method', 50);
+    const reference = optionalText(body.reference, 'Reference', 100);
+
+    const paymentId = payments.create(db, tenant.id, { invoice_id: invoiceId, date, amount, method, reference });
+
+    const totalPaid = payments.sumByInvoice(db, invoiceId, tenant.id);
+    const balance = Math.max(0, Number(row.amount) - Number(totalPaid));
+    const newStatus = balance <= 0 ? 'Paid' : totalPaid > 0 ? 'Partial' : 'Unpaid';
+    invoices.updateStatus(db, invoiceId, tenant.id, newStatus);
+
+    return c.json({
+      ok: true,
+      payment: { id: paymentId, date, amount, method: method ?? null, reference: reference ?? null },
+    });
+  } catch (error) {
+    return c.json({ ok: false, error: error instanceof Error ? error.message : 'Failed to record payment.' }, 400);
+  }
+});
+
+// ─── Employees ────────────────────────────────────────────────────────────────
+
+apiRoutes.get('/api/employees', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const rows = employees.listByTenant(db, tenant.id);
+
+  return c.json({
+    ok: true,
+    employees: rows.map(e => ({
+      id: e.id,
+      name: e.name,
+      payType: e.pay_type,
+      hourlyRate: e.hourly_rate != null ? Number(e.hourly_rate) : null,
+      annualSalary: e.annual_salary != null ? Number(e.annual_salary) : null,
+      active: e.active,
+    })),
+  });
+});
+
+// ─── Manual Time Entry ────────────────────────────────────────────────────────
+
+apiRoutes.post('/api/timesheets/manual', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const body = await c.req.json().catch(() => ({} as Record<string, unknown>));
+
+  try {
+    const jobId = parsePositiveInt(body.jobId);
+    if (!jobId) throw new Error('Job is required.');
+    const job = jobs.findById(db, jobId, tenant.id);
+    if (!job || job.archived_at) return c.json({ ok: false, error: 'job_not_found' }, 404);
+
+    const date = requireDate(body.date, 'Date');
+    const hoursRaw = Number(body.hours);
+    if (!isFinite(hoursRaw) || hoursRaw <= 0) throw new Error('Hours must be a positive number.');
+    const hours = Number(hoursRaw.toFixed(2));
+    const note = optionalText(body.note, 'Note', 500);
+
+    let employeeId: number | null = null;
+    const requestedEmployeeId = parsePositiveInt(body.employeeId);
+    if (requestedEmployeeId) {
+      const emp = employees.findById(db, requestedEmployeeId, tenant.id);
+      if (!emp) return c.json({ ok: false, error: 'employee_not_found' }, 404);
+      employeeId = emp.id;
+    } else {
+      const linked = db.prepare(
+        'SELECT employee_id FROM users WHERE id = ? AND tenant_id = ? LIMIT 1'
+      ).get(user.id, tenant.id) as { employee_id: number | null } | undefined;
+      employeeId = linked?.employee_id ?? null;
+    }
+
+    if (!employeeId) throw new Error('No employee linked. Specify an employeeId.');
+
+    const result = db.prepare(`
+      INSERT INTO time_entries (tenant_id, employee_id, job_id, date, hours, note, entry_method, approval_status)
+      VALUES (?, ?, ?, ?, ?, ?, 'manual', 'pending')
+    `).run(tenant.id, employeeId, jobId, date, hours, note ?? null);
+
+    return c.json({ ok: true, entry: { id: Number(result.lastInsertRowid) } });
+  } catch (error) {
+    return c.json({ ok: false, error: error instanceof Error ? error.message : 'Failed to save time entry.' }, 400);
   }
 });
