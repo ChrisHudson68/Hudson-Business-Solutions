@@ -10,6 +10,7 @@ import * as income from '../db/queries/income.js';
 import * as invoices from '../db/queries/invoices.js';
 import * as payments from '../db/queries/payments.js';
 import * as employees from '../db/queries/employees.js';
+import * as timeEntries from '../db/queries/time-entries.js';
 import { resolveRequestUser, userHasPermission } from '../middleware/auth.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import {
@@ -1393,4 +1394,63 @@ apiRoutes.post('/api/timesheets/manual', async (c) => {
   } catch (error) {
     return c.json({ ok: false, error: error instanceof Error ? error.message : 'Failed to save time entry.' }, 400);
   }
+});
+
+// ─── Job Expenses & Time Entries (for job detail tabs) ────────────────────────
+
+apiRoutes.get('/api/jobs/:id/expenses', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const jobId = parsePositiveInt(c.req.param('id'));
+  if (!jobId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const job = jobs.findById(db, jobId, tenant.id);
+  if (!job || job.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const rows = expenses.listByJob(db, jobId, tenant.id, false);
+  return c.json({
+    ok: true,
+    expenses: rows.map(r => ({
+      id: r.id,
+      jobId: r.job_id,
+      category: r.category,
+      vendor: r.vendor ?? null,
+      amount: Number(r.amount),
+      date: r.date,
+    })),
+  });
+});
+
+apiRoutes.get('/api/jobs/:id/time-entries', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const jobId = parsePositiveInt(c.req.param('id'));
+  if (!jobId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const job = jobs.findById(db, jobId, tenant.id);
+  if (!job || job.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const rows = timeEntries.listByJob(db, jobId, tenant.id);
+  return c.json({
+    ok: true,
+    entries: rows.map(r => ({
+      id: r.id,
+      employeeId: r.employee_id,
+      employeeName: r.employee_name,
+      date: r.date,
+      hours: Number(r.hours || 0),
+      note: r.note ?? null,
+      entryMethod: r.entry_method ?? null,
+    })),
+  });
 });

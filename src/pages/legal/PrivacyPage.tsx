@@ -346,7 +346,33 @@ export const PrivacyPage: FC<PrivacyPageProps> = ({ appName }) => {
         </section>
 
         <section class="legal-section">
-          <h2 class="legal-section-title">8. Your role in protecting workspace information</h2>
+          <h2 class="legal-section-title">8. Mobile application and device permissions</h2>
+          <div class="legal-section-copy">
+            <p>
+              The Hudson Business Solutions mobile application may request access to device features required
+              to operate specific product functionality. These include:
+            </p>
+            <p>
+              <strong>Camera and Photo Library:</strong> The mobile app may request access to your device camera
+              or photo library solely to allow users to photograph and upload expense receipts. Images captured
+              or selected for this purpose are uploaded to your company workspace and are not used for any other
+              purpose, shared with third parties, or stored outside of your workspace.
+            </p>
+            <p>
+              <strong>Secure credential storage:</strong> The mobile app stores your session token securely
+              on your device using platform-provided secure storage. This information is used only to maintain
+              your login session and is never transmitted to or accessible by third parties.
+            </p>
+            <p>
+              You may revoke device permissions at any time through your device settings. Revoking camera or
+              photo library access will disable receipt photo upload functionality but will not affect other
+              platform features.
+            </p>
+          </div>
+        </section>
+
+        <section class="legal-section">
+          <h2 class="legal-section-title">9. Your role in protecting workspace information</h2>
           <div class="legal-section-copy">
             <p>
               Company administrators and users should help protect workspace information by using appropriate credentials,
@@ -355,6 +381,20 @@ export const PrivacyPage: FC<PrivacyPageProps> = ({ appName }) => {
             <p>
               Customers remain responsible for the data they enter into their workspace and for their own internal handling
               of business records, employee information, financial records, and related company processes.
+            </p>
+          </div>
+        </section>
+
+        <section class="legal-section">
+          <h2 class="legal-section-title">10. Contact and privacy questions</h2>
+          <div class="legal-section-copy">
+            <p>
+              If you have questions or concerns about how Hudson Business Solutions handles information,
+              you can reach us at:
+            </p>
+            <p>
+              <strong>Email:</strong> <a href="mailto:christopher.hudson@hudson-business-solutions.com">christopher.hudson@hudson-business-solutions.com</a><br />
+              <strong>Website:</strong> <a href="https://hudson-business-solutions.com/contact">hudson-business-solutions.com/contact</a>
             </p>
           </div>
         </section>
