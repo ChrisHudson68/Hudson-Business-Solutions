@@ -1426,6 +1426,48 @@ apiRoutes.get('/api/jobs/:id/expenses', (c) => {
   });
 });
 
+apiRoutes.patch('/api/expenses/:id', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, resolved.user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const expenseId = parsePositiveInt(c.req.param('id'));
+  if (!expenseId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const row = expenses.findById(db, expenseId, tenant.id);
+  if (!row || row.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const category = requireText(body.category, 'Category', 120);
+  const vendor = optionalText(body.vendor, 'Vendor', 120);
+  const amount = parsePositiveMoney(body.amount, 'Amount');
+  const date = requireDate(body.date, 'Date');
+
+  expenses.update(db, expenseId, tenant.id, { category, vendor, amount, date });
+  return c.json({ ok: true });
+});
+
+apiRoutes.delete('/api/expenses/:id', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, resolved.user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const expenseId = parsePositiveInt(c.req.param('id'));
+  if (!expenseId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const row = expenses.findById(db, expenseId, tenant.id);
+  if (!row || row.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  expenses.deleteById(db, expenseId, tenant.id);
+  return c.json({ ok: true });
+});
+
 apiRoutes.get('/api/jobs/:id/time-entries', (c) => {
   const resolved = resolveApiContext(c);
   if (!resolved.ok) return resolved.response;
@@ -1453,4 +1495,83 @@ apiRoutes.get('/api/jobs/:id/time-entries', (c) => {
       entryMethod: r.entry_method ?? null,
     })),
   });
+});
+
+apiRoutes.delete('/api/timesheets/:id', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const entryId = parsePositiveInt(c.req.param('id'));
+  if (!entryId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const row = db.prepare(
+    'SELECT id FROM time_entries WHERE id = ? AND tenant_id = ? LIMIT 1'
+  ).get(entryId, tenant.id) as { id: number } | undefined;
+
+  if (!row) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  timeEntries.deleteById(db, entryId, tenant.id);
+  return c.json({ ok: true });
+});
+
+apiRoutes.patch('/api/timesheets/:id', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const entryId = parsePositiveInt(c.req.param('id'));
+  if (!entryId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const row = db.prepare(
+    'SELECT id FROM time_entries WHERE id = ? AND tenant_id = ? LIMIT 1'
+  ).get(entryId, tenant.id) as { id: number } | undefined;
+  if (!row) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const hours = body.hours !== undefined ? Number(body.hours) : undefined;
+  if (hours !== undefined && (isNaN(hours) || hours <= 0 || hours > 24)) {
+    return c.json({ ok: false, error: 'invalid_hours' }, 400);
+  }
+
+  timeEntries.updateById(db, entryId, tenant.id, {
+    hours,
+    note: body.note !== undefined ? (String(body.note).trim() || null) : undefined,
+    date: body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : undefined,
+    job_id: body.jobId ? parsePositiveInt(String(body.jobId)) ?? undefined : undefined,
+  });
+
+  return c.json({ ok: true });
+});
+
+apiRoutes.post('/api/timesheets/approve-week', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+
+  const permError = requireApiPermission(c, user, 'time.approve');
+  if (permError) return permError;
+
+  const db = getDb();
+  const body = await c.req.json().catch(() => ({}));
+  const employeeId = parsePositiveInt(String(body.employeeId || ''));
+  const weekStart = String(body.weekStart || '').trim();
+
+  if (!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+    return c.json({ ok: false, error: 'invalid_params' }, 400);
+  }
+
+  const empRow = db.prepare(
+    'SELECT id FROM employees WHERE id = ? AND tenant_id = ? LIMIT 1'
+  ).get(employeeId, tenant.id) as { id: number } | undefined;
+  if (!empRow) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  timeEntries.approveWeek(db, tenant.id, employeeId, weekStart, user.id);
+  return c.json({ ok: true });
 });

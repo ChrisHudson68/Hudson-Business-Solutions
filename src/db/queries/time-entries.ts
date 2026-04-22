@@ -90,6 +90,32 @@ export function create(db: DB, tenantId: number, data: {
   return result.lastInsertRowid as number;
 }
 
+export function updateById(db: DB, timeId: number, tenantId: number, data: {
+  hours?: number;
+  note?: string | null;
+  date?: string;
+  job_id?: number;
+}) {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (data.hours !== undefined) { fields.push('hours = ?'); values.push(data.hours); }
+  if (data.note !== undefined) { fields.push('note = ?'); values.push(data.note); }
+  if (data.date !== undefined) { fields.push('date = ?'); values.push(data.date); }
+  if (data.job_id !== undefined) { fields.push('job_id = ?'); values.push(data.job_id); }
+  if (fields.length === 0) return;
+  values.push(timeId, tenantId);
+  db.prepare(`UPDATE time_entries SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`).run(...values);
+}
+
 export function deleteById(db: DB, timeId: number, tenantId: number) {
   db.prepare('DELETE FROM time_entries WHERE id = ? AND tenant_id = ?').run(timeId, tenantId);
+}
+
+export function approveWeek(db: DB, tenantId: number, employeeId: number, weekStart: string, approvedByUserId: number) {
+  db.prepare(`
+    INSERT INTO time_entry_week_approvals (tenant_id, employee_id, week_start, approved_by_user_id, approved_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(tenant_id, employee_id, week_start)
+    DO UPDATE SET approved_by_user_id = excluded.approved_by_user_id, approved_at = excluded.approved_at
+  `).run(tenantId, employeeId, weekStart, approvedByUserId);
 }
