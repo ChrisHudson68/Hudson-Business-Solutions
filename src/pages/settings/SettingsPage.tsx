@@ -20,6 +20,7 @@ interface TenantInfo {
   fleet_tire_rotation_miles: number;
   fleet_tire_rotation_days: number;
   fleet_inspection_days: number;
+  notification_cc_emails: string | null;
 }
 
 interface SettingsPageProps {
@@ -225,6 +226,17 @@ export const SettingsPage: FC<SettingsPageProps> = ({
             <textarea name="company_address" rows={4} disabled={readOnly}>
               {tenant.company_address || ''}
             </textarea>
+
+            <label>Email Notification CC</label>
+            <input
+              name="notification_cc_emails"
+              value={tenant.notification_cc_emails || ''}
+              disabled={readOnly}
+              placeholder="you@example.com, boss@example.com"
+            />
+            <div class="small muted" style="margin-top:4px;">
+              Comma-separated emails added as CC on every estimate and invoice email sent to customers.
+            </div>
 
             <label>License / Certification Footer Text</label>
             <textarea

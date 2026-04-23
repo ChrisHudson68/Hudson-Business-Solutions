@@ -129,7 +129,7 @@ function getTenantSettings(db: any, tenantId: number) {
            default_tax_rate, default_labor_rate,
            fleet_oil_change_miles, fleet_oil_change_days,
            fleet_tire_rotation_miles, fleet_tire_rotation_days,
-           fleet_inspection_days
+           fleet_inspection_days, notification_cc_emails
     FROM tenants
     WHERE id = ?
   `,
@@ -158,6 +158,7 @@ function buildTenantFormValues(source: any) {
     fleet_tire_rotation_miles: Number(source?.fleet_tire_rotation_miles || 0),
     fleet_tire_rotation_days: Number(source?.fleet_tire_rotation_days || 0),
     fleet_inspection_days: Number(source?.fleet_inspection_days || 0),
+    notification_cc_emails: source?.notification_cc_emails ? String(source.notification_cc_emails) : '',
   };
 }
 
@@ -218,6 +219,7 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
     fleet_tire_rotation_miles: String(body.fleet_tire_rotation_miles ?? tenantRow.fleet_tire_rotation_miles ?? '0'),
     fleet_tire_rotation_days: String(body.fleet_tire_rotation_days ?? tenantRow.fleet_tire_rotation_days ?? '0'),
     fleet_inspection_days: String(body.fleet_inspection_days ?? tenantRow.fleet_inspection_days ?? '0'),
+    notification_cc_emails: String(body.notification_cc_emails ?? tenantRow.notification_cc_emails ?? ''),
   });
 
   try {
@@ -268,6 +270,19 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
     const fleetTireRotationDays = parseNonNegativeWholeNumber(body.fleet_tire_rotation_days, 'Tire rotation days');
     const fleetInspectionDays = parseNonNegativeWholeNumber(body.fleet_inspection_days, 'Inspection days');
 
+    const notificationCcEmailsRaw = String(body.notification_cc_emails ?? '').trim();
+    const notificationCcEmails = notificationCcEmailsRaw
+      ? notificationCcEmailsRaw
+          .split(',')
+          .map((e) => e.trim())
+          .filter(Boolean)
+          .map((e) => {
+            if (!isValidEmail(e)) throw new Error(`CC email "${e}" is not a valid email address.`);
+            return e;
+          })
+          .join(', ')
+      : null;
+
     let logoPath = tenantRow.logo_path;
 
     const file = body.logo;
@@ -303,7 +318,8 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
           fleet_oil_change_days = ?,
           fleet_tire_rotation_miles = ?,
           fleet_tire_rotation_days = ?,
-          fleet_inspection_days = ?
+          fleet_inspection_days = ?,
+          notification_cc_emails = ?
       WHERE id = ?
     `,
     ).run(
@@ -324,6 +340,7 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
       fleetTireRotationMiles,
       fleetTireRotationDays,
       fleetInspectionDays,
+      notificationCcEmails,
       tenantId,
     );
 

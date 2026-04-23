@@ -59,17 +59,19 @@ export async function sendInvoiceForSignature(
   }
 
   const tenantRow = db.prepare(`
-    SELECT name, company_email, company_phone, company_address
+    SELECT name, company_email, company_phone, company_address, notification_cc_emails
     FROM tenants WHERE id = ? LIMIT 1
   `).get(tenantId) as {
     name: string;
     company_email: string | null;
     company_phone: string | null;
     company_address: string | null;
+    notification_cc_emails: string | null;
   } | undefined;
 
   if (!tenantRow) throw new Error('Tenant not found.');
 
+  const ccEmails = String(tenantRow.notification_cc_emails || '').trim() || undefined;
   const token = crypto.randomBytes(24).toString('hex');
   const publicUrl = `${publicBaseUrl}/invoice/view/${token}`;
 
@@ -142,6 +144,7 @@ export async function sendInvoiceForSignature(
 
   const result = await sendMail({
     to: recipientEmail,
+    cc: ccEmails,
     subject: `Invoice ${invNumber} from ${tenantRow.name} — Please Review & Sign`,
     text: `Invoice ${inv.invoice_number} from ${tenantRow.name} — Review and sign at: ${publicUrl}`,
     html,

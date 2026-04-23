@@ -46,7 +46,8 @@ export async function sendEstimateToCustomer(
       name,
       company_email,
       company_phone,
-      company_address
+      company_address,
+      notification_cc_emails
     FROM tenants
     WHERE id = ?
     LIMIT 1
@@ -56,6 +57,7 @@ export async function sendEstimateToCustomer(
         company_email: string | null;
         company_phone: string | null;
         company_address: string | null;
+        notification_cc_emails: string | null;
       }
     | undefined;
 
@@ -63,6 +65,7 @@ export async function sendEstimateToCustomer(
   const companyEmail = String(tenantRow?.company_email || '').trim();
   const companyPhone = String(tenantRow?.company_phone || '').trim();
   const companyAddress = String(tenantRow?.company_address || '').trim();
+  const ccEmails = String(tenantRow?.notification_cc_emails || '').trim() || undefined;
 
   const token =
     String(estimate.public_token || '').trim() ||
@@ -226,6 +229,7 @@ export async function sendEstimateToCustomer(
   try {
     const result = await sendMail({
       to: recipientEmail,
+      cc: ccEmails,
       subject,
       text,
       html,

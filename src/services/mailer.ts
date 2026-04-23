@@ -7,6 +7,7 @@ export interface SendMailInput {
   text: string;
   html: string;
   replyTo?: string;
+  cc?: string;
 }
 
 export interface SendMailResult {
@@ -78,6 +79,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
     const info = await transporter.sendMail({
       from: `"${env.smtpFromName}" <${env.smtpFromEmail}>`,
       to: input.to,
+      cc: input.cc || undefined,
       subject: input.subject,
       text: input.text,
       html: input.html,
