@@ -114,6 +114,10 @@ export interface Estimate {
   converted_job_id: number | null;
   expiration_date: string | null;
   public_token: string | null;
+  signature_data?: string | null;
+  signer_name?: string | null;
+  signature_ip?: string | null;
+  signed_at?: string | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;

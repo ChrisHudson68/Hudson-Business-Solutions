@@ -11,6 +11,7 @@ import * as invoices from '../db/queries/invoices.js';
 import * as payments from '../db/queries/payments.js';
 import * as employees from '../db/queries/employees.js';
 import * as timeEntries from '../db/queries/time-entries.js';
+import { generateInvoicePdf } from '../services/invoice-pdf.js';
 import { resolveRequestUser, userHasPermission } from '../middleware/auth.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
 import {
@@ -677,6 +678,8 @@ apiRoutes.post('/api/timesheets/clock-in', async (c) => {
   const requestedJobId = parsePositiveInt(body.jobId);
   const note =
     typeof body.note === 'string' && body.note.trim().length > 0 ? body.note.trim() : null;
+  const lat = typeof body.lat === 'number' && isFinite(body.lat) ? body.lat : null;
+  const lng = typeof body.lng === 'number' && isFinite(body.lng) ? body.lng : null;
 
   if (!requestedJobId) {
     return c.json(
@@ -722,9 +725,11 @@ apiRoutes.post('/api/timesheets/clock-in', async (c) => {
       clock_in_at,
       clock_out_at,
       entry_method,
-      approval_status
+      approval_status,
+      lat,
+      lng
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'clock', 'pending')
+    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'clock', 'pending', ?, ?)
   `).run(
     tenant.id,
     linkedEmployee.employee_id,
@@ -733,6 +738,8 @@ apiRoutes.post('/api/timesheets/clock-in', async (c) => {
     0,
     note,
     nowIso,
+    lat,
+    lng,
   );
 
   return c.json({
@@ -746,6 +753,8 @@ apiRoutes.post('/api/timesheets/clock-in', async (c) => {
       clockInAt: nowIso,
       entryMethod: 'clock',
       approvalStatus: 'pending',
+      lat,
+      lng,
     },
   });
 });
@@ -1574,4 +1583,91 @@ apiRoutes.post('/api/timesheets/approve-week', async (c) => {
 
   timeEntries.approveWeek(db, tenant.id, employeeId, weekStart, user.id);
   return c.json({ ok: true });
+});
+
+// ─── Invoice PDF ──────────────────────────────────────────────────────────────
+
+apiRoutes.get('/api/invoices/:id/pdf', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+  const accessError = requireManagerOrAdmin(c, user);
+  if (accessError) return accessError;
+
+  const db = getDb();
+  const invoiceId = parsePositiveInt(c.req.param('id'));
+  if (!invoiceId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const tenantRow = db.prepare(
+    'SELECT id, name, subdomain, logo_path, company_email, company_phone, company_address FROM tenants WHERE id = ? LIMIT 1'
+  ).get(tenant.id) as any;
+
+  const inv = db.prepare(`
+    SELECT i.*, j.job_name, j.job_code
+    FROM invoices i
+    JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+    WHERE i.id = ? AND i.tenant_id = ?
+  `).get(invoiceId, tenant.id) as any;
+
+  if (!inv || inv.archived_at) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const lineItems = db.prepare(`
+    SELECT description, quantity, unit, unit_price, line_total
+    FROM invoice_line_items
+    WHERE invoice_id = ? AND tenant_id = ?
+    ORDER BY sort_order ASC
+  `).all(invoiceId, tenant.id) as any[];
+
+  const paidRow = db.prepare(
+    'SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE invoice_id = ? AND tenant_id = ?'
+  ).get(invoiceId, tenant.id) as any;
+
+  const paid = Number(paidRow?.total || 0);
+  const total = Number(inv.total_amount || inv.amount || 0);
+  const outstanding = Math.max(total - paid, 0);
+
+  const pdfBytes = await generateInvoicePdf({
+    tenant: {
+      name: tenantRow?.name ?? tenant.name,
+      logo_path: tenantRow?.logo_path ?? null,
+      company_address: tenantRow?.company_address ?? null,
+      company_email: tenantRow?.company_email ?? null,
+      company_phone: tenantRow?.company_phone ?? null,
+    },
+    invoice: {
+      id: inv.id,
+      invoice_number: inv.invoice_number,
+      date_issued: inv.date_issued,
+      due_date: inv.due_date,
+      subtotal_amount: inv.subtotal_amount || total,
+      discount_amount: inv.discount_amount || 0,
+      tax_amount: inv.tax_amount || 0,
+      total_amount: total,
+      public_notes: inv.public_notes ?? inv.notes ?? null,
+      terms_text: inv.terms_text ?? null,
+      status: inv.status || 'Draft',
+    },
+    customer: {
+      name: inv.customer_name ?? inv.client_name ?? null,
+      email: inv.customer_email ?? null,
+      phone: inv.customer_phone ?? null,
+      address: inv.customer_address ?? null,
+    },
+    job: {
+      job_name: inv.job_name,
+      job_code: inv.job_code,
+    },
+    lineItems,
+    paid,
+    outstanding,
+  });
+
+  const filename = `invoice_${inv.invoice_number || inv.id}.pdf`;
+
+  return new Response(Buffer.from(pdfBytes), {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${filename}"`,
+    },
+  });
 });

@@ -12,6 +12,11 @@ interface Invoice {
   notes: string | null;
   attachment_filename?: string | null;
   archived_at?: string | null;
+  public_token?: string | null;
+  sent_for_signature_at?: string | null;
+  signature_data?: string | null;
+  signer_name?: string | null;
+  signed_at?: string | null;
 }
 
 interface Payment {
@@ -56,6 +61,9 @@ interface InvoiceDetailPageProps {
   canArchiveInvoices?: boolean;
   canManagePayments?: boolean;
   canEditInvoices?: boolean;
+  canSendInvoice?: boolean;
+  customerEmail?: string | null;
+  publicBaseUrl?: string;
 }
 
 function formatCurrency(value: number): string {
@@ -77,6 +85,9 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
   canArchiveInvoices,
   canManagePayments,
   canEditInvoices,
+  canSendInvoice,
+  customerEmail,
+  publicBaseUrl,
 }) => {
   const paymentValues = {
     date: paymentForm?.date ?? '',
@@ -96,6 +107,14 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
         <div class="actions actions-mobile-stack">
           {!inv.archived_at && canEditInvoices ? <a class="btn" href={`/edit_invoice/${inv.id}`}>Edit Invoice</a> : null}
           <a class="btn" href={`/invoice/${inv.id}/pdf`}>Download PDF</a>
+          {canSendInvoice && !inv.archived_at && customerEmail ? (
+            <form method="post" action={`/invoice/${inv.id}/send-for-signature`} style="display:inline;">
+              <input type="hidden" name="csrf_token" value={csrfToken} />
+              <button class="btn" type="submit" style="background:#1E3A5F; color:#fff; border-color:#1E3A5F;">
+                {inv.sent_for_signature_at ? 'Resend for Signature' : 'Send for Signature'}
+              </button>
+            </form>
+          ) : null}
 
           {canArchiveInvoices ? (
             inv.archived_at ? (
@@ -141,6 +160,26 @@ export const InvoiceDetailPage: FC<InvoiceDetailPageProps> = ({
           style="margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; color:#166534;"
         >
           {success}
+        </div>
+      ) : null}
+
+      {inv.signed_at ? (
+        <div class="card" style="margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <span style="background:#166534; color:#fff; padding:4px 12px; border-radius:999px; font-size:13px; font-weight:700;">✓ Signed</span>
+          <span style="font-size:14px; color:#166534;">
+            {inv.signer_name ? <><b>{inv.signer_name}</b> — </> : null}
+            {new Date(inv.signed_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+          </span>
+          {publicBaseUrl && inv.public_token ? (
+            <a href={`${publicBaseUrl}/invoice/view/${inv.public_token}`} target="_blank" style="font-size:13px; color:#166534; margin-left:auto;">View signed page →</a>
+          ) : null}
+        </div>
+      ) : inv.sent_for_signature_at ? (
+        <div class="card" style="margin-bottom:14px; border-color:#FDE68A; background:#FFFBEB; color:#92400E;">
+          Sent for signature on {new Date(inv.sent_for_signature_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} — awaiting customer signature.
+          {publicBaseUrl && inv.public_token ? (
+            <a href={`${publicBaseUrl}/invoice/view/${inv.public_token}`} target="_blank" style="margin-left:12px; font-size:13px;">View signing page →</a>
+          ) : null}
         </div>
       ) : null}
 

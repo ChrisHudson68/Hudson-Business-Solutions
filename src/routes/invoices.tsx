@@ -26,6 +26,7 @@ import {
   deleteUploadedFile,
 } from '../services/file-upload.js';
 import { logActivity, resolveRequestIp } from '../services/activity-log.js';
+import { sendInvoiceForSignature } from '../services/send-invoice.js';
 import { InvoicesPage } from '../pages/invoices/InvoicesPage.js';
 import { InvoiceDetailPage } from '../pages/invoices/InvoiceDetailPage.js';
 import { AddInvoicePage } from '../pages/invoices/AddInvoicePage.js';
@@ -153,7 +154,13 @@ function loadInvoiceDetailData(db: any, tenantId: number, invoiceId: number) {
           i.amount,
           i.notes,
           i.attachment_filename,
-          i.archived_at
+          i.archived_at,
+          i.customer_email,
+          i.public_token,
+          i.sent_for_signature_at,
+          i.signature_data,
+          i.signer_name,
+          i.signed_at
         FROM invoices i
         JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
@@ -253,6 +260,9 @@ function renderInvoiceDetail(
       canArchiveInvoices={userHasPermission(c.get('user'), 'invoices.archive')}
       canManagePayments={userHasPermission(c.get('user'), 'payments.manage')}
       canEditInvoices={userHasPermission(c.get('user'), 'invoices.edit')}
+      canSendInvoice={userHasPermission(c.get('user'), 'invoices.view')}
+      customerEmail={data.inv.customer_email ?? null}
+      publicBaseUrl={(() => { try { return new URL(c.req.url).origin; } catch { return ''; } })()}
     />,
     statusCode,
   );
@@ -1288,6 +1298,9 @@ invoiceRoutes.get('/invoice/:id/pdf', permissionRequired('invoices.view'), async
     lineItems: lineItems,
     paid,
     outstanding,
+    signatureData: inv.signature_data ?? null,
+    signerName: inv.signer_name ?? null,
+    signedAt: inv.signed_at ?? null,
   });
 
   const filename = `invoice_${inv.invoice_number || inv.id}.pdf`;
@@ -1444,6 +1457,47 @@ invoiceRoutes.post('/restore_invoice/:id', permissionRequired('invoices.archive'
   });
 
   return c.redirect('/invoices?show_archived=1');
+});
+
+invoiceRoutes.post('/invoice/:id/send-for-signature', permissionRequired('invoices.view'), async (c) => {
+  const tenant = c.get('tenant');
+  const currentUser = c.get('user');
+  if (!tenant || !currentUser) return c.redirect('/login');
+
+  let invoiceId: number;
+  try {
+    invoiceId = parseRouteId(c.req.param('id'), 'Invoice');
+  } catch {
+    return c.text('Invoice not found', 404);
+  }
+
+  const tenantId = tenant.id;
+  const db = getDb();
+
+  try {
+    const requestUrl = new URL(c.req.url);
+    const publicBaseUrl = requestUrl.origin;
+    const result = await sendInvoiceForSignature(db, invoiceId, tenantId, publicBaseUrl);
+
+    logActivity(db, {
+      tenantId,
+      actorUserId: currentUser.id,
+      eventType: 'invoice.sent_for_signature',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      description: `${currentUser.name} sent invoice for signature to ${result.recipientEmail}.`,
+      metadata: { recipient_email: result.recipientEmail, message_id: result.messageId },
+      ipAddress: resolveRequestIp(c),
+    });
+
+    return renderInvoiceDetail(c, tenantId, invoiceId, {
+      success: `Invoice sent to ${result.recipientEmail} for signature.`,
+    });
+  } catch (err) {
+    return renderInvoiceDetail(c, tenantId, invoiceId, {
+      error: err instanceof Error ? err.message : 'Failed to send invoice for signature.',
+    });
+  }
 });
 
 export default invoiceRoutes;

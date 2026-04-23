@@ -218,10 +218,22 @@ publicEstimateRoutes.post('/estimate/respond/:token/approve', async (c) => {
 
   const body = (await c.req.parseBody()) as Record<string, unknown>;
   const approvalNotes = String(body.approval_notes ?? '').trim().slice(0, 5000);
+  const signatureData = String(body.signature_data ?? '').trim().slice(0, 500000);
+  const signerName = String(body.signer_name ?? '').trim().slice(0, 200);
+  const ip = resolveRequestIp(c);
+
+  if (signatureData) {
+    estimates.update(db, estimate.id, estimate.tenant_id, {
+      signature_data: signatureData,
+      signer_name: signerName || null,
+      signature_ip: ip,
+      signed_at: new Date().toISOString(),
+    });
+  }
 
   convertApprovedEstimateToJob(db, estimate.id, estimate.tenant_id, {
     approvalNotes: approvalNotes || null,
-    ipAddress: resolveRequestIp(c),
+    ipAddress: ip,
   });
 
   return renderPublicMessage(c, {

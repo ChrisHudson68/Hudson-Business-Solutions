@@ -34,6 +34,7 @@ import { fleetRoutes } from './routes/fleet.js';
 import { billingRoutes } from './routes/billing.js';
 import { estimateRoutes } from './routes/estimates.js';
 import { publicEstimateRoutes } from './routes/public-estimate.js';
+import { publicInvoiceRoutes } from './routes/public-invoice.js';
 import { stripeRoutes } from './routes/stripe.js';
 
 import { NotFoundPage } from './pages/errors/NotFoundPage.js';
@@ -108,6 +109,7 @@ app.route('/', activityRoutes);
 app.route('/', billingRoutes);
 app.route('/', estimateRoutes);
 app.route('/', publicEstimateRoutes);
+app.route('/', publicInvoiceRoutes);
 app.route('/', dashboardRoutes);
 app.route('/', userRoutes);
 app.route('/', jobRoutes);

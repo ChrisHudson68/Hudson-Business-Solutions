@@ -87,6 +87,9 @@ export interface InvoicePdfData {
   lineItems: InvoicePdfLineItem[];
   paid: number;
   outstanding: number;
+  signatureData?: string | null;
+  signerName?: string | null;
+  signedAt?: string | null;
 }
 
 type NormalizedInvoicePdfData = InvoicePdfData;
@@ -267,6 +270,9 @@ function normalizeInvoicePdfData(input: InvoicePdfData | LegacyInvoicePdfData): 
     lineItems,
     paid,
     outstanding,
+    signatureData: (inp as InvoicePdfData).signatureData ?? null,
+    signerName: (inp as InvoicePdfData).signerName ?? null,
+    signedAt: (inp as InvoicePdfData).signedAt ?? null,
   };
 }
 
@@ -632,6 +638,87 @@ export async function generateInvoicePdf(
 
   drawTextSection('Customer Notes', data.invoice.public_notes);
   drawTextSection('Terms', data.invoice.terms_text);
+
+  // Signature block
+  const sigBoxHeight = 90;
+  ensureSpace(sigBoxHeight + 16);
+
+  page.drawRectangle({
+    x: LEFT_MARGIN,
+    y: y - sigBoxHeight + 8,
+    width: CONTENT_WIDTH,
+    height: sigBoxHeight,
+    color: rgb(0.96, 0.97, 0.98),
+    borderColor: rgb(0.88, 0.9, 0.93),
+    borderWidth: 1,
+  });
+
+  page.drawRectangle({
+    x: LEFT_MARGIN,
+    y: y - 18,
+    width: CONTENT_WIDTH,
+    height: 22,
+    color: rgb(0.11, 0.23, 0.37),
+  });
+
+  page.drawText('Customer Acknowledgment', {
+    x: LEFT_MARGIN + 10,
+    y: y - 10,
+    size: 9.5,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
+
+  const sigLineY = y - sigBoxHeight + 46;
+  const dateLineY = y - sigBoxHeight + 20;
+  const leftEnd = LEFT_MARGIN + 240;
+  const rightStart = PAGE_WIDTH - RIGHT_MARGIN - 170;
+  const rightEnd = PAGE_WIDTH - RIGHT_MARGIN - 12;
+
+  if (data.signatureData) {
+    const base64 = data.signatureData.replace(/^data:image\/png;base64,/, '');
+    try {
+      const imgBytes = Buffer.from(base64, 'base64');
+      const embeddedSig = await pdfDoc.embedPng(imgBytes);
+      page.drawImage(embeddedSig, {
+        x: LEFT_MARGIN + 12,
+        y: sigLineY - 6,
+        width: leftEnd - LEFT_MARGIN - 12,
+        height: 36,
+      });
+    } catch { /* ignore */ }
+
+    if (data.signedAt) {
+      const dateStr = new Date(data.signedAt).toLocaleDateString('en-US');
+      page.drawText(dateStr, {
+        x: rightStart,
+        y: sigLineY + 18,
+        size: 9.5,
+        font: regular,
+        color: rgb(0.11, 0.14, 0.18),
+      });
+    }
+
+    if (data.signerName) {
+      page.drawText(data.signerName, {
+        x: LEFT_MARGIN + 12,
+        y: dateLineY + 18,
+        size: 9.5,
+        font: regular,
+        color: rgb(0.11, 0.14, 0.18),
+      });
+    }
+  }
+
+  page.drawLine({ start: { x: LEFT_MARGIN + 12, y: sigLineY + 14 }, end: { x: leftEnd, y: sigLineY + 14 }, thickness: 1, color: rgb(0.8, 0.84, 0.88) });
+  page.drawLine({ start: { x: rightStart, y: sigLineY + 14 }, end: { x: rightEnd, y: sigLineY + 14 }, thickness: 1, color: rgb(0.8, 0.84, 0.88) });
+  page.drawLine({ start: { x: LEFT_MARGIN + 12, y: dateLineY + 14 }, end: { x: leftEnd, y: dateLineY + 14 }, thickness: 1, color: rgb(0.8, 0.84, 0.88) });
+
+  page.drawText('Customer Signature', { x: LEFT_MARGIN + 12, y: sigLineY, size: 9, font: regular, color: rgb(0.4, 0.45, 0.53) });
+  page.drawText('Date', { x: rightStart, y: sigLineY, size: 9, font: regular, color: rgb(0.4, 0.45, 0.53) });
+  page.drawText('Printed Name', { x: LEFT_MARGIN + 12, y: dateLineY, size: 9, font: regular, color: rgb(0.4, 0.45, 0.53) });
+
+  y -= sigBoxHeight + 8;
 
   footer();
   return pdfDoc.save();

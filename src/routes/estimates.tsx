@@ -699,6 +699,7 @@ estimateRoutes.get('/estimate/:id/pdf', loginRequired, async (c) => {
       proposal_default_acknowledgment: tenantSettings.proposal_default_acknowledgment,
     },
     estimate,
+    signatureData: estimate.signature_data ?? null,
   });
 
   logActivity(db, {

@@ -60,6 +60,10 @@ export interface UpdateEstimateInput {
   converted_job_id?: number | null;
   expiration_date?: string | null;
   public_token?: string | null;
+  signature_data?: string | null;
+  signer_name?: string | null;
+  signature_ip?: string | null;
+  signed_at?: string | null;
 }
 
 function normalizeMoney(value: number | null | undefined): number {
@@ -113,6 +117,10 @@ function baseSelect(): string {
       e.converted_job_id,
       e.expiration_date,
       e.public_token,
+      e.signature_data,
+      e.signer_name,
+      e.signature_ip,
+      e.signed_at,
       e.created_at,
       e.updated_at,
       e.archived_at,
@@ -452,6 +460,26 @@ export function update(db: DB, estimateId: number, tenantId: number, input: Upda
     params.push(input.public_token ?? null);
   }
 
+  if (Object.prototype.hasOwnProperty.call(input, 'signature_data')) {
+    sets.push('signature_data = ?');
+    params.push(input.signature_data ?? null);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'signer_name')) {
+    sets.push('signer_name = ?');
+    params.push(input.signer_name ?? null);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'signature_ip')) {
+    sets.push('signature_ip = ?');
+    params.push(input.signature_ip ?? null);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(input, 'signed_at')) {
+    sets.push('signed_at = ?');
+    params.push(input.signed_at ?? null);
+  }
+
   if (!sets.length) {
     return;
   }
@@ -478,6 +506,10 @@ export function setStatus(
     rejection_reason?: string | null;
     converted_job_id?: number | null;
     public_token?: string | null;
+    signature_data?: string | null;
+    signer_name?: string | null;
+    signature_ip?: string | null;
+    signed_at?: string | null;
   },
 ): void {
   update(db, estimateId, tenantId, {
@@ -489,6 +521,10 @@ export function setStatus(
     rejection_reason: options?.rejection_reason ?? null,
     converted_job_id: options?.converted_job_id ?? null,
     public_token: options?.public_token ?? null,
+    signature_data: options?.signature_data ?? null,
+    signer_name: options?.signer_name ?? null,
+    signature_ip: options?.signature_ip ?? null,
+    signed_at: options?.signed_at ?? null,
   });
 }
 

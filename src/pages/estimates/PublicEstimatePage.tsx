@@ -182,25 +182,41 @@ export const PublicEstimatePage: FC<PublicEstimatePageProps> = ({
       ) : null}
 
       {canRespond ? (
-        <div
-          style="display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));"
-        >
+        <div style="display:grid; gap:16px;">
           <div class="card">
-            <h3 style="margin-top:0;">Approve Estimate</h3>
+            <h3 style="margin-top:0;">Sign &amp; Approve Estimate</h3>
             <p class="muted" style="text-align:left;">
-              Approving this estimate confirms that you want to move forward with this work.
+              Draw your signature below and enter your name to approve this estimate and authorize the work to proceed.
             </p>
-            <form method="post" action={`/estimate/respond/${estimate.public_token}/approve`}>
+            <form method="post" action={`/estimate/respond/${estimate.public_token}/approve`} id="approve-form">
               <input type="hidden" name="csrf_token" value={csrfToken} />
-              <label for="approval_notes">Optional approval note</label>
+              <input type="hidden" name="signature_data" id="sig-data-approve" />
+              <label for="signer_name_approve">Full Name (printed)</label>
+              <input
+                type="text"
+                id="signer_name_approve"
+                name="signer_name"
+                placeholder="Your full name"
+                required
+                autocomplete="name"
+              />
+              <label>Signature</label>
+              <div style="border:2px solid #CBD5E1; border-radius:12px; background:#fff; overflow:hidden; touch-action:none;">
+                <canvas id="sig-canvas-approve" style="width:100%; height:160px; display:block; cursor:crosshair;" />
+              </div>
+              <div style="display:flex; gap:8px; margin-top:8px;">
+                <button type="button" id="sig-clear-approve" class="btn" style="font-size:12px; min-height:32px; padding:0 12px;">Clear</button>
+                <span id="sig-error-approve" style="color:#991B1B; font-size:13px; align-self:center; display:none;">Please draw your signature.</span>
+              </div>
+              <label for="approval_notes">Notes (optional)</label>
               <textarea
                 id="approval_notes"
                 name="approval_notes"
-                rows={4}
+                rows={3}
                 placeholder="Add any note for the contractor here"
               />
-              <div class="actions" style="justify-content:flex-start;">
-                <button class="btn btn-primary" type="submit">Approve Estimate</button>
+              <div class="actions" style="justify-content:flex-start; margin-top:16px;">
+                <button class="btn btn-primary" type="submit" id="approve-submit-btn">Sign &amp; Approve Estimate</button>
               </div>
             </form>
           </div>
@@ -225,10 +241,44 @@ export const PublicEstimatePage: FC<PublicEstimatePageProps> = ({
               </div>
             </form>
           </div>
+
+          <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js" />
+          <script dangerouslySetInnerHTML={{ __html: `
+(function() {
+  var canvas = document.getElementById('sig-canvas-approve');
+  var ratio = Math.max(window.devicePixelRatio || 1, 1);
+  function resizeCanvas() {
+    var w = canvas.offsetWidth;
+    canvas.width = w * ratio;
+    canvas.height = 160 * ratio;
+    canvas.getContext('2d').scale(ratio, ratio);
+    pad.clear();
+  }
+  var pad = new SignaturePad(canvas, { backgroundColor: 'rgb(255,255,255)', penColor: 'rgb(15,23,42)' });
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+  document.getElementById('sig-clear-approve').addEventListener('click', function() { pad.clear(); });
+  document.getElementById('approve-form').addEventListener('submit', function(e) {
+    if (pad.isEmpty()) {
+      e.preventDefault();
+      document.getElementById('sig-error-approve').style.display = 'inline';
+      canvas.style.borderColor = '#EF4444';
+      return;
+    }
+    document.getElementById('sig-data-approve').value = pad.toDataURL('image/png');
+  });
+})();
+          ` }} />
         </div>
       ) : (
         <div class="card">
           <h3 style="margin-top:0;">Response Status</h3>
+          {estimate.signed_at ? (
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+              <span style="background:#F0FDF4; border:1px solid #BBF7D0; color:#166534; padding:4px 12px; border-radius:999px; font-size:13px; font-weight:700;">✓ Signed</span>
+              {estimate.signer_name ? <span style="font-size:13px; color:#334155;">by <b>{estimate.signer_name}</b></span> : null}
+            </div>
+          ) : null}
           <p class="muted" style="text-align:left;">
             This estimate has already been responded to and is no longer awaiting customer action.
           </p>

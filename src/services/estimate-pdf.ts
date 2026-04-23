@@ -26,6 +26,7 @@ interface EstimateProposalPdfData {
     proposal_default_acknowledgment?: string | null;
   };
   estimate: EstimateWithLineItems;
+  signatureData?: string | null;
 }
 
 type Theme = {
@@ -1308,7 +1309,7 @@ function drawTermsSection(ctx: PdfContext): void {
   drawBulletList(ctx, fallbackTerms);
 }
 
-function drawAcknowledgmentBox(ctx: PdfContext, text: string): void {
+async function drawAcknowledgmentBox(ctx: PdfContext, text: string, signatureData?: string | null): Promise<void> {
   const introLines = wrapText(text, ctx.fonts.regular, 10.5, CONTENT_WIDTH - 24);
   const bodyHeight = Math.max(64, introLines.length * 12 + 26);
   const boxHeight = bodyHeight + 84;
@@ -1360,6 +1361,23 @@ function drawAcknowledgmentBox(ctx: PdfContext, text: string): void {
   const rightStart = PAGE_WIDTH - MARGIN_X - 170;
   const rightEnd = PAGE_WIDTH - MARGIN_X - 12;
 
+  if (signatureData) {
+    // Embed the captured signature image
+    const base64 = signatureData.replace(/^data:image\/png;base64,/, '');
+    try {
+      const imgBytes = Buffer.from(base64, 'base64');
+      const embeddedSig = await ctx.pdfDoc.embedPng(imgBytes);
+      const sigWidth = leftEnd - leftStart;
+      const sigHeight = 36;
+      ctx.page.drawImage(embeddedSig, {
+        x: leftStart,
+        y: topLineY - 8,
+        width: sigWidth,
+        height: sigHeight,
+      });
+    } catch { /* fall through to blank line */ }
+  }
+
   ctx.page.drawLine({
     start: { x: leftStart, y: topLineY + 14 },
     end: { x: leftEnd, y: topLineY + 14 },
@@ -1404,6 +1422,19 @@ function drawAcknowledgmentBox(ctx: PdfContext, text: string): void {
     font: ctx.fonts.regular,
     color: ctx.theme.muted,
   });
+
+  // If we have a signer name, pre-fill it on the printed name line
+  if (signatureData) {
+    // Date line
+    const dateStr = new Date().toLocaleDateString('en-US');
+    ctx.page.drawText(dateStr, {
+      x: rightStart,
+      y: topLineY + 18,
+      size: 9.5,
+      font: ctx.fonts.regular,
+      color: ctx.theme.text,
+    });
+  }
 
   ctx.y = ctx.y - boxHeight - 4;
 }
@@ -1485,7 +1516,7 @@ export async function generateEstimateProposalPdf(data: EstimateProposalPdfData)
       || `By accepting this proposal, the customer authorizes ${data.tenant.name || 'our company'} to move forward with planning, scheduling, and project coordination based on the current approved scope.`,
   ).trim();
 
-  drawAcknowledgmentBox(ctx, acknowledgment);
+  await drawAcknowledgmentBox(ctx, acknowledgment, data.signatureData);
 
   return pdfDoc.save();
 }

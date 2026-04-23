@@ -88,6 +88,18 @@ export const EstimateDetailPage: FC<EstimateDetailPageProps> = ({
         </div>
       ) : null}
 
+      {estimate.signed_at ? (
+        <div class="card" style="margin-bottom:14px; border-color:#BBF7D0; background:#F0FDF4; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <span style="background:#166534; color:#fff; padding:5px 14px; border-radius:999px; font-size:13px; font-weight:700;">✓ Electronically Signed</span>
+          {estimate.signer_name ? (
+            <span style="font-size:14px; font-weight:600; color:#166534;">by {estimate.signer_name}</span>
+          ) : null}
+          <span style="font-size:13px; color:#16a34a;">
+            {estimate.signed_at.slice(0, 10)}
+          </span>
+        </div>
+      ) : null}
+
       <div class="stat-grid stat-grid-4" style="margin-bottom:14px;">
         <div class="stat-card stat-card-navy">
           <div class="stat-label">Status</div>
