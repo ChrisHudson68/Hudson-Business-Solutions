@@ -24,6 +24,8 @@ interface TimeEntry {
   entry_method: string;
   approval_status: string;
   has_pending_edit_request?: number;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 interface PendingRequest {
@@ -642,7 +644,18 @@ export const TimesheetPage: FC<TimesheetPageProps> = ({
                   <td>{entry.date}</td>
                   <td>{entry.job_name}</td>
                   <td>{entry.entry_method}</td>
-                  <td data-utc-display={entry.clock_in_at || ''}>{entry.clock_in_at || ''}</td>
+                  <td>
+                    <span data-utc-display={entry.clock_in_at || ''}>{entry.clock_in_at || ''}</span>
+                    {entry.lat != null && entry.lng != null ? (
+                      <a
+                        href={`https://maps.google.com/?q=${entry.lat},${entry.lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Clock-in location: ${Number(entry.lat).toFixed(5)}, ${Number(entry.lng).toFixed(5)}`}
+                        style="display:inline-block; margin-left:6px; color:#3B82F6; font-size:13px; vertical-align:middle;"
+                      >📍</a>
+                    ) : null}
+                  </td>
                   <td data-utc-display={entry.clock_out_at || ''}>{entry.clock_out_at || ''}</td>
                   <td class="right">{entry.hours}</td>
                   <td>

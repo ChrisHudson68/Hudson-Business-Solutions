@@ -32,6 +32,8 @@ interface ExistingEntry {
   entry_method: string;
   approval_status: string;
   has_pending_edit_request: number;
+  lat: number | null;
+  lng: number | null;
 }
 
 interface PendingRequestSummary {
@@ -439,6 +441,8 @@ function loadExistingEntries(db: any, tenantId: number, employeeId: number | nul
       t.clock_out_at,
       t.entry_method,
       t.approval_status,
+      t.lat,
+      t.lng,
       CASE
         WHEN EXISTS (
           SELECT 1
