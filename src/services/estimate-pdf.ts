@@ -27,6 +27,8 @@ interface EstimateProposalPdfData {
   };
   estimate: EstimateWithLineItems;
   signatureData?: string | null;
+  signerName?: string | null;
+  signedAt?: string | null;
 }
 
 type Theme = {
@@ -1309,10 +1311,10 @@ function drawTermsSection(ctx: PdfContext): void {
   drawBulletList(ctx, fallbackTerms);
 }
 
-async function drawAcknowledgmentBox(ctx: PdfContext, text: string, signatureData?: string | null): Promise<void> {
+async function drawAcknowledgmentBox(ctx: PdfContext, text: string, signatureData?: string | null, signerName?: string | null, signedAt?: string | null): Promise<void> {
   const introLines = wrapText(text, ctx.fonts.regular, 10.5, CONTENT_WIDTH - 24);
   const bodyHeight = Math.max(64, introLines.length * 12 + 26);
-  const boxHeight = bodyHeight + 84;
+  const boxHeight = bodyHeight + 110;
 
   ensureSpace(ctx, boxHeight + 10);
 
@@ -1354,54 +1356,60 @@ async function drawAcknowledgmentBox(ctx: PdfContext, text: string, signatureDat
     lineY -= 12;
   }
 
-  const topLineY = ctx.y - boxHeight + 48;
-  const bottomLineY = ctx.y - boxHeight + 20;
+  // Three rows from bottom of box:
+  //   bottomLineY: Printed Name line  (~24 from bottom)
+  //   topLineY:    Signature / Date line (~70 from bottom, giving 46px gap for the sig image)
+  const topLineY = ctx.y - boxHeight + 74;
+  const bottomLineY = ctx.y - boxHeight + 24;
   const leftStart = MARGIN_X + 12;
   const leftEnd = MARGIN_X + 240;
   const rightStart = PAGE_WIDTH - MARGIN_X - 170;
   const rightEnd = PAGE_WIDTH - MARGIN_X - 12;
 
+  // Signature image sits above the signature line
   if (signatureData) {
-    // Embed the captured signature image
     const base64 = signatureData.replace(/^data:image\/png;base64,/, '');
     try {
       const imgBytes = Buffer.from(base64, 'base64');
       const embeddedSig = await ctx.pdfDoc.embedPng(imgBytes);
       const sigWidth = leftEnd - leftStart;
-      const sigHeight = 36;
+      const sigHeight = 40;
       ctx.page.drawImage(embeddedSig, {
         x: leftStart,
-        y: topLineY - 8,
+        y: topLineY + 2,
         width: sigWidth,
         height: sigHeight,
       });
     } catch { /* fall through to blank line */ }
   }
 
+  // Signature line
   ctx.page.drawLine({
-    start: { x: leftStart, y: topLineY + 14 },
-    end: { x: leftEnd, y: topLineY + 14 },
+    start: { x: leftStart, y: topLineY },
+    end: { x: leftEnd, y: topLineY },
     thickness: 1,
     color: ctx.theme.border,
   });
 
+  // Date line
   ctx.page.drawLine({
-    start: { x: rightStart, y: topLineY + 14 },
-    end: { x: rightEnd, y: topLineY + 14 },
+    start: { x: rightStart, y: topLineY },
+    end: { x: rightEnd, y: topLineY },
     thickness: 1,
     color: ctx.theme.border,
   });
 
+  // Printed Name line
   ctx.page.drawLine({
-    start: { x: leftStart, y: bottomLineY + 14 },
-    end: { x: leftEnd, y: bottomLineY + 14 },
+    start: { x: leftStart, y: bottomLineY },
+    end: { x: leftEnd, y: bottomLineY },
     thickness: 1,
     color: ctx.theme.border,
   });
 
   ctx.page.drawText('Customer Signature', {
     x: leftStart,
-    y: topLineY,
+    y: topLineY - 11,
     size: 9,
     font: ctx.fonts.regular,
     color: ctx.theme.muted,
@@ -1409,7 +1417,7 @@ async function drawAcknowledgmentBox(ctx: PdfContext, text: string, signatureDat
 
   ctx.page.drawText('Date', {
     x: rightStart,
-    y: topLineY,
+    y: topLineY - 11,
     size: 9,
     font: ctx.fonts.regular,
     color: ctx.theme.muted,
@@ -1417,23 +1425,35 @@ async function drawAcknowledgmentBox(ctx: PdfContext, text: string, signatureDat
 
   ctx.page.drawText('Printed Name', {
     x: leftStart,
-    y: bottomLineY,
+    y: bottomLineY - 11,
     size: 9,
     font: ctx.fonts.regular,
     color: ctx.theme.muted,
   });
 
-  // If we have a signer name, pre-fill it on the printed name line
   if (signatureData) {
-    // Date line
-    const dateStr = new Date().toLocaleDateString('en-US');
+    // Fill in the actual signed date above the Date line
+    const dateStr = signedAt
+      ? new Date(signedAt).toLocaleDateString('en-US')
+      : new Date().toLocaleDateString('en-US');
     ctx.page.drawText(dateStr, {
       x: rightStart,
-      y: topLineY + 18,
+      y: topLineY + 4,
       size: 9.5,
       font: ctx.fonts.regular,
       color: ctx.theme.text,
     });
+
+    // Fill in the signer's printed name above the Printed Name line
+    if (signerName) {
+      ctx.page.drawText(signerName.slice(0, 60), {
+        x: leftStart,
+        y: bottomLineY + 4,
+        size: 9.5,
+        font: ctx.fonts.regular,
+        color: ctx.theme.text,
+      });
+    }
   }
 
   ctx.y = ctx.y - boxHeight - 4;
@@ -1516,7 +1536,7 @@ export async function generateEstimateProposalPdf(data: EstimateProposalPdfData)
       || `By accepting this proposal, the customer authorizes ${data.tenant.name || 'our company'} to move forward with planning, scheduling, and project coordination based on the current approved scope.`,
   ).trim();
 
-  await drawAcknowledgmentBox(ctx, acknowledgment, data.signatureData);
+  await drawAcknowledgmentBox(ctx, acknowledgment, data.signatureData, data.signerName, data.signedAt);
 
   return pdfDoc.save();
 }

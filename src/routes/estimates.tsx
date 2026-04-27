@@ -700,6 +700,8 @@ estimateRoutes.get('/estimate/:id/pdf', loginRequired, async (c) => {
     },
     estimate,
     signatureData: estimate.signature_data ?? null,
+    signerName: estimate.signer_name ?? null,
+    signedAt: estimate.signed_at ?? null,
   });
 
   logActivity(db, {
