@@ -497,7 +497,7 @@ export async function generateInvoicePdf(
     color: rgb(1, 1, 1),
   });
   page.drawText('Amount', {
-    x: columns.amount,
+    x: PAGE_WIDTH - RIGHT_MARGIN - bold.widthOfTextAtSize('Amount', 9.5) - 4,
     y: y - 14,
     size: 9.5,
     font: bold,
