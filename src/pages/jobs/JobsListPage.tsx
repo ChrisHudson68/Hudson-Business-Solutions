@@ -41,11 +41,41 @@ interface JobsListPageProps {
   canCreateJobs?: boolean;
   canEditJobs?: boolean;
   canArchiveJobs?: boolean;
+  canMergeJobs?: boolean;
 }
 
 function fmt(value: number): string {
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+const mergeScript = `
+document.addEventListener('DOMContentLoaded', function () {
+  var checkboxes = document.querySelectorAll('.job-select-cb');
+  var mergeBtn = document.getElementById('merge-selected-btn');
+  var mergeLinkContainer = document.getElementById('merge-link-container');
+
+  function updateMergeButton() {
+    var checked = Array.from(checkboxes).filter(function(cb) { return cb.checked; });
+    if (mergeBtn) {
+      mergeBtn.disabled = checked.length < 2;
+      mergeBtn.textContent = checked.length >= 2
+        ? 'Merge Selected (' + checked.length + ')'
+        : 'Merge Selected';
+    }
+    if (mergeLinkContainer) {
+      if (checked.length >= 2) {
+        var ids = checked.map(function(cb) { return 'ids=' + encodeURIComponent(cb.value); }).join('&');
+        mergeLinkContainer.innerHTML = '<a class="btn btn-primary" id="merge-selected-btn" href="/jobs/merge?' + ids + '">Merge Selected (' + checked.length + ')</a>';
+      } else {
+        mergeLinkContainer.innerHTML = '<button class="btn btn-primary" id="merge-selected-btn" disabled>Merge Selected</button>';
+      }
+    }
+  }
+
+  checkboxes.forEach(function(cb) { cb.addEventListener('change', updateMergeButton); });
+  updateMergeButton();
+});
+`;
 
 export const JobsListPage: FC<JobsListPageProps> = ({
   jobs,
@@ -61,6 +91,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
   showArchived,
   canCreateJobs,
   canEditJobs,
+  canMergeJobs,
 }) => {
   return (
     <div>
@@ -73,6 +104,11 @@ export const JobsListPage: FC<JobsListPageProps> = ({
           <a class="btn" href={showArchived ? '/jobs' : '/jobs?show_archived=1'}>
             {showArchived ? 'Hide Archived' : 'Show Archived'}
           </a>
+          {canMergeJobs ? (
+            <div id="merge-link-container">
+              <button class="btn btn-primary" id="merge-selected-btn" disabled>Merge Selected</button>
+            </div>
+          ) : null}
           {canCreateJobs ? <a class="btn btn-primary" href="/add_job">+ Add Job</a> : null}
         </div>
       </div>
@@ -126,6 +162,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
               <table>
                 <thead>
                   <tr>
+                    {canMergeJobs ? <th style="width:36px;"></th> : null}
                     <th>Job</th>
                     <th>Client</th>
                     <th>Status</th>
@@ -139,6 +176,17 @@ export const JobsListPage: FC<JobsListPageProps> = ({
                 <tbody>
                   {jobs.map((job) => (
                     <tr>
+                      {canMergeJobs ? (
+                        <td style="text-align:center; padding:0 8px;">
+                          <input
+                            type="checkbox"
+                            class="job-select-cb"
+                            value={String(job.id)}
+                            disabled={!!job.archived_at}
+                            style="width:16px; height:16px; cursor:pointer;"
+                          />
+                        </td>
+                      ) : null}
                       <td>
                         <a href={`/job/${job.id}`} style="font-weight:800; color:var(--navy);">{job.job_name}</a>
                         <div class="muted" style="font-size:12px; margin-top:2px;">
@@ -193,6 +241,7 @@ export const JobsListPage: FC<JobsListPageProps> = ({
           </div>
         )}
       </div>
+      {canMergeJobs ? <script dangerouslySetInnerHTML={{ __html: mergeScript }} /> : null}
     </div>
   );
 };

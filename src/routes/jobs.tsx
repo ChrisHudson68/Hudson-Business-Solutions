@@ -22,6 +22,7 @@ import {
 } from '../services/file-upload.js';
 import { JobsListPage } from '../pages/jobs/JobsListPage.js';
 import { JobDetailPage } from '../pages/jobs/JobDetailPage.js';
+import { JobMergePage } from '../pages/jobs/JobMergePage.js';
 import { AddJobPage } from '../pages/jobs/AddJobPage.js';
 import { EditJobPage } from '../pages/jobs/EditJobPage.js';
 import { JobBlueprintsPage } from '../pages/jobs/JobBlueprintsPage.js';
@@ -319,6 +320,7 @@ jobRoutes.get('/jobs', loginRequired, (c) => {
       canCreateJobs={canManage}
       canEditJobs={canManage}
       canArchiveJobs={canManage}
+      canMergeJobs={canManage}
     />,
   );
 });
@@ -370,8 +372,71 @@ jobRoutes.get('/job/:id', loginRequired, (c) => {
       profit={profit}
       retainageHeld={retainageHeld}
       csrfToken={c.get('csrfToken')}
+      linkedEstimates={jobs.listLinkedEstimates(db, jobId, tenantId)}
     />,
   );
+});
+
+jobRoutes.get('/jobs/merge', roleRequired('Admin', 'Manager'), (c) => {
+  const tenant = c.get('tenant');
+  const tenantId = tenant!.id;
+  const db = getDb();
+
+  const rawIds = c.req.queries('ids') ?? [];
+  const jobIds = rawIds.map((v) => parsePositiveInt(v)).filter((id): id is number => !!id);
+
+  if (jobIds.length < 2) {
+    return c.redirect('/jobs');
+  }
+
+  const mergeJobs = jobs.findManyByIds(db, jobIds, tenantId);
+
+  if (mergeJobs.length < 2) {
+    return c.redirect('/jobs');
+  }
+
+  return renderApp(
+    c,
+    'Merge Jobs',
+    <JobMergePage jobs={mergeJobs} csrfToken={c.get('csrfToken')} />,
+  );
+});
+
+jobRoutes.post('/jobs/merge', roleRequired('Admin', 'Manager'), async (c) => {
+  const tenant = c.get('tenant');
+  const tenantId = tenant!.id;
+  const db = getDb();
+  const currentUser = c.get('user');
+
+  const body = (await c.req.parseBody({ all: true })) as Record<string, unknown>;
+  const rawIds = Array.isArray(body.job_ids) ? body.job_ids : body.job_ids ? [body.job_ids] : [];
+  const jobIds = (rawIds as string[]).map((v) => parsePositiveInt(v)).filter((id): id is number => !!id);
+  const primaryJobId = parsePositiveInt(String(body.primary_job_id ?? ''));
+
+  if (jobIds.length < 2 || !primaryJobId || !jobIds.includes(primaryJobId)) {
+    return c.redirect('/jobs');
+  }
+
+  const mergeJobs = jobs.findManyByIds(db, jobIds, tenantId);
+  if (mergeJobs.length !== jobIds.length) {
+    return c.redirect('/jobs');
+  }
+
+  const secondaryIds = jobIds.filter((id) => id !== primaryJobId);
+
+  jobs.mergeJobs(db, primaryJobId, secondaryIds, tenantId);
+
+  logActivity(db, {
+    tenantId,
+    actorUserId: currentUser?.id ?? null,
+    eventType: 'job.merged',
+    entityType: 'job',
+    entityId: primaryJobId,
+    description: `Merged job IDs [${secondaryIds.join(', ')}] into job ${primaryJobId}`,
+    ipAddress: resolveRequestIp(c) ?? '',
+  });
+
+  return c.redirect(`/job/${primaryJobId}`);
 });
 
 jobRoutes.get('/add_job', roleRequired('Admin', 'Manager'), (c) => {

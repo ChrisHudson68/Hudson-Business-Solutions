@@ -44,6 +44,16 @@ interface TimeRow {
   note: string | null;
 }
 
+interface LinkedEstimate {
+  id: number;
+  estimate_number: string;
+  total: number;
+  scope_of_work: string | null;
+  signed_at: string | null;
+  signer_name: string | null;
+  status: string;
+}
+
 interface JobDetailPageProps {
   job: Job;
   incomes: IncomeRow[];
@@ -58,6 +68,7 @@ interface JobDetailPageProps {
   profit: number;
   retainageHeld: number;
   csrfToken: string;
+  linkedEstimates?: LinkedEstimate[];
 }
 
 function formatMoney(value: number): string {
@@ -109,6 +120,7 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
   profit,
   retainageHeld,
   csrfToken,
+  linkedEstimates,
 }) => {
   const estimatedCommission = getEstimatedCommission(job);
 
@@ -511,6 +523,46 @@ export const JobDetailPage: FC<JobDetailPageProps> = ({
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {linkedEstimates && linkedEstimates.length > 0 ? (
+        <div class="card" style="margin-top:14px;">
+          <h3 style="margin-top:0;">Linked Estimates</h3>
+          <div class="table-wrap table-wrap-tight" style="margin-top:10px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Estimate</th>
+                  <th class="right">Value</th>
+                  <th>Signed By</th>
+                  <th>Signed Date</th>
+                  <th class="right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linkedEstimates.map((est) => (
+                  <tr key={est.id}>
+                    <td>
+                      <a href={`/estimate/${est.id}`} style="font-weight:700;">{est.estimate_number}</a>
+                      {est.signed_at ? (
+                        <span class="badge badge-good" style="margin-left:8px; font-size:10px;">✓ Signed</span>
+                      ) : null}
+                    </td>
+                    <td class="right" style="font-weight:700;">${formatMoney(est.total)}</td>
+                    <td>{est.signer_name || <span class="muted">—</span>}</td>
+                    <td class="muted">{est.signed_at ? est.signed_at.slice(0, 10) : '—'}</td>
+                    <td class="right">
+                      <div class="actions" style="justify-content:flex-end; gap:6px;">
+                        <a class="btn btn-sm" href={`/estimate/${est.id}`}>View</a>
+                        <a class="btn btn-sm" href={`/estimate/${est.id}/pdf`}>Download PDF</a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : null}

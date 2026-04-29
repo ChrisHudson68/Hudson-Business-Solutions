@@ -327,6 +327,105 @@ export function deleteWithCascade(db: DB, jobId: number, tenantId: number) {
   deleteAll();
 }
 
+export function findManyByIds(db: DB, jobIds: number[], tenantId: number) {
+  if (!jobIds.length) return [];
+  const placeholders = jobIds.map(() => '?').join(', ');
+  return db.prepare(`
+    SELECT
+      j.id, j.job_name, j.job_code, j.client_name, j.contract_amount, j.status, j.archived_at,
+      e.estimate_number AS source_estimate_number,
+      e.scope_of_work
+    FROM jobs j
+    LEFT JOIN estimates e ON e.id = j.source_estimate_id AND e.tenant_id = j.tenant_id
+    WHERE j.id IN (${placeholders}) AND j.tenant_id = ? AND j.archived_at IS NULL
+    ORDER BY j.id ASC
+  `).all(...jobIds, tenantId) as {
+    id: number;
+    job_name: string;
+    job_code: string | null;
+    client_name: string | null;
+    contract_amount: number;
+    status: string | null;
+    archived_at: string | null;
+    source_estimate_number: string | null;
+    scope_of_work: string | null;
+  }[];
+}
+
+export function listLinkedEstimates(db: DB, jobId: number, tenantId: number) {
+  return db.prepare(`
+    SELECT id, estimate_number, total, scope_of_work, signed_at, signer_name, status
+    FROM estimates
+    WHERE converted_job_id = ? AND tenant_id = ?
+    ORDER BY id ASC
+  `).all(jobId, tenantId) as {
+    id: number;
+    estimate_number: string;
+    total: number;
+    scope_of_work: string | null;
+    signed_at: string | null;
+    signer_name: string | null;
+    status: string;
+  }[];
+}
+
+export function mergeJobs(db: DB, primaryJobId: number, secondaryJobIds: number[], tenantId: number) {
+  const placeholders = secondaryJobIds.map(() => '?').join(', ');
+
+  const doMerge = db.transaction(() => {
+    // Sum contract amounts from all jobs
+    const allIds = [primaryJobId, ...secondaryJobIds];
+    const allPlaceholders = allIds.map(() => '?').join(', ');
+    const contractSum = (db.prepare(`
+      SELECT COALESCE(SUM(contract_amount), 0) AS total
+      FROM jobs WHERE id IN (${allPlaceholders}) AND tenant_id = ?
+    `).get(...allIds, tenantId) as { total: number }).total;
+
+    // Gather all linked estimate scopes
+    const estimateRows = db.prepare(`
+      SELECT estimate_number, scope_of_work
+      FROM estimates
+      WHERE converted_job_id IN (${allPlaceholders}) AND tenant_id = ?
+        AND scope_of_work IS NOT NULL AND scope_of_work != ''
+      ORDER BY id ASC
+    `).all(...allIds, tenantId) as { estimate_number: string; scope_of_work: string }[];
+
+    const combinedScope = estimateRows.length
+      ? estimateRows.map((e) => `[${e.estimate_number}]\n${e.scope_of_work}`).join('\n\n')
+      : null;
+
+    // Update primary job contract amount and scope
+    db.prepare(`
+      UPDATE jobs
+      SET contract_amount = ?,
+          job_description = CASE WHEN ? IS NOT NULL THEN ? ELSE job_description END
+      WHERE id = ? AND tenant_id = ?
+    `).run(contractSum, combinedScope, combinedScope, primaryJobId, tenantId);
+
+    // Reassign child records to primary job
+    db.prepare(`UPDATE time_entries SET job_id = ? WHERE job_id IN (${placeholders}) AND tenant_id = ?`)
+      .run(primaryJobId, ...secondaryJobIds, tenantId);
+    db.prepare(`UPDATE expenses SET job_id = ? WHERE job_id IN (${placeholders}) AND tenant_id = ?`)
+      .run(primaryJobId, ...secondaryJobIds, tenantId);
+    db.prepare(`UPDATE income SET job_id = ? WHERE job_id IN (${placeholders}) AND tenant_id = ?`)
+      .run(primaryJobId, ...secondaryJobIds, tenantId);
+    db.prepare(`UPDATE invoices SET job_id = ? WHERE job_id IN (${placeholders}) AND tenant_id = ?`)
+      .run(primaryJobId, ...secondaryJobIds, tenantId);
+    db.prepare(`UPDATE estimates SET converted_job_id = ? WHERE converted_job_id IN (${placeholders}) AND tenant_id = ?`)
+      .run(primaryJobId, ...secondaryJobIds, tenantId);
+
+    // Archive secondary jobs and mark where they were merged
+    db.prepare(`
+      UPDATE jobs
+      SET archived_at = datetime('now'),
+          merged_into_job_id = ?
+      WHERE id IN (${placeholders}) AND tenant_id = ?
+    `).run(primaryJobId, ...secondaryJobIds, tenantId);
+  });
+
+  doMerge();
+}
+
 export default {
   listWithFinancials,
   findWithFinancialsById,
@@ -341,4 +440,7 @@ export default {
   restore,
   remove,
   deleteWithCascade,
+  findManyByIds,
+  listLinkedEstimates,
+  mergeJobs,
 };
