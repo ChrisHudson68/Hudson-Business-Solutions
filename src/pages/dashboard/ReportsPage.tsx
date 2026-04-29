@@ -345,9 +345,17 @@ export const ReportsPage: FC<ReportsPageProps> = ({
           {/* ── Job Profitability Table ── */}
           <div class="card">
             <h3 style="margin-top:0; margin-bottom:4px;">Job Profitability</h3>
-            <p class="muted" style="font-size:13px; margin-bottom:14px;">
-              Revenue, costs, and profit per job for the selected period.
-            </p>
+            <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
+              <span class="muted" style="font-size:12px;">
+                <b>Income</b> = revenue entries recorded on the job
+              </span>
+              <span class="muted" style="font-size:12px;">
+                <b>Collected</b> = invoice payments received
+              </span>
+              <span class="muted" style="font-size:12px;">
+                <b>Profit</b> = Income − (Expenses + Labor)
+              </span>
+            </div>
             <div class="table-wrap" style="margin:0 -18px -16px;">
               <table>
                 <thead>
@@ -355,7 +363,8 @@ export const ReportsPage: FC<ReportsPageProps> = ({
                     <th>Job</th>
                     <th>Client</th>
                     <th>Status</th>
-                    <th class="right">Revenue</th>
+                    <th class="right">Income</th>
+                    <th class="right">Collected</th>
                     <th class="right">Expenses</th>
                     <th class="right">Labor</th>
                     <th class="right">Profit</th>
@@ -366,7 +375,7 @@ export const ReportsPage: FC<ReportsPageProps> = ({
                 <tbody>
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} class="muted">No jobs found for this period.</td>
+                      <td colSpan={10} class="muted">No jobs found for this period.</td>
                     </tr>
                   ) : rows.map((row) => (
                     <tr key={row.id}>
@@ -383,9 +392,10 @@ export const ReportsPage: FC<ReportsPageProps> = ({
                           <span class="badge">{row.status || '—'}</span>
                         )}
                       </td>
-                      <td class="right">{formatMoney(row.income)}</td>
-                      <td class="right">{formatMoney(row.expenses)}</td>
-                      <td class="right">{formatMoney(row.labor)}</td>
+                      <td class="right">{row.income > 0 ? formatMoney(row.income) : <span class="muted">—</span>}</td>
+                      <td class="right">{row.collected > 0 ? formatMoney(row.collected) : <span class="muted">—</span>}</td>
+                      <td class="right">{row.expenses > 0 ? formatMoney(row.expenses) : <span class="muted">—</span>}</td>
+                      <td class="right">{row.labor > 0 ? formatMoney(row.labor) : <span class="muted">—</span>}</td>
                       <td class="right" style={`font-weight:700; color:${profitColor(row.profit)};`}>
                         {formatMoney(row.profit)}
                       </td>
