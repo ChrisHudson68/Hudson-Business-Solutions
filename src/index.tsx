@@ -35,6 +35,7 @@ import { billingRoutes } from './routes/billing.js';
 import { estimateRoutes } from './routes/estimates.js';
 import { publicEstimateRoutes } from './routes/public-estimate.js';
 import { publicInvoiceRoutes } from './routes/public-invoice.js';
+import { websiteRequestRoutes } from './routes/website-request.js';
 import { stripeRoutes } from './routes/stripe.js';
 
 import { NotFoundPage } from './pages/errors/NotFoundPage.js';
@@ -102,6 +103,7 @@ app.route('/', mobileAuthRoutes);
 app.route('/', stripeRoutes);
 app.route('/', authRoutes);
 app.route('/', legalRoutes);
+app.route('/', websiteRequestRoutes);
 app.route('/', platformAdminRoutes);
 app.route('/', adminSupportRoutes);
 app.route('/', supportRoutes);

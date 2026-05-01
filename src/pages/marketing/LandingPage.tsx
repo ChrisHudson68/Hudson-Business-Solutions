@@ -382,6 +382,60 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
           font-size:14px;
         }
 
+        /* ── WEB DEV SERVICES ── */
+        .lp-webdev {
+          background: #FFFFFF;
+          border: 1px solid #E5EAF2;
+          border-radius: 22px;
+          padding: 40px 44px;
+          margin: 8px 0;
+          box-shadow: 0 4px 16px rgba(15,23,42,0.05);
+        }
+        .lp-webdev-inner {
+          display: grid;
+          grid-template-columns: 1fr minmax(0,320px);
+          gap: 48px;
+          align-items: center;
+        }
+        .lp-webdev-pills {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 20px;
+        }
+        .lp-webdev-pill {
+          padding: 5px 12px;
+          border-radius: 999px;
+          background: #F1F5F9;
+          border: 1px solid #E2E8F0;
+          color: #475569;
+          font-size: 12px;
+          font-weight: 700;
+        }
+        .lp-webdev-cta-box {
+          background: linear-gradient(135deg, #0F1F35 0%, #1E3A5F 100%);
+          border-radius: 18px;
+          padding: 28px 24px;
+          text-align: center;
+        }
+        .lp-webdev-cta-box h3 {
+          color: #FFFFFF;
+          font-size: 20px;
+          font-weight: 900;
+          margin: 0 0 8px;
+          letter-spacing: -0.02em;
+        }
+        .lp-webdev-cta-box p {
+          color: rgba(255,255,255,0.6);
+          font-size: 14px;
+          line-height: 1.65;
+          margin: 0 0 20px;
+        }
+        @media (max-width: 860px) {
+          .lp-webdev-inner { grid-template-columns: 1fr; gap: 28px; }
+          .lp-webdev { padding: 28px 22px; }
+        }
+
         /* ── BOTTOM CTA ── */
         .lp-cta {
           background:linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
@@ -650,6 +704,32 @@ export const LandingPage: FC<LandingPageProps> = ({ appName, appLogo }) => {
             <div class="lp-faq-item">
               <div class="lp-faq-q">How do I get support?</div>
               <div class="lp-faq-a">Support and billing workflows are available inside the platform. You can also reach us through the contact page before you sign up.</div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── WEB DEV SERVICES ── */}
+        <section class="lp-webdev">
+          <div class="lp-webdev-inner">
+            <div>
+              <div class="lp-section-tag">Also from Hudson Business Solutions</div>
+              <h2 class="lp-section-h2">Need a professional website?</h2>
+              <p class="lp-section-copy" style="margin-bottom:0;">
+                We build clean, fast, professional websites for small businesses — from simple landing pages to full-featured sites with galleries, booking, and payments. Same team, same standards.
+              </p>
+              <div class="lp-webdev-pills">
+                <span class="lp-webdev-pill">🏠 Business Sites</span>
+                <span class="lp-webdev-pill">🖼️ Photo Galleries</span>
+                <span class="lp-webdev-pill">📅 Booking Systems</span>
+                <span class="lp-webdev-pill">💳 Payments</span>
+                <span class="lp-webdev-pill">🔍 SEO Setup</span>
+                <span class="lp-webdev-pill">🎨 Logo Design</span>
+              </div>
+            </div>
+            <div class="lp-webdev-cta-box">
+              <h3>Get a Website Built</h3>
+              <p>Tell us about your project and we'll put together a custom estimate — no commitment required.</p>
+              <a href="/website-request" class="lp-btn-primary" style="width:100%;height:46px;font-size:15px;">Request a Website →</a>
             </div>
           </div>
         </section>

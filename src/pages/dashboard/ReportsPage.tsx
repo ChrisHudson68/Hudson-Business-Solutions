@@ -350,7 +350,7 @@ export const ReportsPage: FC<ReportsPageProps> = ({
                 <b>Income</b> = revenue entries recorded on the job
               </span>
               <span class="muted" style="font-size:12px;">
-                <b>Collected</b> = invoice payments received
+                <b>Collected</b> = all invoice payments received (all-time)
               </span>
               <span class="muted" style="font-size:12px;">
                 <b>Profit</b> = Income − (Expenses + Labor)

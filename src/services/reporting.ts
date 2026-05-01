@@ -422,6 +422,30 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     paidToDateMap.set(row.invoice_id, Number(row.total_paid || 0));
   }
 
+  // All-time collected per job (not date-filtered) — used for per-job table so users
+  // see total collected regardless of the current report period filter.
+  const allTimeCollectedRows = db.prepare(
+    `
+      SELECT i.job_id, COALESCE(SUM(p.amount), 0) AS total_collected
+      FROM payments p
+      JOIN invoices i
+        ON i.id = p.invoice_id
+       AND i.tenant_id = p.tenant_id
+      JOIN jobs j
+        ON j.id = i.job_id
+       AND j.tenant_id = i.tenant_id
+      WHERE p.tenant_id = ?
+        AND i.archived_at IS NULL
+        AND j.archived_at IS NULL
+      GROUP BY i.job_id
+    `
+  ).all(tenantId) as Array<{ job_id: number; total_collected: number }>;
+
+  const allTimeCollectedMap = new Map<number, number>();
+  for (const row of allTimeCollectedRows) {
+    allTimeCollectedMap.set(row.job_id, Number(row.total_collected || 0));
+  }
+
   const jobMap = new Map<number, ProfitabilityRow>();
   for (const job of allJobs) {
     jobMap.set(job.id, {
@@ -590,7 +614,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
 
       row.income = roundMoney(row.income);
       row.invoiced = roundMoney(row.invoiced);
-      row.collected = roundMoney(row.collected);
+      row.collected = roundMoney(allTimeCollectedMap.get(row.id) ?? 0);
       row.expenses = roundMoney(row.expenses);
       row.labor = roundMoney(row.labor);
       row.contract = roundMoney(row.contract);
