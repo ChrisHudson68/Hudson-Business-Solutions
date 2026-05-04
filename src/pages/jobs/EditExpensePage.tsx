@@ -1,5 +1,6 @@
 import type { FC } from 'hono/jsx';
 import type { ParsedReceipt } from '../../db/types.js';
+import { EXPENSE_CATEGORIES } from '../../config/expense-categories.js';
 
 interface EditExpensePageProps {
   expenseId: number;
@@ -185,16 +186,15 @@ export const EditExpensePage: FC<EditExpensePageProps> = ({
           <div class="row">
             <div>
               <label for="category">Category</label>
-              <input
-                type="text"
-                id="category"
-                name="category"
-                maxLength={120}
-                value={resolvedCategory}
-              />
+              <select id="category" name="category" required>
+                <option value="" disabled selected={!resolvedCategory}>Select a category</option>
+                {EXPENSE_CATEGORIES.map((cat) => (
+                  <option value={cat} selected={resolvedCategory === cat}>{cat}</option>
+                ))}
+              </select>
               {!formData.category && parsedReceipt?.suggestedCategory ? (
                 <div class="muted small" style="margin-top:6px;">
-                  Suggested from vendor/receipt pattern.
+                  OCR suggested: <b>{parsedReceipt.suggestedCategory}</b> — select the closest match above.
                 </div>
               ) : null}
             </div>

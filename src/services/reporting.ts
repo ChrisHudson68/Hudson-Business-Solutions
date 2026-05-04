@@ -16,7 +16,10 @@ export interface CashSummary {
   invoicedAmount: number;
   collectedPayments: number;
   recordedExpenses: number;
+  materialsCost: number;
   laborCost: number;
+  monthlyBillsCost: number;
+  fleetCost: number;
   cashOutflow: number;
   netCash: number;
   openReceivables: number;
@@ -396,6 +399,21 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     amount: number;
   }>;
 
+  const fleetRows = db.prepare(
+    `
+      SELECT fe.entry_date, COALESCE(fe.amount, 0) AS amount
+      FROM fleet_entries fe
+      WHERE fe.tenant_id = ?
+        AND fe.archived_at IS NULL
+        AND fe.entry_date >= ?
+        AND fe.entry_date <= ?
+      ORDER BY fe.entry_date ASC, fe.id ASC
+    `
+  ).all(tenantId, filter.startDate, filter.endDate) as Array<{
+    entry_date: string;
+    amount: number;
+  }>;
+
   const paidToDateRows = db.prepare(
     `
       SELECT p.invoice_id, COALESCE(SUM(p.amount), 0) AS total_paid
@@ -473,7 +491,10 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
 
   let recordedIncome = 0;
   let recordedExpenses = 0;
+  let materialsCost = 0;
+  let monthlyBillsCost = 0;
   let laborCost = 0;
+  let fleetCost = 0;
   let invoicedAmount = 0;
   let collectedPayments = 0;
 
@@ -519,9 +540,10 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     }
   }
 
-  for (const row of [...expenseRows, ...recurringBillRows]) {
+  for (const row of expenseRows) {
     const amount = Number(row.amount || 0);
     recordedExpenses += amount;
+    materialsCost += amount;
 
     const key = bucketKeyForRange(row.date, filter.range);
     const bucket = trendMap.get(key) || { inflow: 0, outflow: 0, invoiced: 0, collected: 0 };
@@ -534,6 +556,25 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
     if (row.job_id && jobMap.has(row.job_id)) {
       jobMap.get(row.job_id)!.expenses += amount;
     }
+  }
+
+  for (const row of recurringBillRows) {
+    const amount = Number(row.amount || 0);
+    recordedExpenses += amount;
+    monthlyBillsCost += amount;
+
+    const key = bucketKeyForRange(row.date, filter.range);
+    const bucket = trendMap.get(key) || { inflow: 0, outflow: 0, invoiced: 0, collected: 0 };
+    bucket.outflow += amount;
+    trendMap.set(key, bucket);
+
+    const category = String(row.category || 'Other').trim() || 'Other';
+    categoryMap.set(category, (categoryMap.get(category) || 0) + amount);
+  }
+
+  for (const row of fleetRows) {
+    const amount = Number(row.amount || 0);
+    fleetCost += amount;
   }
 
   for (const row of laborRows) {
@@ -633,7 +674,10 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       invoicedAmount: roundMoney(invoicedAmount),
       collectedPayments: roundMoney(collectedPayments),
       recordedExpenses: roundMoney(recordedExpenses),
+      materialsCost: roundMoney(materialsCost),
       laborCost: roundMoney(laborCost),
+      monthlyBillsCost: roundMoney(monthlyBillsCost),
+      fleetCost: roundMoney(fleetCost),
       cashOutflow: roundMoney(recordedExpenses + laborCost),
       netCash: roundMoney(collectedPayments - (recordedExpenses + laborCost)),
       openReceivables: roundMoney(aging.totalOpen),
@@ -672,8 +716,11 @@ export function buildReportsCsv(data: AdvancedReportsData): string {
   lines.push(`Recorded Income,${formatMoneyCsv(data.cash.recordedIncome)}`);
   lines.push(`Invoiced Amount,${formatMoneyCsv(data.cash.invoicedAmount)}`);
   lines.push(`Collected Payments,${formatMoneyCsv(data.cash.collectedPayments)}`);
-  lines.push(`Recorded Expenses,${formatMoneyCsv(data.cash.recordedExpenses)}`);
+  lines.push(`Materials Cost,${formatMoneyCsv(data.cash.materialsCost)}`);
   lines.push(`Labor Cost,${formatMoneyCsv(data.cash.laborCost)}`);
+  lines.push(`Monthly Bills,${formatMoneyCsv(data.cash.monthlyBillsCost)}`);
+  lines.push(`Fleet Expenses,${formatMoneyCsv(data.cash.fleetCost)}`);
+  lines.push(`Total Expenses,${formatMoneyCsv(data.cash.recordedExpenses)}`);
   lines.push(`Cash Outflow,${formatMoneyCsv(data.cash.cashOutflow)}`);
   lines.push(`Net Cash,${formatMoneyCsv(data.cash.netCash)}`);
   lines.push(`Open Receivables,${formatMoneyCsv(data.cash.openReceivables)}`);

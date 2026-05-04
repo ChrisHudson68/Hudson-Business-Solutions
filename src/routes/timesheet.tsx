@@ -178,10 +178,10 @@ function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 2
   );
 }
 
-function hourlyEquivalent(payType: string, hourlyRate: number | null, annualSalary: number | null): number {
-  if ((payType || '').toLowerCase() === 'hourly') {
-    return Number(hourlyRate || 0);
-  }
+function hourlyEquivalent(payType: string, hourlyRate: number | null, annualSalary: number | null, weeklySalary: number | null): number {
+  const pt = (payType || '').toLowerCase();
+  if (pt === 'hourly') return Number(hourlyRate || 0);
+  if (pt === 'weekly') return Number(weeklySalary || 0) / 40;
   return Number(annualSalary || 0) / 2080;
 }
 
@@ -401,7 +401,7 @@ function ensureJobExists(db: any, jobId: number, tenantId: number) {
 
 function getEmployeeCompensationSettings(db: any, employeeId: number, tenantId: number) {
   const employee = db.prepare(`
-    SELECT id, pay_type, hourly_rate, annual_salary, COALESCE(lunch_deduction_exempt, 0) AS lunch_deduction_exempt
+    SELECT id, pay_type, hourly_rate, annual_salary, COALESCE(weekly_salary, 0) AS weekly_salary, COALESCE(lunch_deduction_exempt, 0) AS lunch_deduction_exempt
     FROM employees
     WHERE id = ? AND tenant_id = ? AND active = 1
   `).get(employeeId, tenantId) as
@@ -410,6 +410,7 @@ function getEmployeeCompensationSettings(db: any, employeeId: number, tenantId: 
         pay_type: string;
         hourly_rate: number | null;
         annual_salary: number | null;
+        weekly_salary: number | null;
         lunch_deduction_exempt: number;
       }
     | undefined;
@@ -419,7 +420,7 @@ function getEmployeeCompensationSettings(db: any, employeeId: number, tenantId: 
   }
 
   return {
-    rate: hourlyEquivalent(employee.pay_type, employee.hourly_rate, employee.annual_salary),
+    rate: hourlyEquivalent(employee.pay_type, employee.hourly_rate, employee.annual_salary, employee.weekly_salary),
     lunchDeductionExempt: Number(employee.lunch_deduction_exempt || 0) === 1,
   };
 }

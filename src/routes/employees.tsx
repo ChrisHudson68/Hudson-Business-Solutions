@@ -26,7 +26,7 @@ function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 2
   );
 }
 
-const ALLOWED_PAY_TYPES = ['Hourly', 'Salary'] as const;
+const ALLOWED_PAY_TYPES = ['Hourly', 'Salary', 'Weekly'] as const;
 type PayType = (typeof ALLOWED_PAY_TYPES)[number];
 
 function parsePositiveInt(value: unknown): number | null {
@@ -88,6 +88,7 @@ function normalizeEmployeeInput(body: Record<string, unknown>) {
   const payType = parsePayType(body.pay_type);
   const hourlyRate = parseNonNegativeMoney(body.hourly_rate, 'Hourly rate');
   const annualSalary = parseNonNegativeMoney(body.annual_salary, 'Annual salary');
+  const weeklySalary = parseNonNegativeMoney(body.weekly_salary, 'Weekly salary');
   const lunchDeductionExempt = parseCheckboxFlag(body.lunch_deduction_exempt);
 
   if (payType === 'Hourly' && hourlyRate <= 0) {
@@ -98,11 +99,16 @@ function normalizeEmployeeInput(body: Record<string, unknown>) {
     throw new Error('Salaried employees must have an annual salary greater than 0.');
   }
 
+  if (payType === 'Weekly' && weeklySalary <= 0) {
+    throw new Error('Weekly salary employees must have a weekly salary greater than 0.');
+  }
+
   return {
     name: requireName(body.name),
     pay_type: payType,
     hourly_rate: payType === 'Hourly' ? hourlyRate : 0,
     annual_salary: payType === 'Salary' ? annualSalary : 0,
+    weekly_salary: payType === 'Weekly' ? weeklySalary : 0,
     lunch_deduction_exempt: lunchDeductionExempt,
   };
 }
@@ -113,6 +119,7 @@ function buildEmployeeFormData(source: Record<string, unknown>) {
     pay_type: String(source.pay_type ?? 'Hourly'),
     hourly_rate: String(source.hourly_rate ?? '0'),
     annual_salary: String(source.annual_salary ?? '0'),
+    weekly_salary: String(source.weekly_salary ?? '0'),
     active: String(source.active ?? '1'),
     lunch_deduction_exempt: parseCheckboxFlag(source.lunch_deduction_exempt),
   };
@@ -120,7 +127,8 @@ function buildEmployeeFormData(source: Record<string, unknown>) {
 
 function getEmployeeById(db: any, employeeId: number, tenantId: number) {
   return db.prepare(`
-    SELECT id, name, pay_type, hourly_rate, annual_salary, active, archived_at, archived_by_user_id,
+    SELECT id, name, pay_type, hourly_rate, annual_salary, COALESCE(weekly_salary, 0) AS weekly_salary,
+           active, archived_at, archived_by_user_id,
            COALESCE(lunch_deduction_exempt, 0) AS lunch_deduction_exempt
     FROM employees
     WHERE id = ? AND tenant_id = ?
@@ -131,6 +139,7 @@ function getEmployeeById(db: any, employeeId: number, tenantId: number) {
         pay_type: string;
         hourly_rate: number | null;
         annual_salary: number | null;
+        weekly_salary: number | null;
         active: number;
         archived_at: string | null;
         archived_by_user_id: number | null;
@@ -149,7 +158,8 @@ employeeRoutes.get('/employees', permissionRequired('employees.view'), (c) => {
 
   const db = getDb();
   const employees = db.prepare(`
-    SELECT id, name, pay_type, hourly_rate, annual_salary, active, archived_at,
+    SELECT id, name, pay_type, hourly_rate, annual_salary, COALESCE(weekly_salary, 0) AS weekly_salary,
+           active, archived_at,
            COALESCE(lunch_deduction_exempt, 0) AS lunch_deduction_exempt
     FROM employees
     WHERE tenant_id = ?
@@ -164,6 +174,7 @@ employeeRoutes.get('/employees', permissionRequired('employees.view'), (c) => {
     pay_type: string;
     hourly_rate: number | null;
     annual_salary: number | null;
+    weekly_salary: number | null;
     active: number;
     archived_at: string | null;
     lunch_deduction_exempt: number;
@@ -193,6 +204,7 @@ employeeRoutes.get('/add_employee', permissionRequired('employees.create'), (c) 
         pay_type: 'Hourly',
         hourly_rate: '0',
         annual_salary: '0',
+        weekly_salary: '0',
         lunch_deduction_exempt: 0,
       }}
       csrfToken={c.get('csrfToken')}
@@ -215,14 +227,15 @@ employeeRoutes.post('/add_employee', permissionRequired('employees.create'), asy
     const db = getDb();
     const result = db.prepare(`
       INSERT INTO employees (
-        name, pay_type, hourly_rate, annual_salary, active, tenant_id, archived_at, archived_by_user_id, lunch_deduction_exempt
+        name, pay_type, hourly_rate, annual_salary, weekly_salary, active, tenant_id, archived_at, archived_by_user_id, lunch_deduction_exempt
       )
-      VALUES (?, ?, ?, ?, 1, ?, NULL, NULL, ?)
+      VALUES (?, ?, ?, ?, ?, 1, ?, NULL, NULL, ?)
     `).run(
       normalized.name,
       normalized.pay_type,
       normalized.hourly_rate,
       normalized.annual_salary,
+      normalized.weekly_salary,
       tenantId,
       normalized.lunch_deduction_exempt,
     );
@@ -319,19 +332,21 @@ employeeRoutes.post('/edit_employee/:id', permissionRequired('employees.edit'), 
       pay_type: existingEmployee.pay_type,
       hourly_rate: Number(existingEmployee.hourly_rate || 0),
       annual_salary: Number(existingEmployee.annual_salary || 0),
+      weekly_salary: Number(existingEmployee.weekly_salary || 0),
       active: Number(existingEmployee.active || 0),
       lunch_deduction_exempt: Number(existingEmployee.lunch_deduction_exempt || 0),
     };
 
     db.prepare(`
       UPDATE employees
-      SET name = ?, pay_type = ?, hourly_rate = ?, annual_salary = ?, active = ?, lunch_deduction_exempt = ?
+      SET name = ?, pay_type = ?, hourly_rate = ?, annual_salary = ?, weekly_salary = ?, active = ?, lunch_deduction_exempt = ?
       WHERE id = ? AND tenant_id = ?
     `).run(
       normalized.name,
       normalized.pay_type,
       normalized.hourly_rate,
       normalized.annual_salary,
+      normalized.weekly_salary,
       active,
       normalized.lunch_deduction_exempt,
       employeeId,
@@ -343,6 +358,7 @@ employeeRoutes.post('/edit_employee/:id', permissionRequired('employees.edit'), 
       pay_type: normalized.pay_type,
       hourly_rate: normalized.hourly_rate,
       annual_salary: normalized.annual_salary,
+      weekly_salary: normalized.weekly_salary,
       active,
       lunch_deduction_exempt: normalized.lunch_deduction_exempt,
     };
@@ -399,6 +415,7 @@ employeeRoutes.post('/edit_employee/:id', permissionRequired('employees.edit'), 
           active: String(formData.active) === '1' ? 1 : 0,
           hourly_rate: Number(formData.hourly_rate || 0),
           annual_salary: Number(formData.annual_salary || 0),
+          weekly_salary: Number(formData.weekly_salary || 0),
           lunch_deduction_exempt: Number(formData.lunch_deduction_exempt || 0),
         }}
         error={message}

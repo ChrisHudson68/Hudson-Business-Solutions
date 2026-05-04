@@ -1,0 +1,1 @@
+ALTER TABLE employees ADD COLUMN weekly_salary REAL NOT NULL DEFAULT 0;

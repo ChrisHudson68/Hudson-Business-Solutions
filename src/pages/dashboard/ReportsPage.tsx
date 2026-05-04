@@ -3,7 +3,6 @@ import type {
   AdvancedReportsData,
   ReportFilter,
   ReportRange,
-  ProfitabilityRow,
 } from '../../services/reporting.js';
 
 interface ReportsPageProps extends AdvancedReportsData {}
@@ -46,80 +45,12 @@ function profitColor(value: number): string {
   return value >= 0 ? '#065F46' : '#991B1B';
 }
 
-function AgingBar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
-  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-  return (
-    <div style="display:grid; gap:4px;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span style="font-size:12px; color:#64748B; font-weight:600;">{label}</span>
-        <span style="font-size:13px; font-weight:700;">{formatMoney(value)}</span>
-      </div>
-      <div style="height:6px; background:#E5EAF2; border-radius:3px; overflow:hidden;">
-        <div style={`height:100%; width:${pct}%; background:${color}; border-radius:3px;`} />
-      </div>
-    </div>
-  );
-}
-
-function JobRankCard({ title, rows, valueLabel, valueKey, subKey, subLabel }: {
-  title: string;
-  rows: ProfitabilityRow[];
-  valueLabel: string;
-  valueKey: 'profit' | 'margin';
-  subKey: 'profit' | 'margin';
-  subLabel: string;
-}) {
-  return (
-    <div class="card">
-      <h3 style="margin-top:0; margin-bottom:12px;">{title}</h3>
-      {rows.length === 0 ? (
-        <div class="muted">No jobs found.</div>
-      ) : (
-        <div style="display:grid; gap:8px;">
-          {rows.map((row, i) => (
-            <div key={row.id} style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #F1F5F9;">
-              <div style="font-size:11px; font-weight:800; color:#94A3B8; width:18px; flex:0 0 auto;">{i + 1}</div>
-              <div style="flex:1; min-width:0;">
-                <div style="font-weight:700; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                  <a href={`/job/${row.id}`} style="color:inherit; text-decoration:none;">{row.job_name || `Job #${row.id}`}</a>
-                </div>
-                <div class="muted" style="font-size:11px;">{row.client || '—'}</div>
-              </div>
-              <div style="text-align:right; flex:0 0 auto;">
-                <div style={`font-weight:700; font-size:13px; color:${valueKey === 'profit' ? profitColor(row.profit) : '#1E3A5F'};`}>
-                  {valueKey === 'profit' ? formatMoney(row.profit) : formatPercent(row.margin)}
-                </div>
-                <div class="muted" style="font-size:11px;">
-                  {subKey === 'profit' ? formatMoney(row.profit) : formatPercent(row.margin)} {subLabel}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export const ReportsPage: FC<ReportsPageProps> = ({
   filter,
   cash,
   aging,
-  trend,
-  expenseCategories,
   rows,
-  topProfitJobs,
-  worstProfitJobs,
-  topMarginJobs,
-  worstMarginJobs,
 }) => {
-  const trendLabels = trend.map((p) => p.label);
-  const inflowSeries = trend.map((p) => p.inflow);
-  const outflowSeries = trend.map((p) => p.outflow);
-  const netSeries = trend.map((p) => p.net);
-  const expenseLabels = expenseCategories.map((i) => i.label);
-  const expenseValues = expenseCategories.map((i) => i.value);
-
   const revenue = Number(cash.recordedIncome || 0);
   const costs = Number(cash.cashOutflow || 0);
   const netProfit = revenue - costs;
@@ -127,20 +58,15 @@ export const ReportsPage: FC<ReportsPageProps> = ({
   const collected = Number(cash.collectedPayments || 0);
   const outstanding = Number(cash.openReceivables || 0);
   const invoiced = Number(cash.invoicedAmount || 0);
-  const agingTotal = Number(aging.totalOpen || 0);
+  const materialsCost = Number(cash.materialsCost || 0);
+  const laborCostVal = Number(cash.laborCost || 0);
+  const monthlyBillsCost = Number(cash.monthlyBillsCost || 0);
+  const fleetCost = Number(cash.fleetCost || 0);
 
   const csvHref = reportActionHref('/reports/export.csv', filter);
   const printHref = reportActionHref('/reports/print', filter);
 
-  const hasData =
-    rows.length > 0 ||
-    trend.length > 0 ||
-    expenseCategories.length > 0 ||
-    revenue > 0 ||
-    collected > 0 ||
-    costs > 0 ||
-    invoiced > 0 ||
-    aging.openCount > 0;
+  const hasData = rows.length > 0 || revenue > 0 || collected > 0 || costs > 0;
 
   return (
     <div>
@@ -157,12 +83,10 @@ export const ReportsPage: FC<ReportsPageProps> = ({
 
       {/* Date range filter */}
       <div class="card" style="margin-bottom:16px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <a class={activeRangeClass(filter.range, '1w')} href={rangeHref('1w', filter)}>This Week</a>
-            <a class={activeRangeClass(filter.range, '1m')} href={rangeHref('1m', filter)}>This Month</a>
-            <a class={activeRangeClass(filter.range, '1y')} href={rangeHref('1y', filter)}>This Year</a>
-          </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
+          <a class={activeRangeClass(filter.range, '1w')} href={rangeHref('1w', filter)}>This Week</a>
+          <a class={activeRangeClass(filter.range, '1m')} href={rangeHref('1m', filter)}>This Month</a>
+          <a class={activeRangeClass(filter.range, '1y')} href={rangeHref('1y', filter)}>This Year</a>
         </div>
         <form method="get" action="/reports">
           <input type="hidden" name="range" value="custom" />
@@ -208,7 +132,7 @@ export const ReportsPage: FC<ReportsPageProps> = ({
             <div class="stat-card">
               <div class="stat-label">Total Costs</div>
               <div class="stat-value">{formatMoney(costs)}</div>
-              <div class="stat-sub">{formatMoney(cash.recordedExpenses)} expenses · {formatMoney(cash.laborCost)} labor</div>
+              <div class="stat-sub">expenses + labor</div>
             </div>
             <div class="stat-card stat-card-navy">
               <div class="stat-label">Net Profit</div>
@@ -218,144 +142,75 @@ export const ReportsPage: FC<ReportsPageProps> = ({
             <div class="stat-card stat-card-accent">
               <div class="stat-label">Cash Collected</div>
               <div class="stat-value">{formatMoney(collected)}</div>
-              <div class="stat-sub">{formatMoney(outstanding)} still outstanding</div>
+              <div class="stat-sub">{formatMoney(outstanding)} outstanding</div>
             </div>
           </div>
 
-          {/* ── Invoice Position ── */}
+          {/* ── Cost Breakdown ── */}
           <div class="card" style="margin-bottom:14px;">
-            <h3 style="margin-top:0; margin-bottom:16px;">Invoice Position</h3>
-            <div class="grid" style="grid-template-columns:1fr 1fr; gap:24px; margin-bottom:16px;">
-              <div style="display:grid; gap:6px;">
-                <div style="display:flex; justify-content:space-between; font-size:13px;">
-                  <span class="muted">Total Invoiced</span>
-                  <span style="font-weight:700;">{formatMoney(invoiced)}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:13px;">
-                  <span class="muted">Collected</span>
-                  <span style="font-weight:700; color:#065F46;">{formatMoney(collected)}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:13px; padding-top:6px; border-top:1px solid #E5EAF2;">
-                  <span class="muted">Outstanding</span>
-                  <span style="font-weight:700; color:#92400E;">{formatMoney(outstanding)}</span>
-                </div>
+            <h3 style="margin-top:0; margin-bottom:16px;">Cost Breakdown</h3>
+            <div class="stat-grid stat-grid-4">
+              <div class="stat-card">
+                <div class="stat-label">Materials</div>
+                <div class="stat-value">{formatMoney(materialsCost)}</div>
+                <div class="stat-sub">job expenses</div>
               </div>
-              <div style="display:grid; gap:6px;">
-                <div style="display:flex; justify-content:space-between; font-size:13px;">
-                  <span class="muted">Open Invoices</span>
-                  <span style="font-weight:700;">{aging.openCount}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:13px;">
-                  <span class="muted">Overdue</span>
-                  <span style="font-weight:700; color:#991B1B;">{formatMoney(aging.overdueTotal)}</span>
-                </div>
+              <div class="stat-card">
+                <div class="stat-label">Labor</div>
+                <div class="stat-value">{formatMoney(laborCostVal)}</div>
+                <div class="stat-sub">time entries</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Monthly Bills</div>
+                <div class="stat-value">{formatMoney(monthlyBillsCost)}</div>
+                <div class="stat-sub">recurring bills</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Fleet</div>
+                <div class="stat-value">{formatMoney(fleetCost)}</div>
+                <div class="stat-sub">fuel &amp; maintenance</div>
               </div>
             </div>
-
-            {agingTotal > 0 ? (
-              <div style="display:grid; gap:10px; padding-top:14px; border-top:1px solid #E5EAF2;">
-                <div style="font-size:12px; font-weight:700; color:#64748B; text-transform:uppercase; letter-spacing:.06em;">
-                  Aging Breakdown — {formatMoney(agingTotal)} total open
-                </div>
-                <AgingBar label="Current (not yet due)" value={aging.current} total={agingTotal} color="#10B981" />
-                <AgingBar label="1–30 days overdue" value={aging.days1to30} total={agingTotal} color="#F59E0B" />
-                <AgingBar label="31–60 days overdue" value={aging.days31to60} total={agingTotal} color="#F97316" />
-                <AgingBar label="61–90 days overdue" value={aging.days61to90} total={agingTotal} color="#EF4444" />
-                <AgingBar label="90+ days overdue" value={aging.days90Plus} total={agingTotal} color="#991B1B" />
-              </div>
-            ) : null}
           </div>
 
-          {/* ── Charts ── */}
-          <div class="grid grid-2" style="margin-bottom:14px;">
-            <div class="card">
-              <h3 style="margin-top:0;">Income vs. Costs Over Time</h3>
-              <p class="muted" style="font-size:13px; margin-bottom:14px;">
-                Revenue collected and total costs by period, with net profit line.
-              </p>
-              <canvas id="trendChart"></canvas>
-            </div>
-            <div class="card">
-              <h3 style="margin-top:0;">Expense Breakdown</h3>
-              <p class="muted" style="font-size:13px; margin-bottom:14px;">
-                Where your costs are going this period.
-              </p>
-              {expenseCategories.length > 0 ? (
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:center;">
-                  <canvas id="expenseChart"></canvas>
-                  <div style="display:grid; gap:6px;">
-                    {expenseCategories.map((item, i) => {
-                      const colors = ['#1E3A5F','#F59E0B','#3B82F6','#10B981','#EF4444','#8B5CF6','#F97316','#14B8A6'];
-                      return (
-                        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px;">
-                          <div style="display:flex; align-items:center; gap:6px;">
-                            <div style={`width:10px; height:10px; border-radius:2px; background:${colors[i % colors.length]}; flex:0 0 auto;`} />
-                            <span class="muted">{item.label}</span>
-                          </div>
-                          <span style="font-weight:700;">{formatMoney(item.value)}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+          {/* ── Outstanding Invoices ── */}
+          {(outstanding > 0 || aging.openCount > 0) ? (
+            <div class="card" style="margin-bottom:14px;">
+              <h3 style="margin-top:0; margin-bottom:14px;">Outstanding Invoices</h3>
+              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
+                <div>
+                  <div class="muted" style="font-size:12px; margin-bottom:4px;">Total Invoiced</div>
+                  <div style="font-size:20px; font-weight:800;">{formatMoney(invoiced)}</div>
+                </div>
+                <div>
+                  <div class="muted" style="font-size:12px; margin-bottom:4px;">Collected</div>
+                  <div style="font-size:20px; font-weight:800; color:#065F46;">{formatMoney(collected)}</div>
+                </div>
+                <div>
+                  <div class="muted" style="font-size:12px; margin-bottom:4px;">Still Owed</div>
+                  <div style="font-size:20px; font-weight:800; color:#92400E;">{formatMoney(outstanding)}</div>
+                </div>
+              </div>
+              {aging.overdueTotal > 0 ? (
+                <div style="margin-top:14px; padding-top:14px; border-top:1px solid #E5EAF2; display:flex; align-items:center; gap:10px;">
+                  <span style="background:#FEF2F2; border:1px solid #FECACA; color:#991B1B; font-weight:700; font-size:13px; padding:4px 10px; border-radius:6px;">
+                    {formatMoney(aging.overdueTotal)} overdue
+                  </span>
+                  <span class="muted" style="font-size:13px;">{aging.openCount} open invoice{aging.openCount !== 1 ? 's' : ''}</span>
+                  <a href="/invoices" style="margin-left:auto; font-size:13px; font-weight:600; color:var(--navy);">View Invoices →</a>
                 </div>
               ) : (
-                <div class="muted">No expense data for this period.</div>
+                <div style="margin-top:14px; padding-top:14px; border-top:1px solid #E5EAF2;">
+                  <span class="muted" style="font-size:13px;">{aging.openCount} open invoice{aging.openCount !== 1 ? 's' : ''} · none overdue</span>
+                  <a href="/invoices" style="margin-left:16px; font-size:13px; font-weight:600; color:var(--navy);">View Invoices →</a>
+                </div>
               )}
             </div>
-          </div>
-
-          {/* ── Job Rankings ── */}
-          <div class="grid grid-2" style="margin-bottom:14px;">
-            <JobRankCard
-              title="Top Profit Jobs"
-              rows={topProfitJobs}
-              valueLabel="Profit"
-              valueKey="profit"
-              subKey="margin"
-              subLabel="margin"
-            />
-            <JobRankCard
-              title="Top Margin Jobs"
-              rows={topMarginJobs}
-              valueLabel="Margin"
-              valueKey="margin"
-              subKey="profit"
-              subLabel="profit"
-            />
-          </div>
-          <div class="grid grid-2" style="margin-bottom:14px;">
-            <JobRankCard
-              title="Lowest Profit Jobs"
-              rows={worstProfitJobs}
-              valueLabel="Profit"
-              valueKey="profit"
-              subKey="margin"
-              subLabel="margin"
-            />
-            <JobRankCard
-              title="Lowest Margin Jobs"
-              rows={worstMarginJobs}
-              valueLabel="Margin"
-              valueKey="margin"
-              subKey="profit"
-              subLabel="profit"
-            />
-          </div>
+          ) : null}
 
           {/* ── Job Profitability Table ── */}
           <div class="card">
-            <h3 style="margin-top:0; margin-bottom:4px;">Job Profitability</h3>
-            <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:14px;">
-              <span class="muted" style="font-size:12px;">
-                <b>Income</b> = revenue entries recorded on the job
-              </span>
-              <span class="muted" style="font-size:12px;">
-                <b>Collected</b> = all invoice payments received (all-time)
-              </span>
-              <span class="muted" style="font-size:12px;">
-                <b>Profit</b> = Income − (Expenses + Labor)
-              </span>
-            </div>
+            <h3 style="margin-top:0; margin-bottom:14px;">Job Breakdown</h3>
             <div class="table-wrap" style="margin:0 -18px -16px;">
               <table>
                 <thead>
@@ -363,19 +218,18 @@ export const ReportsPage: FC<ReportsPageProps> = ({
                     <th>Job</th>
                     <th>Client</th>
                     <th>Status</th>
-                    <th class="right">Income</th>
-                    <th class="right">Collected</th>
+                    <th class="right">Revenue</th>
                     <th class="right">Expenses</th>
                     <th class="right">Labor</th>
                     <th class="right">Profit</th>
                     <th class="right">Margin</th>
-                    <th class="right">Outstanding</th>
+                    <th class="right">Owed</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={10} class="muted">No jobs found for this period.</td>
+                      <td colSpan={9} class="muted">No jobs found for this period.</td>
                     </tr>
                   ) : rows.map((row) => (
                     <tr key={row.id}>
@@ -393,7 +247,6 @@ export const ReportsPage: FC<ReportsPageProps> = ({
                         )}
                       </td>
                       <td class="right">{row.income > 0 ? formatMoney(row.income) : <span class="muted">—</span>}</td>
-                      <td class="right">{row.collected > 0 ? formatMoney(row.collected) : <span class="muted">—</span>}</td>
                       <td class="right">{row.expenses > 0 ? formatMoney(row.expenses) : <span class="muted">—</span>}</td>
                       <td class="right">{row.labor > 0 ? formatMoney(row.labor) : <span class="muted">—</span>}</td>
                       <td class="right" style={`font-weight:700; color:${profitColor(row.profit)};`}>
@@ -413,50 +266,6 @@ export const ReportsPage: FC<ReportsPageProps> = ({
               </table>
             </div>
           </div>
-
-          <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-          <script dangerouslySetInnerHTML={{ __html: `
-            (() => {
-              const labels = ${JSON.stringify(trendLabels)};
-              const inflow = ${JSON.stringify(inflowSeries)};
-              const outflow = ${JSON.stringify(outflowSeries)};
-              const net = ${JSON.stringify(netSeries)};
-              const expLabels = ${JSON.stringify(expenseLabels)};
-              const expValues = ${JSON.stringify(expenseValues)};
-              const colors = ['#1E3A5F','#F59E0B','#3B82F6','#10B981','#EF4444','#8B5CF6','#F97316','#14B8A6'];
-
-              const trendCanvas = document.getElementById('trendChart');
-              if (trendCanvas && labels.length > 0) {
-                new Chart(trendCanvas, {
-                  data: {
-                    labels,
-                    datasets: [
-                      { type: 'bar', label: 'Revenue', data: inflow, backgroundColor: 'rgba(16,185,129,0.7)' },
-                      { type: 'bar', label: 'Costs', data: outflow, backgroundColor: 'rgba(239,68,68,0.7)' },
-                      { type: 'line', label: 'Net Profit', data: net, borderColor: '#1E3A5F', backgroundColor: '#1E3A5F', tension: 0.3, pointRadius: 3 }
-                    ]
-                  },
-                  options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: { legend: { position: 'bottom' } },
-                    scales: { y: { beginAtZero: true, ticks: { callback: v => '$' + Number(v).toLocaleString() } } }
-                  }
-                });
-              } else if (trendCanvas) {
-                trendCanvas.replaceWith(Object.assign(document.createElement('div'), { className: 'muted', textContent: 'No trend data for this period.' }));
-              }
-
-              const expCanvas = document.getElementById('expenseChart');
-              if (expCanvas && expLabels.length > 0) {
-                new Chart(expCanvas, {
-                  type: 'doughnut',
-                  data: { labels: expLabels, datasets: [{ data: expValues, backgroundColor: colors, borderWidth: 2 }] },
-                  options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } } }
-                });
-              }
-            })();
-          ` }} />
         </>
       )}
     </div>

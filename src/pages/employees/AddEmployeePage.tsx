@@ -8,6 +8,7 @@ interface AddEmployeePageProps {
     pay_type?: string;
     hourly_rate?: string;
     annual_salary?: string;
+    weekly_salary?: string;
     lunch_deduction_exempt?: number;
   };
 }
@@ -28,11 +29,13 @@ export const AddEmployeePage: FC<AddEmployeePageProps> = ({
     pay_type: formData?.pay_type ?? 'Hourly',
     hourly_rate: formData?.hourly_rate ?? '0',
     annual_salary: formData?.annual_salary ?? '0',
+    weekly_salary: formData?.weekly_salary ?? '0',
     lunch_deduction_exempt: Number(formData?.lunch_deduction_exempt ?? 0),
   };
 
   const isHourly = values.pay_type === 'Hourly';
   const isSalary = values.pay_type === 'Salary';
+  const isWeekly = values.pay_type === 'Weekly';
 
   return (
     <div>
@@ -62,7 +65,8 @@ export const AddEmployeePage: FC<AddEmployeePageProps> = ({
           <label>Pay Type</label>
           <select name="pay_type">
             <option value="Hourly" selected={isHourly}>Hourly</option>
-            <option value="Salary" selected={isSalary}>Salary</option>
+            <option value="Salary" selected={isSalary}>Salary (Annual)</option>
+            <option value="Weekly" selected={isWeekly}>Salary (Weekly)</option>
           </select>
 
           <div class="muted" style="margin-top:8px;">
@@ -89,15 +93,29 @@ export const AddEmployeePage: FC<AddEmployeePageProps> = ({
             <div class="card" style={`margin:0; box-shadow:none; ${selectedCardStyle(isSalary)}`}>
               <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
                 <div>
-                  <h3 style="margin:0 0 6px 0;">Salary</h3>
+                  <h3 style="margin:0 0 6px 0;">Salary (Annual)</h3>
                   <p class="muted" style="margin:0;">
                     Best for office or management staff with annual salary.
                   </p>
                 </div>
                 <span class={isSalary ? 'badge badge-good' : 'badge'}>Selected</span>
               </div>
-              <div class="muted" style="margin-top:12px;">• Converts annual salary to hourly equivalent</div>
+              <div class="muted" style="margin-top:12px;">• Divides annual salary by 2,080 hours/year</div>
               <div class="muted" style="margin-top:8px;">• Keeps labor reports consistent across the app</div>
+            </div>
+
+            <div class="card" style={`margin:0; box-shadow:none; ${selectedCardStyle(isWeekly)}`}>
+              <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                <div>
+                  <h3 style="margin:0 0 6px 0;">Salary (Weekly)</h3>
+                  <p class="muted" style="margin:0;">
+                    For employees paid a fixed weekly salary.
+                  </p>
+                </div>
+                <span class={isWeekly ? 'badge badge-good' : 'badge'}>Selected</span>
+              </div>
+              <div class="muted" style="margin-top:12px;">• Divides weekly salary by 40 hours/week</div>
+              <div class="muted" style="margin-top:8px;">• Labor cost flows into reports automatically</div>
             </div>
           </div>
 
@@ -113,7 +131,14 @@ export const AddEmployeePage: FC<AddEmployeePageProps> = ({
               <label>Annual Salary</label>
               <input name="annual_salary" type="number" step="0.01" min="0" value={values.annual_salary} />
               <div class="muted" style="margin-top:8px;">
-                Use for Salary employees.
+                Use for Salary (Annual) employees.
+              </div>
+            </div>
+            <div>
+              <label>Weekly Salary</label>
+              <input name="weekly_salary" type="number" step="0.01" min="0" value={values.weekly_salary} />
+              <div class="muted" style="margin-top:8px;">
+                Use for Salary (Weekly) employees.
               </div>
             </div>
           </div>

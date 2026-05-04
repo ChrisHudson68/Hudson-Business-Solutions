@@ -26,6 +26,7 @@ import { AddExpensePage } from '../pages/jobs/AddExpensePage.js';
 import { EditExpensePage } from '../pages/jobs/EditExpensePage.js';
 import { getEnv } from '../config/env.js';
 import { hasUsefulReceiptSuggestions, runReceiptOcr, type ParsedReceipt } from '../services/receipt-ocr.js';
+import { EXPENSE_CATEGORIES, isValidExpenseCategory } from '../config/expense-categories.js';
 
 const receiptRootDir = path.join(getEnv().uploadDir, 'receipts');
 
@@ -496,7 +497,11 @@ jobFinancialRoutes.post('/add_expense/:id', roleRequired('Admin', 'Manager'), as
       );
     }
 
-    const category = requireText(body.category, 'Category', 120);
+    const rawCategory = String(body.category ?? '').trim();
+    if (!isValidExpenseCategory(rawCategory)) {
+      throw new Error(`Please select a valid category. Valid options: ${EXPENSE_CATEGORIES.join(', ')}.`);
+    }
+    const category = rawCategory;
     const vendor = optionalText(body.vendor, 'Vendor', 120);
     const amount = parsePositiveMoney(body.amount, 'Amount');
     const date = requireDate(body.date, 'Date');
@@ -706,7 +711,11 @@ jobFinancialRoutes.post('/edit_expense/:id', roleRequired('Admin', 'Manager'), a
       );
     }
 
-    const category = requireText(body.category, 'Category', 120);
+    const rawCategory = String(body.category ?? '').trim();
+    if (!isValidExpenseCategory(rawCategory)) {
+      throw new Error(`Please select a valid category. Valid options: ${EXPENSE_CATEGORIES.join(', ')}.`);
+    }
+    const category = rawCategory;
     const vendor = optionalText(body.vendor, 'Vendor', 120);
     const amount = parsePositiveMoney(body.amount, 'Amount');
     const date = requireDate(body.date, 'Date');
