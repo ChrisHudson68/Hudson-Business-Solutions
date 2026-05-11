@@ -7,7 +7,7 @@ export function listByTenant(db: DB, tenantId: number, includeArchived = false) 
            i.invoice_number, i.date_issued, i.due_date, i.amount, i.status,
            i.notes, i.attachment_filename, i.archived_at, i.archived_by_user_id
     FROM invoices i
-    JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+    LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
     WHERE i.tenant_id = ?
       ${includeArchived ? '' : 'AND i.archived_at IS NULL'}
     ORDER BY i.due_date DESC, i.id DESC
@@ -25,7 +25,7 @@ export function listArchivedByTenant(db: DB, tenantId: number) {
            i.invoice_number, i.date_issued, i.due_date, i.amount, i.status,
            i.notes, i.attachment_filename, i.archived_at, i.archived_by_user_id
     FROM invoices i
-    JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+    LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
     WHERE i.tenant_id = ?
       AND i.archived_at IS NOT NULL
     ORDER BY i.archived_at DESC, i.id DESC
@@ -45,7 +45,7 @@ export function findById(db: DB, invoiceId: number, tenantId: number) {
            i.public_token, i.sent_for_signature_at,
            i.signature_data, i.signer_name, i.signature_ip, i.signed_at
     FROM invoices i
-    JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+    LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
     WHERE i.id = ? AND i.tenant_id = ?
   `).get(invoiceId, tenantId) as (InvoiceWithJob & {
     notes: string | null;
@@ -68,7 +68,7 @@ export function findByPublicToken(db: DB, token: string) {
            i.status, i.public_token, i.sent_for_signature_at,
            i.signature_data, i.signer_name, i.signed_at, i.archived_at
     FROM invoices i
-    JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+    LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
     WHERE i.public_token = ?
   `).get(token) as ({
     id: number;
@@ -120,7 +120,7 @@ export function findSimpleById(db: DB, invoiceId: number, tenantId: number) {
 }
 
 export function create(db: DB, tenantId: number, data: {
-  job_id: number;
+  job_id: number | null;
   invoice_number: string;
   date_issued: string;
   due_date: string;

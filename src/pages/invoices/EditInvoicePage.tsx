@@ -201,9 +201,9 @@ export const EditInvoicePage: FC<EditInvoicePageProps> = ({ invoice, jobs, csrfT
               <h3 style="margin-top:0;">Invoice Information</h3>
               <div class="grid" style="grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">
                 <div>
-                  <label for="job_id">Job</label>
-                  <select id="job_id" name="job_id" required>
-                    <option value="">Select a job</option>
+                  <label for="job_id">Job <span style="font-weight:400; color:var(--text-muted); font-size:12px;">(optional)</span></label>
+                  <select id="job_id" name="job_id">
+                    <option value="">No job — standalone invoice</option>
                     {jobs.map((job) => (
                       <option value={String(job.id)} selected={selectedJobId === String(job.id)}>
                         {job.job_name}{job.client_name ? ` — ${job.client_name}` : ''}

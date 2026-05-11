@@ -17,6 +17,7 @@ export interface CashSummary {
   collectedPayments: number;
   recordedExpenses: number;
   materialsCost: number;
+  subcontractorCost: number;
   laborCost: number;
   monthlyBillsCost: number;
   fleetCost: number;
@@ -492,6 +493,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
   let recordedIncome = 0;
   let recordedExpenses = 0;
   let materialsCost = 0;
+  let subcontractorCost = 0;
   let monthlyBillsCost = 0;
   let laborCost = 0;
   let fleetCost = 0;
@@ -543,7 +545,11 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
   for (const row of expenseRows) {
     const amount = Number(row.amount || 0);
     recordedExpenses += amount;
-    materialsCost += amount;
+    if ((row.category || '').trim().toLowerCase() === 'subcontractor') {
+      subcontractorCost += amount;
+    } else {
+      materialsCost += amount;
+    }
 
     const key = bucketKeyForRange(row.date, filter.range);
     const bucket = trendMap.get(key) || { inflow: 0, outflow: 0, invoiced: 0, collected: 0 };
@@ -675,6 +681,7 @@ export function buildAdvancedReports(db: DB, tenantId: number, filter: ReportFil
       collectedPayments: roundMoney(collectedPayments),
       recordedExpenses: roundMoney(recordedExpenses),
       materialsCost: roundMoney(materialsCost),
+      subcontractorCost: roundMoney(subcontractorCost),
       laborCost: roundMoney(laborCost),
       monthlyBillsCost: roundMoney(monthlyBillsCost),
       fleetCost: roundMoney(fleetCost),
@@ -717,6 +724,7 @@ export function buildReportsCsv(data: AdvancedReportsData): string {
   lines.push(`Invoiced Amount,${formatMoneyCsv(data.cash.invoicedAmount)}`);
   lines.push(`Collected Payments,${formatMoneyCsv(data.cash.collectedPayments)}`);
   lines.push(`Materials Cost,${formatMoneyCsv(data.cash.materialsCost)}`);
+  lines.push(`Subcontractor Cost,${formatMoneyCsv(data.cash.subcontractorCost)}`);
   lines.push(`Labor Cost,${formatMoneyCsv(data.cash.laborCost)}`);
   lines.push(`Monthly Bills,${formatMoneyCsv(data.cash.monthlyBillsCost)}`);
   lines.push(`Fleet Expenses,${formatMoneyCsv(data.cash.fleetCost)}`);

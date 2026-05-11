@@ -329,7 +329,7 @@ export function buildLegacyLineItem(amount: number): InvoiceLineItemRecord[] {
 export function applyInvoiceDraftUpdate(db: Database.Database, args: {
   tenantId: number;
   invoiceId: number;
-  jobId: number;
+  jobId: number | null;
   invoiceNumber: string;
   issueDate: string;
   dueDate: string;

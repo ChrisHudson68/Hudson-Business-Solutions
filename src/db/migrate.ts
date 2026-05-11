@@ -129,7 +129,10 @@ function isMigrationAlreadySatisfied(db: Database.Database, filename: string): b
 }
 
 function shouldRunWithoutWrapperTransaction(filename: string): boolean {
-  return filename === '007_make_timeclock_job_optional.sql';
+  return (
+    filename === '007_make_timeclock_job_optional.sql' ||
+    filename === '046_make_invoice_job_optional.sql'
+  );
 }
 
 function runMigration(db: Database.Database, filename: string, sql: string): void {

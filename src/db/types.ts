@@ -226,7 +226,7 @@ export interface TimeEntry {
 
 export interface Invoice {
   id: number;
-  job_id: number;
+  job_id: number | null;
   invoice_number: string | null;
   date_issued: string;
   due_date: string;

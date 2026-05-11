@@ -455,7 +455,8 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
   let attachmentFilename: string | null = null;
 
   try {
-    const jobId = parsePositiveInt(body['job_id'], 'Job');
+    const rawJobId = String(body['job_id'] ?? '').trim();
+    const jobId: number | null = rawJobId ? parsePositiveInt(rawJobId, 'Job') : null;
 
     const rawInvoiceNumber = String(body['invoice_number'] ?? '').trim();
     const invoiceNumber = normalizeInvoiceNumber(
@@ -468,21 +469,22 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
 
     ensureDateOrder(draft.issueDate, draft.dueDate, 'Issue date', 'Due date');
 
-    const job = db
-      .prepare(
-        `
-          SELECT id, job_name, client_name, job_code
-          FROM jobs
-          WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
-          LIMIT 1
-        `,
-      )
-      .get(jobId, tenantId) as
-      | { id: number; job_name: string; client_name: string | null; job_code: string | null }
-      | undefined;
+    let job: { id: number; job_name: string; client_name: string | null; job_code: string | null } | undefined;
+    if (jobId !== null) {
+      job = db
+        .prepare(
+          `
+            SELECT id, job_name, client_name, job_code
+            FROM jobs
+            WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+            LIMIT 1
+          `,
+        )
+        .get(jobId, tenantId) as typeof job;
 
-    if (!job) {
-      throw new ValidationError('Selected job was not found for this company.');
+      if (!job) {
+        throw new ValidationError('Selected job was not found for this company.');
+      }
     }
 
     const existingInvoice = db
@@ -561,8 +563,8 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
       companyAddress: tenantSettings.company_address,
       companyWebsite: tenantSettings.company_website ?? null,
       companyLogoPath: tenantSettings.logo_path,
-      jobName: job.job_name,
-      jobCode: job.job_code ?? null,
+      jobName: job?.job_name ?? null,
+      jobCode: job?.job_code ?? null,
       termsText: draft.termsText,
       publicNotes: draft.publicNotes,
       internalNotes: draft.internalNotes,
@@ -581,8 +583,8 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
       description: `${currentUser.name} created draft invoice ${invoiceNumber}.`,
       metadata: {
         invoice_number: invoiceNumber,
-        job_id: job.id,
-        job_name: job.job_name,
+        job_id: job?.id ?? null,
+        job_name: job?.job_name ?? null,
         customer_name: draft.customerName,
         subtotal_amount: draft.totals.subtotal,
         discount_type: draft.totals.discountType,
@@ -607,8 +609,8 @@ invoiceRoutes.post('/add_invoice', permissionRequired('invoices.create'), async 
         description: `${currentUser.name} uploaded an attachment for invoice ${invoiceNumber}.`,
         metadata: {
           invoice_number: invoiceNumber,
-          job_id: job.id,
-          job_name: job.job_name,
+          job_id: job?.id ?? null,
+          job_name: job?.job_name ?? null,
           total_amount: draft.totals.total,
           attachment_filename: attachmentFilename,
         },
@@ -872,7 +874,9 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
   let oldAttachmentToDelete: string | null = null;
 
   try {
-    const jobId = parsePositiveInt(body['job_id'], 'Job');
+    const rawJobId = String(body['job_id'] ?? '').trim();
+    const jobId: number | null = rawJobId ? parsePositiveInt(rawJobId, 'Job') : null;
+
     const rawInvoiceNumber = String(body['invoice_number'] ?? '').trim();
     const invoiceNumber = normalizeInvoiceNumber(
       rawInvoiceNumber || String(existingInvoice.invoice_number ?? ''),
@@ -883,21 +887,22 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
     const draft = parseInvoiceDraftFields(body, lineItems);
     ensureDateOrder(draft.issueDate, draft.dueDate, 'Issue date', 'Due date');
 
-    const job = db
-      .prepare(
-        `
-          SELECT id, job_name, client_name, job_code
-          FROM jobs
-          WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
-          LIMIT 1
-        `,
-      )
-      .get(jobId, tenantId) as
-      | { id: number; job_name: string; client_name: string | null; job_code: string | null }
-      | undefined;
+    let job: { id: number; job_name: string; client_name: string | null; job_code: string | null } | undefined;
+    if (jobId !== null) {
+      job = db
+        .prepare(
+          `
+            SELECT id, job_name, client_name, job_code
+            FROM jobs
+            WHERE id = ? AND tenant_id = ? AND archived_at IS NULL
+            LIMIT 1
+          `,
+        )
+        .get(jobId, tenantId) as typeof job;
 
-    if (!job) {
-      throw new ValidationError('Selected job was not found for this company.');
+      if (!job) {
+        throw new ValidationError('Selected job was not found for this company.');
+      }
     }
 
     const duplicate = db.prepare(
@@ -951,8 +956,8 @@ invoiceRoutes.post('/edit_invoice/:id', permissionRequired('invoices.edit'), asy
       companyAddress: tenantSettings.company_address,
       companyWebsite: tenantSettings.company_website ?? null,
       companyLogoPath: tenantSettings.logo_path,
-      jobName: job.job_name,
-      jobCode: job.job_code ?? null,
+      jobName: job?.job_name ?? null,
+      jobCode: job?.job_code ?? null,
       termsText: draft.termsText,
       publicNotes: draft.publicNotes,
       internalNotes: draft.internalNotes,

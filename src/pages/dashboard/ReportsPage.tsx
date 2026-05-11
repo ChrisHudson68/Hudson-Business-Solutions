@@ -59,6 +59,7 @@ export const ReportsPage: FC<ReportsPageProps> = ({
   const outstanding = Number(cash.openReceivables || 0);
   const invoiced = Number(cash.invoicedAmount || 0);
   const materialsCost = Number(cash.materialsCost || 0);
+  const subcontractorCost = Number(cash.subcontractorCost || 0);
   const laborCostVal = Number(cash.laborCost || 0);
   const monthlyBillsCost = Number(cash.monthlyBillsCost || 0);
   const fleetCost = Number(cash.fleetCost || 0);
@@ -149,23 +150,28 @@ export const ReportsPage: FC<ReportsPageProps> = ({
           {/* ── Cost Breakdown ── */}
           <div class="card" style="margin-bottom:14px;">
             <h3 style="margin-top:0; margin-bottom:16px;">Cost Breakdown</h3>
-            <div class="stat-grid stat-grid-4">
-              <div class="stat-card">
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px;">
+              <div class="stat-card" style="margin:0;">
                 <div class="stat-label">Materials</div>
                 <div class="stat-value">{formatMoney(materialsCost)}</div>
                 <div class="stat-sub">job expenses</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" style="margin:0;">
+                <div class="stat-label">Subcontractors</div>
+                <div class="stat-value">{formatMoney(subcontractorCost)}</div>
+                <div class="stat-sub">sub labor</div>
+              </div>
+              <div class="stat-card" style="margin:0;">
                 <div class="stat-label">Labor</div>
                 <div class="stat-value">{formatMoney(laborCostVal)}</div>
                 <div class="stat-sub">time entries</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" style="margin:0;">
                 <div class="stat-label">Monthly Bills</div>
                 <div class="stat-value">{formatMoney(monthlyBillsCost)}</div>
                 <div class="stat-sub">recurring bills</div>
               </div>
-              <div class="stat-card">
+              <div class="stat-card" style="margin:0;">
                 <div class="stat-label">Fleet</div>
                 <div class="stat-value">{formatMoney(fleetCost)}</div>
                 <div class="stat-sub">fuel &amp; maintenance</div>
