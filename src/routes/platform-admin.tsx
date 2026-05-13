@@ -1280,7 +1280,7 @@ platformAdminRoutes.post('/admin/tenants/:id/billing/override', platformAdminReq
     'tenant',
     tenantId,
     `Platform admin set advanced billing state to ${billingState}.`,
-    resolveRequestIp(c.req.raw),
+    resolveRequestIp(c),
     JSON.stringify({
       billing_state: billingState,
       reason: reason || null,
@@ -1459,7 +1459,7 @@ platformAdminRoutes.post('/admin/tenants/:id/impersonate', platformAdminRequired
     entityType: 'user',
     entityId: user.id,
     description: `Platform admin initiated impersonation for ${user.name} (${user.role}).`,
-    ipAddress: resolveRequestIp(c.req.raw),
+    ipAddress: resolveRequestIp(c),
     metadata: {
       target_user_name: user.name,
       target_user_email: user.email,
