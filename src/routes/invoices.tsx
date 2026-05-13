@@ -162,7 +162,7 @@ function loadInvoiceDetailData(db: any, tenantId: number, invoiceId: number) {
           i.signer_name,
           i.signed_at
         FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
       `,
     )
@@ -294,7 +294,7 @@ invoiceRoutes.get('/invoices', permissionRequired('invoices.view'), (c) => {
           i.attachment_filename,
           i.archived_at
         FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.tenant_id = ?
           AND ${showArchived ? 'i.archived_at IS NOT NULL' : 'i.archived_at IS NULL'}
         ORDER BY i.due_date DESC, i.id DESC
@@ -1161,7 +1161,7 @@ invoiceRoutes.get('/invoice-attachments/:id', permissionRequired('invoices.view'
           i.attachment_filename,
           j.job_name
         FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
         LIMIT 1
       `,
@@ -1245,7 +1245,7 @@ invoiceRoutes.get('/invoice/:id/pdf', permissionRequired('invoices.view'), async
   const inv = db.prepare(`
     SELECT i.*, j.job_name, j.client_name, j.job_code
     FROM invoices i
-    JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+    LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
     WHERE i.id = ? AND i.tenant_id = ?
   `).get(invoiceId, tenantId) as any;
 
@@ -1338,7 +1338,7 @@ invoiceRoutes.post('/archive_invoice/:id', permissionRequired('invoices.archive'
       `
         SELECT i.id, i.invoice_number, i.amount, i.job_id, i.archived_at, j.job_name
         FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
       `,
     )
@@ -1424,7 +1424,7 @@ invoiceRoutes.post('/restore_invoice/:id', permissionRequired('invoices.archive'
       `
         SELECT i.id, i.invoice_number, i.amount, i.job_id, j.job_name
         FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
       `,
     )
