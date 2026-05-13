@@ -219,3 +219,30 @@ export function updateBillingState(
 
   db.prepare(`UPDATE tenants SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 }
+
+export function updateStripeConnect(
+  db: DB,
+  tenantId: number,
+  data: {
+    stripe_connect_account_id?: string | null;
+    stripe_connect_onboarded_at?: string | null;
+  },
+) {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if ('stripe_connect_account_id' in data) {
+    fields.push('stripe_connect_account_id = ?');
+    values.push(data.stripe_connect_account_id ?? null);
+  }
+
+  if ('stripe_connect_onboarded_at' in data) {
+    fields.push('stripe_connect_onboarded_at = ?');
+    values.push(data.stripe_connect_onboarded_at ?? null);
+  }
+
+  if (fields.length === 0) return;
+
+  values.push(tenantId);
+  db.prepare(`UPDATE tenants SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+}

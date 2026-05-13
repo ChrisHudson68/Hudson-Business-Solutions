@@ -44,6 +44,7 @@ export interface AppConfig {
   stripeBillingPortalEnabled: boolean;
   stripeProPlanLabel: string;
   stripeGracePeriodDays: number;
+  stripeConnectPlatformFeePercent: number;
 }
 
 let cachedConfig: AppConfig | null = null;
@@ -109,6 +110,28 @@ function parseSecretKey(value: string | undefined, isProduction: boolean): strin
 
   if (isProduction && parsed.length < 32) {
     throw new Error('SECRET_KEY must be at least 32 characters in production.');
+  }
+
+  return parsed;
+}
+
+function parseFloatEnv(
+  value: string | undefined,
+  fallback: number,
+  fieldLabel: string,
+  min: number,
+  max: number,
+): number {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+
+  if (!/^-?\d+(\.\d+)?$/.test(raw)) {
+    throw new Error(`${fieldLabel} must be a valid number.`);
+  }
+
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${fieldLabel} must be between ${min} and ${max}.`);
   }
 
   return parsed;
@@ -302,6 +325,13 @@ export function getEnv(): AppConfig {
       'STRIPE_GRACE_PERIOD_DAYS',
       1,
       60,
+    ),
+    stripeConnectPlatformFeePercent: parseFloatEnv(
+      process.env.STRIPE_CONNECT_PLATFORM_FEE_PERCENT,
+      0,
+      'STRIPE_CONNECT_PLATFORM_FEE_PERCENT',
+      0,
+      100,
     ),
   };
 

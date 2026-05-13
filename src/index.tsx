@@ -35,6 +35,7 @@ import { billingRoutes } from './routes/billing.js';
 import { estimateRoutes } from './routes/estimates.js';
 import { publicEstimateRoutes } from './routes/public-estimate.js';
 import { publicInvoiceRoutes } from './routes/public-invoice.js';
+import { publicPaymentRoutes } from './routes/public-payment.js';
 import { websiteRequestRoutes } from './routes/website-request.js';
 import { stripeRoutes } from './routes/stripe.js';
 
@@ -112,6 +113,7 @@ app.route('/', billingRoutes);
 app.route('/', estimateRoutes);
 app.route('/', publicEstimateRoutes);
 app.route('/', publicInvoiceRoutes);
+app.route('/', publicPaymentRoutes);
 app.route('/', dashboardRoutes);
 app.route('/', userRoutes);
 app.route('/', jobRoutes);

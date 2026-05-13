@@ -54,6 +54,8 @@ export interface Tenant {
   billing_override_reason?: string | null;
   billing_overridden_by_user_id?: number | null;
   billing_overridden_at?: string | null;
+  stripe_connect_account_id?: string | null;
+  stripe_connect_onboarded_at?: string | null;
   created_at: string;
 }
 

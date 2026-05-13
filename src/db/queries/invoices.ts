@@ -176,6 +176,52 @@ export function deleteById(db: DB, invoiceId: number, tenantId: number) {
   db.prepare('DELETE FROM invoices WHERE id = ? AND tenant_id = ?').run(invoiceId, tenantId);
 }
 
+export function findByPublicTokenForPayment(db: DB, token: string) {
+  return db.prepare(`
+    SELECT i.id, i.tenant_id, i.job_id,
+           j.job_name, j.client_name,
+           i.invoice_number, i.date_issued, i.due_date, i.amount,
+           i.notes, i.archived_at, i.public_token,
+           i.customer_name, i.customer_email,
+           i.stripe_payment_intent_id,
+           t.stripe_connect_account_id,
+           t.name AS company_name
+    FROM invoices i
+    LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+    INNER JOIN tenants t ON t.id = i.tenant_id
+    WHERE i.public_token = ?
+  `).get(token) as ({
+    id: number;
+    tenant_id: number;
+    job_id: number | null;
+    job_name: string | null;
+    client_name: string | null;
+    invoice_number: string;
+    date_issued: string;
+    due_date: string;
+    amount: number;
+    notes: string | null;
+    archived_at: string | null;
+    public_token: string;
+    customer_name: string | null;
+    customer_email: string | null;
+    stripe_payment_intent_id: string | null;
+    stripe_connect_account_id: string | null;
+    company_name: string;
+  }) | undefined;
+}
+
+export function setPaymentIntentId(
+  db: DB,
+  invoiceId: number,
+  tenantId: number,
+  paymentIntentId: string | null,
+) {
+  db.prepare(
+    'UPDATE invoices SET stripe_payment_intent_id = ? WHERE id = ? AND tenant_id = ?',
+  ).run(paymentIntentId, invoiceId, tenantId);
+}
+
 export function nextInvoiceNumber(db: DB, tenantId: number, invoicePrefix: string): string {
   const prefix = (invoicePrefix || 'INV').trim().toUpperCase();
 

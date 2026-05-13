@@ -21,6 +21,8 @@ interface TenantInfo {
   fleet_tire_rotation_days: number;
   fleet_inspection_days: number;
   notification_cc_emails: string | null;
+  stripe_connect_account_id: string | null;
+  stripe_connect_onboarded_at: string | null;
 }
 
 interface SettingsPageProps {
@@ -29,6 +31,8 @@ interface SettingsPageProps {
   error?: string;
   success?: string;
   canManageSettings?: boolean;
+  stripeEnabled?: boolean;
+  stripeConnectError?: string;
 }
 
 function isFilled(value: string | null | undefined): boolean {
@@ -41,6 +45,8 @@ export const SettingsPage: FC<SettingsPageProps> = ({
   error,
   success,
   canManageSettings,
+  stripeEnabled,
+  stripeConnectError,
 }) => {
   const readOnly = !canManageSettings;
 
@@ -380,6 +386,75 @@ export const SettingsPage: FC<SettingsPageProps> = ({
           </div>
         ) : null}
       </form>
+
+      {stripeEnabled ? (
+        <div class="card" style="margin-top:14px;">
+          <h3 style="margin-top:0;">Online Payments</h3>
+          <div class="muted small" style="margin-bottom:14px;">
+            Connect a Stripe account so customers can pay invoices online. Payments go directly to your Stripe account.
+          </div>
+
+          {stripeConnectError ? (
+            <div style="margin-bottom:14px; padding:12px 16px; border:1px solid #FECACA; border-radius:10px; background:#FEF2F2; color:#991B1B; font-size:14px;">
+              {stripeConnectError}
+            </div>
+          ) : null}
+
+          {tenant.stripe_connect_account_id && tenant.stripe_connect_onboarded_at ? (
+            <div>
+              <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                <span class="badge badge-good">Connected</span>
+                <span class="muted small">Stripe account linked and ready to accept payments.</span>
+              </div>
+              {canManageSettings ? (
+                <form method="post" action="/settings/stripe/disconnect">
+                  <input type="hidden" name="csrf_token" value={csrfToken} />
+                  <button
+                    type="submit"
+                    class="btn"
+                    style="color:#991B1B; border-color:#FECACA;"
+                    onclick="return confirm('Disconnect your Stripe account? Customers will no longer be able to pay invoices online until you reconnect.')"
+                  >
+                    Disconnect Stripe Account
+                  </button>
+                </form>
+              ) : null}
+            </div>
+          ) : tenant.stripe_connect_account_id && !tenant.stripe_connect_onboarded_at ? (
+            <div>
+              <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                <span class="badge">Setup Incomplete</span>
+                <span class="muted small">Stripe onboarding was started but not completed.</span>
+              </div>
+              {canManageSettings ? (
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                  <a href="/settings/stripe/connect" class="btn btn-primary">
+                    Continue Stripe Setup
+                  </a>
+                  <form method="post" action="/settings/stripe/disconnect" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value={csrfToken} />
+                    <button type="submit" class="btn" style="color:#991B1B; border-color:#FECACA;">
+                      Cancel &amp; Remove
+                    </button>
+                  </form>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div>
+              <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+                <span class="badge">Not Connected</span>
+                <span class="muted small">No Stripe account linked yet.</span>
+              </div>
+              {canManageSettings ? (
+                <a href="/settings/stripe/connect" class="btn btn-primary">
+                  Connect Stripe Account
+                </a>
+              ) : null}
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 };

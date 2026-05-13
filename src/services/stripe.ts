@@ -143,6 +143,29 @@ function buildSubscriptionPatch(subscription: Stripe.Subscription, graceDays: nu
   } as const;
 }
 
+export async function createConnectAccount(): Promise<string> {
+  const account = await getStripeClient().accounts.create({ type: 'express' });
+  return account.id;
+}
+
+export async function createConnectAccountLink(
+  accountId: string,
+  refreshUrl: string,
+  returnUrl: string,
+): Promise<string> {
+  const link = await getStripeClient().accountLinks.create({
+    account: accountId,
+    refresh_url: refreshUrl,
+    return_url: returnUrl,
+    type: 'account_onboarding',
+  });
+  return link.url;
+}
+
+export async function getConnectAccount(accountId: string): Promise<Stripe.Account> {
+  return getStripeClient().accounts.retrieve(accountId);
+}
+
 export async function resyncTenantBillingFromStripe(
   db: DB,
   tenantOrId: number | (Tenant & { billing_state?: string | null; billing_grace_until?: string | null }),

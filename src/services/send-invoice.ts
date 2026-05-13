@@ -59,7 +59,8 @@ export async function sendInvoiceForSignature(
   }
 
   const tenantRow = db.prepare(`
-    SELECT name, company_email, company_phone, company_address, notification_cc_emails
+    SELECT name, company_email, company_phone, company_address,
+           notification_cc_emails, stripe_connect_account_id
     FROM tenants WHERE id = ? LIMIT 1
   `).get(tenantId) as {
     name: string;
@@ -67,6 +68,7 @@ export async function sendInvoiceForSignature(
     company_phone: string | null;
     company_address: string | null;
     notification_cc_emails: string | null;
+    stripe_connect_account_id: string | null;
   } | undefined;
 
   if (!tenantRow) throw new Error('Tenant not found.');
@@ -74,6 +76,8 @@ export async function sendInvoiceForSignature(
   const ccEmails = String(tenantRow.notification_cc_emails || '').trim() || undefined;
   const token = crypto.randomBytes(24).toString('hex');
   const publicUrl = `${publicBaseUrl}/invoice/view/${token}`;
+  const paymentUrl = `${publicBaseUrl}/invoice/pay/${token}`;
+  const hasOnlinePayment = !!tenantRow.stripe_connect_account_id;
 
   invoices.setSignatureToken(db, invoiceId, tenantId, token);
 
@@ -84,6 +88,35 @@ export async function sendInvoiceForSignature(
   const amount = formatMoney(inv.amount ?? 0);
   const dueDate = escapeHtml(inv.due_date || '');
 
+  const ctaBlock = hasOnlinePayment
+    ? `
+      <div style="text-align:center;margin:24px 0 8px;">
+        <a href="${paymentUrl}"
+           style="display:inline-block;background:#16A34A;color:#fff;font-weight:700;font-size:15px;
+                  padding:14px 32px;border-radius:12px;text-decoration:none;margin-bottom:10px;">
+          Pay Online — $${amount}
+        </a>
+        <div style="margin-top:10px;">
+          <a href="${publicUrl}"
+             style="display:inline-block;color:#1E3A5F;font-weight:600;font-size:14px;text-decoration:underline;">
+            Review &amp; Sign Invoice
+          </a>
+        </div>
+      </div>`
+    : `
+      <div style="text-align:center;margin:24px 0 8px;">
+        <a href="${publicUrl}"
+           style="display:inline-block;background:#1E3A5F;color:#fff;font-weight:700;font-size:15px;
+                  padding:14px 32px;border-radius:12px;text-decoration:none;">
+          Review &amp; Sign Invoice
+        </a>
+      </div>`;
+
+  const emailSubtitle = hasOnlinePayment ? 'Invoice — Review, Sign &amp; Pay' : 'Invoice for Signature';
+  const emailIntro = hasOnlinePayment
+    ? `Please review Invoice <strong>${invNumber}</strong> from <strong>${companyName}</strong>. You can pay online or review and sign below.`
+    : `Please review and sign Invoice <strong>${invNumber}</strong> from <strong>${companyName}</strong>.`;
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -92,13 +125,13 @@ export async function sendInvoiceForSignature(
   <div style="max-width:600px;margin:0 auto;padding:32px 20px;">
     <div style="text-align:center;margin-bottom:28px;">
       <h1 style="margin:0;font-size:24px;color:#1E3A5F;">${companyName}</h1>
-      <p style="margin:6px 0 0;color:#64748B;font-size:14px;">Invoice for Signature</p>
+      <p style="margin:6px 0 0;color:#64748B;font-size:14px;">${emailSubtitle}</p>
     </div>
 
     <div style="background:#fff;border:1px solid #E5EAF2;border-radius:16px;padding:24px;margin-bottom:16px;">
       <p style="margin:0 0 16px;font-size:15px;">Hello ${clientName},</p>
       <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">
-        Please review and sign Invoice <strong>${invNumber}</strong> from <strong>${companyName}</strong>.
+        ${emailIntro}
       </p>
 
       <table style="width:100%;border-collapse:collapse;margin:16px 0;">
@@ -120,13 +153,7 @@ export async function sendInvoiceForSignature(
         </tr>
       </table>
 
-      <div style="text-align:center;margin:24px 0 8px;">
-        <a href="${publicUrl}"
-           style="display:inline-block;background:#1E3A5F;color:#fff;font-weight:700;font-size:15px;
-                  padding:14px 32px;border-radius:12px;text-decoration:none;">
-          Review &amp; Sign Invoice
-        </a>
-      </div>
+      ${ctaBlock}
     </div>
 
     <div style="background:#fff;border:1px solid #E5EAF2;border-radius:16px;padding:20px;font-size:13px;color:#64748B;">
@@ -142,11 +169,19 @@ export async function sendInvoiceForSignature(
 </body>
 </html>`;
 
+  const subject = hasOnlinePayment
+    ? `Invoice ${invNumber} from ${tenantRow.name} — Pay Online or Review & Sign`
+    : `Invoice ${invNumber} from ${tenantRow.name} — Please Review & Sign`;
+
+  const textBody = hasOnlinePayment
+    ? `Invoice ${inv.invoice_number} from ${tenantRow.name}\nAmount Due: $${amount}\n\nPay online: ${paymentUrl}\nReview & sign: ${publicUrl}`
+    : `Invoice ${inv.invoice_number} from ${tenantRow.name} — Review and sign at: ${publicUrl}`;
+
   const result = await sendMail({
     to: recipientEmail,
     cc: ccEmails,
-    subject: `Invoice ${invNumber} from ${tenantRow.name} — Please Review & Sign`,
-    text: `Invoice ${inv.invoice_number} from ${tenantRow.name} — Review and sign at: ${publicUrl}`,
+    subject,
+    text: textBody,
     html,
   });
 

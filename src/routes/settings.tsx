@@ -10,6 +10,13 @@ import {
 import { SettingsPage } from '../pages/settings/SettingsPage.js';
 import { AppLayout } from '../pages/layouts/AppLayout.js';
 import { getEnv } from '../config/env.js';
+import {
+  createConnectAccount,
+  createConnectAccountLink,
+  getConnectAccount,
+  isStripeEnabled,
+} from '../services/stripe.js';
+import * as tenantQueries from '../db/queries/tenants.js';
 
 function renderApp(c: any, subtitle: string, content: any, status: 200 | 400 = 200) {
   return c.html(
@@ -129,7 +136,8 @@ function getTenantSettings(db: any, tenantId: number) {
            default_tax_rate, default_labor_rate,
            fleet_oil_change_miles, fleet_oil_change_days,
            fleet_tire_rotation_miles, fleet_tire_rotation_days,
-           fleet_inspection_days, notification_cc_emails
+           fleet_inspection_days, notification_cc_emails,
+           stripe_connect_account_id, stripe_connect_onboarded_at
     FROM tenants
     WHERE id = ?
   `,
@@ -159,6 +167,8 @@ function buildTenantFormValues(source: any) {
     fleet_tire_rotation_days: Number(source?.fleet_tire_rotation_days || 0),
     fleet_inspection_days: Number(source?.fleet_inspection_days || 0),
     notification_cc_emails: source?.notification_cc_emails ? String(source.notification_cc_emails) : '',
+    stripe_connect_account_id: source?.stripe_connect_account_id ? String(source.stripe_connect_account_id) : null,
+    stripe_connect_onboarded_at: source?.stripe_connect_onboarded_at ? String(source.stripe_connect_onboarded_at) : null,
   };
 }
 
@@ -182,6 +192,7 @@ settingsRoutes.get('/settings', permissionRequired('settings.view'), (c) => {
       tenant={buildTenantFormValues(tenantRow)}
       csrfToken={c.get('csrfToken')}
       canManageSettings={userHasPermission(c.get('user'), 'settings.manage')}
+      stripeEnabled={isStripeEnabled()}
     />,
   );
 });
@@ -354,6 +365,7 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
         csrfToken={c.get('csrfToken')}
         success="Company settings updated successfully."
         canManageSettings={userHasPermission(c.get('user'), 'settings.manage')}
+        stripeEnabled={isStripeEnabled()}
       />,
     );
   } catch (error) {
@@ -366,8 +378,136 @@ settingsRoutes.post('/settings', permissionRequired('settings.manage'), async (c
         csrfToken={c.get('csrfToken')}
         error={message}
         canManageSettings={userHasPermission(c.get('user'), 'settings.manage')}
+        stripeEnabled={isStripeEnabled()}
       />,
       400,
     );
   }
+});
+
+function resolveOrigin(c: any): string {
+  const forwardedProto = String(c.req.header('x-forwarded-proto') ?? '').trim().toLowerCase();
+  const forwardedHost = String(c.req.header('x-forwarded-host') ?? '').trim();
+  const host = forwardedHost || String(c.req.header('host') ?? '').trim();
+  const proto = forwardedProto || (host.includes('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https');
+  return `${proto}://${host}`;
+}
+
+settingsRoutes.get('/settings/stripe/connect', permissionRequired('settings.manage'), async (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
+
+  if (!isStripeEnabled()) {
+    return c.redirect('/settings');
+  }
+
+  const db = getDb();
+  const tenantRow = getTenantSettings(db, tenant.id);
+  if (!tenantRow) return c.text('Tenant not found', 404);
+
+  const origin = resolveOrigin(c);
+  const refreshUrl = `${origin}/settings/stripe/connect`;
+  const returnUrl = `${origin}/settings/stripe/return`;
+
+  try {
+    let accountId = tenantRow.stripe_connect_account_id as string | null | undefined;
+
+    if (!accountId) {
+      accountId = await createConnectAccount();
+      tenantQueries.updateStripeConnect(db, tenant.id, { stripe_connect_account_id: accountId });
+    }
+
+    const onboardingUrl = await createConnectAccountLink(accountId, refreshUrl, returnUrl);
+    return c.redirect(onboardingUrl);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Could not start Stripe onboarding.';
+    const updatedRow = getTenantSettings(db, tenant.id);
+    return renderApp(
+      c,
+      'Company Settings',
+      <SettingsPage
+        tenant={buildTenantFormValues(updatedRow)}
+        csrfToken={c.get('csrfToken')}
+        canManageSettings={true}
+        stripeEnabled={isStripeEnabled()}
+        stripeConnectError={message}
+      />,
+      400,
+    );
+  }
+});
+
+settingsRoutes.get('/settings/stripe/return', permissionRequired('settings.view'), async (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
+
+  if (!isStripeEnabled()) {
+    return c.redirect('/settings');
+  }
+
+  const db = getDb();
+  const tenantRow = getTenantSettings(db, tenant.id);
+  if (!tenantRow) return c.text('Tenant not found', 404);
+
+  const accountId = tenantRow.stripe_connect_account_id as string | null | undefined;
+
+  if (!accountId) {
+    return c.redirect('/settings');
+  }
+
+  try {
+    const account = await getConnectAccount(accountId);
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+    if (account.charges_enabled) {
+      tenantQueries.updateStripeConnect(db, tenant.id, { stripe_connect_onboarded_at: now });
+    }
+
+    const updatedRow = getTenantSettings(db, tenant.id);
+    const successMsg = account.charges_enabled
+      ? 'Stripe account connected successfully. You can now accept online payments.'
+      : 'Stripe onboarding started. Complete the setup in Stripe to enable online payments.';
+
+    return renderApp(
+      c,
+      'Company Settings',
+      <SettingsPage
+        tenant={buildTenantFormValues(updatedRow)}
+        csrfToken={c.get('csrfToken')}
+        canManageSettings={userHasPermission(c.get('user'), 'settings.manage')}
+        stripeEnabled={isStripeEnabled()}
+        success={successMsg}
+      />,
+    );
+  } catch (err) {
+    return c.redirect('/settings');
+  }
+});
+
+settingsRoutes.post('/settings/stripe/disconnect', permissionRequired('settings.manage'), async (c) => {
+  const tenant = c.get('tenant');
+  if (!tenant) return c.redirect('/login');
+
+  if (!isStripeEnabled()) {
+    return c.redirect('/settings');
+  }
+
+  const db = getDb();
+  tenantQueries.updateStripeConnect(db, tenant.id, {
+    stripe_connect_account_id: null,
+    stripe_connect_onboarded_at: null,
+  });
+
+  const updatedRow = getTenantSettings(db, tenant.id);
+  return renderApp(
+    c,
+    'Company Settings',
+    <SettingsPage
+      tenant={buildTenantFormValues(updatedRow)}
+      csrfToken={c.get('csrfToken')}
+      canManageSettings={userHasPermission(c.get('user'), 'settings.manage')}
+      stripeEnabled={isStripeEnabled()}
+      success="Stripe account disconnected."
+    />,
+  );
 });

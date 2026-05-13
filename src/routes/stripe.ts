@@ -4,12 +4,17 @@ import type { AppEnv } from '../app-env.js';
 import { getEnv } from '../config/env.js';
 import { getDb } from '../db/connection.js';
 import * as tenantQueries from '../db/queries/tenants.js';
+import * as paymentQueries from '../db/queries/payments.js';
 import {
   addGracePeriodDaysFromNow,
   mapStripeSubscriptionStatus,
   unixToSqliteUtcTimestamp,
   verifyStripeWebhookEvent,
 } from '../services/stripe.js';
+import {
+  sendTenantPaymentNotification,
+  sendCustomerPaymentConfirmation,
+} from '../services/send-payment-notification.js';
 
 function getObjectStringId(value: string | Stripe.Customer | Stripe.DeletedCustomer | Stripe.Subscription | Stripe.Invoice | null | undefined): string | null {
   if (!value) return null;
@@ -203,6 +208,99 @@ function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   });
 }
 
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+  const invoiceIdRaw = paymentIntent.metadata?.invoice_id;
+  const tenantIdRaw = paymentIntent.metadata?.tenant_id;
+
+  // Not one of our invoice payments — ignore
+  if (!invoiceIdRaw || !tenantIdRaw) return;
+
+  const invoiceId = Number.parseInt(invoiceIdRaw, 10);
+  const tenantId = Number.parseInt(tenantIdRaw, 10);
+
+  if (!Number.isFinite(invoiceId) || !Number.isFinite(tenantId)) return;
+
+  const db = getDb();
+
+  const inv = db.prepare(`
+    SELECT i.id, i.invoice_number, i.amount, i.archived_at,
+           i.customer_name, i.customer_email
+    FROM invoices i
+    WHERE i.id = ? AND i.tenant_id = ?
+  `).get(invoiceId, tenantId) as {
+    id: number;
+    invoice_number: string;
+    amount: number;
+    archived_at: string | null;
+    customer_name: string | null;
+    customer_email: string | null;
+  } | undefined;
+
+  if (!inv || inv.archived_at) {
+    console.warn('payment_intent.succeeded: invoice not found or archived', { invoiceId, tenantId, pi: paymentIntent.id });
+    return;
+  }
+
+  // Idempotency: skip if this payment intent was already recorded
+  const alreadyRecorded = db.prepare(
+    'SELECT id FROM payments WHERE invoice_id = ? AND tenant_id = ? AND reference = ?',
+  ).get(invoiceId, tenantId, paymentIntent.id);
+
+  if (alreadyRecorded) return;
+
+  const amountPaid = paymentIntent.amount / 100;
+  const paymentDate = new Date().toISOString().slice(0, 10);
+
+  paymentQueries.create(db, tenantId, {
+    invoice_id: invoiceId,
+    date: paymentDate,
+    amount: amountPaid,
+    method: 'Online / Stripe',
+    reference: paymentIntent.id,
+  });
+
+  const tenantRow = db.prepare(`
+    SELECT name, company_email, company_phone, notification_cc_emails
+    FROM tenants WHERE id = ? LIMIT 1
+  `).get(tenantId) as {
+    name: string;
+    company_email: string | null;
+    company_phone: string | null;
+    notification_cc_emails: string | null;
+  } | undefined;
+
+  if (!tenantRow) return;
+
+  // Tenant notification — fire and forget so email failures don't affect webhook acknowledgment
+  if (tenantRow.company_email) {
+    sendTenantPaymentNotification({
+      tenantEmail: tenantRow.company_email,
+      ccEmails: tenantRow.notification_cc_emails,
+      companyName: tenantRow.name,
+      invoiceNumber: inv.invoice_number,
+      customerName: inv.customer_name,
+      amountPaid,
+      paymentIntentId: paymentIntent.id,
+      paymentDate,
+    }).catch((err) => console.error('Failed to send tenant payment notification:', err));
+  }
+
+  // Customer confirmation
+  const customerEmail = String(inv.customer_email || '').trim();
+  if (customerEmail && customerEmail.includes('@')) {
+    sendCustomerPaymentConfirmation({
+      customerEmail,
+      customerName: inv.customer_name,
+      companyName: tenantRow.name,
+      companyEmail: tenantRow.company_email,
+      companyPhone: tenantRow.company_phone,
+      invoiceNumber: inv.invoice_number,
+      amountPaid,
+      paymentDate,
+    }).catch((err) => console.error('Failed to send customer payment confirmation:', err));
+  }
+}
+
 export const stripeRoutes = new Hono<AppEnv>();
 
 stripeRoutes.post('/stripe/webhook', async (c) => {
@@ -248,6 +346,10 @@ stripeRoutes.post('/stripe/webhook', async (c) => {
 
       case 'invoice.payment_failed':
         handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+        break;
+
+      case 'payment_intent.succeeded':
+        await handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
         break;
 
       default:
