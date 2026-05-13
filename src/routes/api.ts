@@ -1585,6 +1585,257 @@ apiRoutes.post('/api/timesheets/approve-week', async (c) => {
   return c.json({ ok: true });
 });
 
+apiRoutes.post('/api/timesheets/reopen-week', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+
+  const permError = requireApiPermission(c, user, 'time.approve');
+  if (permError) return permError;
+
+  const db = getDb();
+  const body = await c.req.json().catch(() => ({}));
+  const employeeId = parsePositiveInt(String(body.employeeId || ''));
+  const weekStartStr = String(body.weekStart || '').trim();
+
+  if (!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(weekStartStr)) {
+    return c.json({ ok: false, error: 'invalid_params' }, 400);
+  }
+
+  const empRow = db.prepare(
+    'SELECT id FROM employees WHERE id = ? AND tenant_id = ? LIMIT 1'
+  ).get(employeeId, tenant.id) as { id: number } | undefined;
+  if (!empRow) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const approval = db.prepare(
+    'SELECT id FROM time_entry_week_approvals WHERE tenant_id = ? AND employee_id = ? AND week_start = ? LIMIT 1'
+  ).get(tenant.id, employeeId, weekStartStr);
+  if (!approval) return c.json({ ok: false, error: 'not_approved' }, 400);
+
+  db.prepare(
+    'DELETE FROM time_entry_week_approvals WHERE tenant_id = ? AND employee_id = ? AND week_start = ?'
+  ).run(tenant.id, employeeId, weekStartStr);
+
+  return c.json({ ok: true });
+});
+
+apiRoutes.post('/api/timesheets/:id/request-edit', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+
+  const permError = requireApiPermission(c, user, 'time.edit_requests');
+  if (permError) return permError;
+
+  const db = getDb();
+  const entryId = parsePositiveInt(c.req.param('id'));
+  if (!entryId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const link = loadEmployeeForUser(db, user.id, tenant.id);
+  const employeeId = link?.employee_id ?? null;
+  if (!employeeId) return c.json({ ok: false, error: 'not_linked_to_employee' }, 400);
+
+  const entry = db.prepare(`
+    SELECT id, employee_id, job_id, date, clock_in_at, hours
+    FROM time_entries
+    WHERE id = ? AND tenant_id = ? LIMIT 1
+  `).get(entryId, tenant.id) as {
+    id: number; employee_id: number; job_id: number | null;
+    date: string; clock_in_at: string | null; hours: number;
+  } | undefined;
+
+  if (!entry || entry.employee_id !== employeeId) {
+    return c.json({ ok: false, error: 'not_found' }, 404);
+  }
+
+  const d = new Date(`${entry.date}T00:00:00Z`);
+  const day = d.getUTCDay();
+  const diff = day === 0 ? 6 : day - 1;
+  d.setUTCDate(d.getUTCDate() - diff);
+  const entryWeekStart = d.toISOString().slice(0, 10);
+
+  const alreadyApproved = db.prepare(
+    'SELECT id FROM time_entry_week_approvals WHERE tenant_id = ? AND employee_id = ? AND week_start = ? LIMIT 1'
+  ).get(tenant.id, employeeId, entryWeekStart);
+  if (alreadyApproved) return c.json({ ok: false, error: 'week_approved' }, 400);
+
+  const alreadyPending = db.prepare(
+    'SELECT id FROM time_entry_edit_requests WHERE time_entry_id = ? AND tenant_id = ? AND status = ? LIMIT 1'
+  ).get(entryId, tenant.id, 'pending');
+  if (alreadyPending) return c.json({ ok: false, error: 'already_pending' }, 400);
+
+  const body = await c.req.json().catch(() => ({}));
+  const proposedHours = Number(body.proposedHours);
+  const reason = String(body.reason || '').trim();
+  const proposedNote = body.proposedNote !== undefined ? String(body.proposedNote).trim() || null : null;
+
+  if (isNaN(proposedHours) || proposedHours <= 0 || proposedHours > 24) {
+    return c.json({ ok: false, error: 'invalid_hours' }, 400);
+  }
+  if (!reason) return c.json({ ok: false, error: 'reason_required' }, 400);
+  if (reason.length > 500) return c.json({ ok: false, error: 'reason_too_long' }, 400);
+
+  const clockInBase = entry.clock_in_at ?? `${entry.date}T08:00:00.000Z`;
+  const clockOut = new Date(new Date(clockInBase).getTime() + proposedHours * 3600000).toISOString();
+
+  db.prepare(`
+    INSERT INTO time_entry_edit_requests (
+      tenant_id, time_entry_id, employee_id, requested_by_user_id,
+      proposed_job_id, proposed_date, proposed_clock_in_at, proposed_clock_out_at,
+      proposed_hours, proposed_note, request_reason
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    tenant.id, entryId, employeeId, user.id,
+    entry.job_id ?? 0, entry.date, clockInBase, clockOut,
+    proposedHours, proposedNote, reason,
+  );
+
+  db.prepare(
+    `UPDATE time_entries SET approval_status = 'pending_edit' WHERE id = ? AND tenant_id = ?`
+  ).run(entryId, tenant.id);
+
+  return c.json({ ok: true });
+});
+
+apiRoutes.get('/api/timesheets/edit-requests', (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+
+  const permError = requireApiPermission(c, user, 'time.approve');
+  if (permError) return permError;
+
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT
+      r.id, r.time_entry_id, r.employee_id,
+      e.name AS employee_name,
+      r.proposed_date, r.proposed_hours, r.proposed_note, r.request_reason, r.created_at,
+      t.hours AS current_hours, t.date AS current_date,
+      j.job_name
+    FROM time_entry_edit_requests r
+    JOIN employees e ON e.id = r.employee_id AND e.tenant_id = r.tenant_id
+    JOIN time_entries t ON t.id = r.time_entry_id AND t.tenant_id = r.tenant_id
+    LEFT JOIN jobs j ON j.id = t.job_id AND j.tenant_id = r.tenant_id
+    WHERE r.tenant_id = ? AND r.status = 'pending'
+    ORDER BY r.created_at ASC
+  `).all(tenant.id) as any[];
+
+  return c.json({
+    ok: true,
+    requests: rows.map(r => ({
+      id: r.id,
+      timeEntryId: r.time_entry_id,
+      employeeId: r.employee_id,
+      employeeName: r.employee_name,
+      proposedDate: r.proposed_date,
+      proposedHours: Number(r.proposed_hours),
+      proposedNote: r.proposed_note ?? null,
+      reason: r.request_reason,
+      createdAt: r.created_at,
+      currentHours: Number(r.current_hours),
+      currentDate: r.current_date,
+      jobName: r.job_name ?? null,
+    })),
+  });
+});
+
+apiRoutes.post('/api/timesheets/edit-requests/:id/approve', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+
+  const permError = requireApiPermission(c, user, 'time.approve');
+  if (permError) return permError;
+
+  const db = getDb();
+  const requestId = parsePositiveInt(c.req.param('id'));
+  if (!requestId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const req = db.prepare(`
+    SELECT r.id, r.time_entry_id, r.employee_id,
+           r.proposed_job_id, r.proposed_date,
+           r.proposed_clock_in_at, r.proposed_clock_out_at,
+           r.proposed_hours, r.proposed_note
+    FROM time_entry_edit_requests r
+    WHERE r.id = ? AND r.tenant_id = ? AND r.status = 'pending'
+    LIMIT 1
+  `).get(requestId, tenant.id) as {
+    id: number; time_entry_id: number; employee_id: number;
+    proposed_job_id: number | null; proposed_date: string;
+    proposed_clock_in_at: string; proposed_clock_out_at: string;
+    proposed_hours: number; proposed_note: string | null;
+  } | undefined;
+
+  if (!req) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  const empRow = db.prepare(
+    'SELECT hourly_rate, lunch_deduction_exempt FROM employees WHERE id = ? AND tenant_id = ? LIMIT 1'
+  ).get(req.employee_id, tenant.id) as { hourly_rate: number | null; lunch_deduction_exempt: number } | undefined;
+
+  const rate = Number(empRow?.hourly_rate || 0);
+  const lunchExempt = Number(empRow?.lunch_deduction_exempt || 0) === 1;
+  let approvedHours = Number(req.proposed_hours);
+  if (!lunchExempt && approvedHours > 6) approvedHours = Math.max(0, approvedHours - 0.5);
+  const laborCost = Number((approvedHours * rate).toFixed(2));
+
+  db.prepare(`
+    UPDATE time_entries
+    SET job_id = ?, date = ?, clock_in_at = ?, clock_out_at = ?,
+        hours = ?, labor_cost = ?, note = ?,
+        approval_status = 'approved',
+        approved_by_user_id = ?, approved_at = CURRENT_TIMESTAMP,
+        last_edited_by_user_id = ?, last_edited_at = CURRENT_TIMESTAMP,
+        edit_reason = 'Approved employee edit request'
+    WHERE id = ? AND tenant_id = ?
+  `).run(
+    req.proposed_job_id, req.proposed_date,
+    req.proposed_clock_in_at, req.proposed_clock_out_at,
+    approvedHours, laborCost, req.proposed_note,
+    user.id, user.id,
+    req.time_entry_id, tenant.id,
+  );
+
+  db.prepare(`
+    UPDATE time_entry_edit_requests
+    SET status = 'approved', reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ?
+  `).run(user.id, requestId, tenant.id);
+
+  return c.json({ ok: true });
+});
+
+apiRoutes.post('/api/timesheets/edit-requests/:id/reject', async (c) => {
+  const resolved = resolveApiContext(c);
+  if (!resolved.ok) return resolved.response;
+  const { user, tenant } = resolved;
+
+  const permError = requireApiPermission(c, user, 'time.approve');
+  if (permError) return permError;
+
+  const db = getDb();
+  const requestId = parsePositiveInt(c.req.param('id'));
+  if (!requestId) return c.json({ ok: false, error: 'invalid_id' }, 400);
+
+  const req = db.prepare(
+    'SELECT id, time_entry_id FROM time_entry_edit_requests WHERE id = ? AND tenant_id = ? AND status = ? LIMIT 1'
+  ).get(requestId, tenant.id, 'pending') as { id: number; time_entry_id: number } | undefined;
+
+  if (!req) return c.json({ ok: false, error: 'not_found' }, 404);
+
+  db.prepare(`
+    UPDATE time_entry_edit_requests
+    SET status = 'rejected', reviewed_by_user_id = ?, reviewed_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ?
+  `).run(user.id, requestId, tenant.id);
+
+  db.prepare(
+    `UPDATE time_entries SET approval_status = 'approved' WHERE id = ? AND tenant_id = ?`
+  ).run(req.time_entry_id, tenant.id);
+
+  return c.json({ ok: true });
+});
+
 // ─── Invoice PDF ──────────────────────────────────────────────────────────────
 
 apiRoutes.get('/api/invoices/:id/pdf', async (c) => {
