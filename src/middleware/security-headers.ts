@@ -22,7 +22,8 @@ function buildCsp(hostHeader: string | undefined): string {
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://js.stripe.com",
+    "frame-src https://js.stripe.com https://hooks.stripe.com",
   ];
 
   if (isLocal) {
