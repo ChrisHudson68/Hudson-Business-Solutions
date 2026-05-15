@@ -74,7 +74,7 @@ function loadInvoiceDetailData(db: any, tenantId: number, invoiceId: number) {
         SELECT i.id, i.job_id, j.job_name, j.client_name,
                i.invoice_number, i.date_issued, i.due_date, i.amount, i.notes, i.archived_at
         FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
       `,
     )
@@ -206,12 +206,12 @@ paymentRoutes.post('/add_payment/:invoiceId', permissionRequired('payments.manag
       `
         SELECT i.id, i.invoice_number, i.amount, i.job_id, i.archived_at, j.job_name
         FROM invoices i
-        JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
+        LEFT JOIN jobs j ON j.id = i.job_id AND j.tenant_id = i.tenant_id
         WHERE i.id = ? AND i.tenant_id = ?
       `,
     )
     .get(invoiceId, tenantId) as
-      | { id: number; invoice_number: string | null; amount: number; job_id: number; archived_at: string | null; job_name: string }
+      | { id: number; invoice_number: string | null; amount: number; job_id: number | null; archived_at: string | null; job_name: string | null }
       | undefined;
 
   if (!invoice) {
@@ -390,7 +390,7 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', permissionRequired('
         JOIN invoices i
           ON i.id = p.invoice_id
          AND i.tenant_id = p.tenant_id
-        JOIN jobs j
+        LEFT JOIN jobs j
           ON j.id = i.job_id
          AND j.tenant_id = i.tenant_id
         WHERE p.id = ? AND p.invoice_id = ? AND p.tenant_id = ?
@@ -407,9 +407,9 @@ paymentRoutes.post('/delete_payment/:paymentId/:invoiceId', permissionRequired('
           attachment_filename: string | null;
           attachment_original_name: string | null;
           invoice_number: string | null;
-          job_id: number;
+          job_id: number | null;
           archived_at: string | null;
-          job_name: string;
+          job_name: string | null;
         }
       | undefined;
 
@@ -508,7 +508,7 @@ paymentRoutes.get('/payment-attachments/:paymentId', loginRequired, (c) => {
         JOIN invoices i
           ON i.id = p.invoice_id
          AND i.tenant_id = p.tenant_id
-        JOIN jobs j
+        LEFT JOIN jobs j
           ON j.id = i.job_id
          AND j.tenant_id = i.tenant_id
         WHERE p.id = ? AND p.tenant_id = ?
@@ -526,7 +526,7 @@ paymentRoutes.get('/payment-attachments/:paymentId', loginRequired, (c) => {
           attachment_filename: string | null;
           attachment_original_name: string | null;
           invoice_number: string | null;
-          job_id: number;
+          job_id: number | null;
           job_name: string | null;
         }
       | undefined;
